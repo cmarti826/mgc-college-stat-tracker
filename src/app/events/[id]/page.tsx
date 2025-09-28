@@ -1,100 +1,121 @@
 'use client'
 
-import { useEffect, useMemo, useState } from 'react'
+import { useCallback, useEffect, useMemo, useState } from 'react'
+import { useParams, useRouter } from 'next/navigation'
 import Link from 'next/link'
-import { useParams } from 'next/navigation'
 import { supabase } from '@/lib/supabaseClient'
 
 type EventRow = {
-  id: string; name: string; type: 'qualifying'|'tournament'|'practice'
-  status: 'draft'|'live'|'final'; start_date: string|null; end_date: string|null
-  team_id: string; course_id: string|null; course_tee_id: string|null
+  id: string
+  name: string
+  type: 'qualifying'|'tournament'|'practice'
+  status: 'draft'|'live'|'final'
+  start_date: string | null
+  end_date: string | null
+  team_id: string
+  course_id: string | null
+  course_tee_id: string | null
 }
-type Player = { id: string; display_name: string }
+type Course = { name: string; city: string | null; state: string | null }
+type Tee = { tee_name: string | null; color: string | null; course_rating: number | null; slope_rating: number | null }
 type Entry = { player_id: string }
-type Round = { id: string; player_id: string|null; start_time: string|null; status: string }
-type VTotal = { round_id: string; to_par: number|null; strokes: number|null }
+type Player = { id: string; display_name: string }
+type Round = { id: string; player_id: string | null; start_time: string | null; status: string }
+type VTotal = { round_id: string; to_par: number | null; strokes: number | null }
 
 export default function EventLeaderboardPage() {
   const { id } = useParams<{ id: string }>()
   const eventId = id
+  const router = useRouter()
 
   const [evt, setEvt] = useState<EventRow | null>(null)
-  const [course, setCourse] = useState<{ name: string; city: string|null; state: string|null } | null>(null)
-  const [tee, setTee] = useState<{ tee_name: string|null; color: string|null; course_rating: number|null; slope_rating: number|null } | null>(null)
+  const [course, setCourse] = useState<Course | null>(null)
+  const [tee, setTee] = useState<Tee | null>(null)
 
   const [entries, setEntries] = useState<Entry[]>([])
   const [players, setPlayers] = useState<Record<string, Player>>({})
-
   const [rounds, setRounds] = useState<Round[]>([])
   const [totals, setTotals] = useState<Record<string, VTotal>>({})
+  const [err, setErr] = useState<string | null>(null)
 
-  const [err, setErr] = useState<string|null>(null)
+  const loadAll = useCallback(async () => {
+    setErr(null)
 
-  useEffect(() => {
-    ;(async () => {
-      setErr(null)
-      // Event
-      const { data: e, error: ee } = await supabase
-        .from('events')
-        .select('id,name,type,status,start_date,end_date,team_id,course_id,course_tee_id')
-        .eq('id', eventId)
-        .single()
-      if (ee) { setErr(ee.message); return }
-      setEvt(e as EventRow)
+    // Event
+    const { data: e, error: ee } = await supabase
+      .from<EventRow>('events')
+      .select('id,name,type,status,start_date,end_date,team_id,course_id,course_tee_id')
+      .eq('id', eventId)
+      .single()
+    if (ee) { setErr(ee.message); return }
+    setEvt(e)
 
-      // Course + Tee (optional)
-      if (e.course_id) {
-        const { data: c } = await supabase
-          .from('courses').select('name,city,state').eq('id', e.course_id).maybeSingle()
-        if (c) setCourse(c as any)
-      }
-      if (e.course_tee_id) {
-        const { data: t } = await supabase
-          .from('course_tees')
-          .select('tee_name,color,course_rating,slope_rating')
-          .eq('id', e.course_tee_id).maybeSingle()
-        if (t) setTee(t as any)
-      }
+    // Course + Tee (optional)
+    if (e.course_id) {
+      const { data: c } = await supabase
+        .from<Course>('courses')
+        .select('name,city,state')
+        .eq('id', e.course_id)
+        .maybeSingle()
+      if (c) setCourse(c)
+    } else { setCourse(null) }
 
-      // Entries
-      const { data: en, error: enErr } = await supabase
-        .from('event_entries')
-        .select('player_id')
-        .eq('event_id', eventId)
-      if (enErr) { setErr(enErr.message); return }
-      setEntries((en ?? []) as Entry[])
-      const pids = ((en ?? []) as Entry[]).map(x => x.player_id)
-      if (pids.length) {
-        const { data: ps } = await supabase.from('players').select('id,display_name').in('id', pids as any)
-        const map: Record<string, Player> = {}
-        for (const row of (ps ?? []) as Player[]) map[row.id] = row
-        setPlayers(map)
-      }
+    if (e.course_tee_id) {
+      const { data: t } = await supabase
+        .from<Tee>('course_tees')
+        .select('tee_name,color,course_rating,slope_rating')
+        .eq('id', e.course_tee_id)
+        .maybeSingle()
+      if (t) setTee(t)
+    } else { setTee(null) }
 
-      // Rounds for this event
-      const { data: rd } = await supabase
-        .from('rounds')
-        .select('id,player_id,start_time,status')
-        .eq('event_id', eventId)
-        .order('start_time', { ascending: true })
-      const rds = (rd ?? []) as Round[]
-      setRounds(rds)
+    // Entries
+    const { data: en, error: enErr } = await supabase
+      .from<Entry>('event_entries')
+      .select('player_id')
+      .eq('event_id', eventId)
+    if (enErr) { setErr(enErr.message); return }
+    const entryList = en ?? []
+    setEntries(entryList)
 
-      // Totals for those rounds
-      if (rds.length) {
-        const { data: vt } = await supabase
-          .from('v_round_totals')
-          .select('round_id,strokes,to_par')
-          .in('round_id', rds.map(r => r.id) as any)
-        const tmap: Record<string, VTotal> = {}
-        for (const row of (vt ?? []) as VTotal[]) tmap[row.round_id] = row
-        setTotals(tmap)
-      } else {
-        setTotals({})
-      }
-    })()
+    // Players for entries
+    const pids = entryList.map(x => x.player_id)
+    if (pids.length) {
+      const { data: ps } = await supabase
+        .from<Player>('players')
+        .select('id,display_name')
+        .in('id', pids)
+      const map: Record<string, Player> = {}
+      for (const row of ps ?? []) map[row.id] = row
+      setPlayers(map)
+    } else {
+      setPlayers({})
+    }
+
+    // Rounds for this event
+    const { data: rd } = await supabase
+      .from<Round>('rounds')
+      .select('id,player_id,start_time,status')
+      .eq('event_id', eventId)
+      .order('start_time', { ascending: true })
+    const rds = rd ?? []
+    setRounds(rds)
+
+    // Totals for those rounds
+    if (rds.length) {
+      const { data: vt } = await supabase
+        .from<VTotal>('v_round_totals')
+        .select('round_id,strokes,to_par')
+        .in('round_id', rds.map(r => r.id))
+      const tmap: Record<string, VTotal> = {}
+      for (const row of vt ?? []) tmap[row.round_id] = row
+      setTotals(tmap)
+    } else {
+      setTotals({})
+    }
   }, [eventId])
+
+  useEffect(() => { loadAll() }, [loadAll])
 
   // Group rounds per player, sorted by start_time
   const roundsByPlayer = useMemo(() => {
@@ -105,7 +126,7 @@ export default function EventLeaderboardPage() {
       map[pid].push(r)
     }
     for (const pid of Object.keys(map)) {
-      map[pid].sort((a,b) => (a.start_time ?? '').localeCompare(b.start_time ?? ''))
+      map[pid].sort((a, b) => (a.start_time ?? '').localeCompare(b.start_time ?? ''))
     }
     return map
   }, [rounds])
@@ -119,13 +140,13 @@ export default function EventLeaderboardPage() {
   const maxRounds = useMemo(() => {
     let m = 0
     for (const pid of playerRows) m = Math.max(m, (roundsByPlayer[pid]?.length ?? 0))
-    return Math.min(Math.max(m, 1), 4) // show up to 4 rounds
+    return Math.min(Math.max(m, 1), 4)
   }, [playerRows, roundsByPlayer])
 
   type Row = {
     player_id: string; name: string
-    r: ({ to_par: number|null; strokes: number|null; round_id: string|null })[]
-    total_to_par: number|null; total_strokes: number|null
+    r: { to_par: number | null; strokes: number | null; round_id: string | null }[]
+    total_to_par: number | null; total_strokes: number | null
   }
 
   const rows: Row[] = useMemo(() => {
@@ -133,8 +154,10 @@ export default function EventLeaderboardPage() {
     for (const pid of playerRows) {
       const prs = roundsByPlayer[pid] ?? []
       const cells: Row['r'] = []
-      let sumPar = 0; let sumSt = 0; let haveAny = false
-      for (let i=0;i<maxRounds;i++) {
+      let sumPar = 0
+      let sumSt = 0
+      let haveAny = false
+      for (let i = 0; i < maxRounds; i++) {
         const r = prs[i]
         if (r) {
           const vt = totals[r.id]
@@ -155,15 +178,14 @@ export default function EventLeaderboardPage() {
         total_strokes: haveAny ? sumSt : null
       })
     }
-    // sort by total_to_par, then total_strokes
-    out.sort((a,b) => {
+    out.sort((a, b) => {
       const ap = a.total_to_par; const bp = b.total_to_par
       if (ap == null && bp == null) return a.name.localeCompare(b.name)
       if (ap == null) return 1
       if (bp == null) return -1
       if (ap !== bp) return ap - bp
-      const as = a.total_strokes ?? Infinity
-      const bs = b.total_strokes ?? Infinity
+      const as = a.total_strokes ?? Number.POSITIVE_INFINITY
+      const bs = b.total_strokes ?? Number.POSITIVE_INFINITY
       return as - bs
     })
     return out
@@ -180,7 +202,13 @@ export default function EventLeaderboardPage() {
           </div>
         </div>
         <div className="flex gap-2">
-          <Link className="rounded border px-3 py-1.5" href={`/events/${eventId}/manage`}>Manage</Link>
+          <button
+            onClick={() => router.push(`/events/${eventId}/manage`)}
+            className="rounded border px-3 py-1.5"
+          >
+            Manage
+          </button>
+          <Link className="rounded border px-3 py-1.5" href="/events">Events</Link>
         </div>
       </div>
 
@@ -195,7 +223,7 @@ export default function EventLeaderboardPage() {
             <div className="mt-0.5">
               <span className="font-medium">Tee:</span>{' '}
               {tee?.tee_name ?? '—'}{' '}
-              {tee?.color ? <span className="inline-block h-3 w-3 rounded-full border align-middle" style={{ backgroundColor: tee.color }} /> : null}
+              {tee?.color ? <span className="ml-1 inline-block h-3 w-3 rounded-full border align-middle" style={{ backgroundColor: tee.color ?? undefined }} /> : null}
               {tee?.course_rating ? <> • <span className="font-medium">CR/SR:</span> {tee.course_rating}/{tee?.slope_rating ?? '—'}</> : null}
             </div>
           </div>
@@ -214,15 +242,15 @@ export default function EventLeaderboardPage() {
           <thead className="bg-gray-50">
             <tr>
               <th className="px-3 py-2 text-left">Player</th>
-              {Array.from({ length: maxRounds }, (_,i)=>(
-                <th key={i} className="px-3 py-2 text-right">R{i+1}</th>
+              {Array.from({ length: maxRounds }, (_, i) => (
+                <th key={i} className="px-3 py-2 text-right">R{i + 1}</th>
               ))}
               <th className="px-3 py-2 text-right">Total</th>
             </tr>
           </thead>
           <tbody>
             {rows.map((row, idx) => (
-              <tr key={row.player_id || idx} className="border-t">
+              <tr key={row.player_id || String(idx)} className="border-t">
                 <td className="px-3 py-2">{row.name}</td>
                 {row.r.map((cell, i) => (
                   <td key={i} className="px-3 py-2 text-right">
@@ -244,7 +272,7 @@ export default function EventLeaderboardPage() {
   )
 }
 
-function fmtRange(a?: string|null, b?: string|null) {
+function fmtRange(a?: string | null, b?: string | null) {
   if (!a && !b) return '—'
   if (a && !b) return a
   if (!a && b) return b

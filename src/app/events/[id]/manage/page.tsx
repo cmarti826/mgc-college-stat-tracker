@@ -5,12 +5,15 @@ import { useParams, useRouter } from 'next/navigation'
 import Link from 'next/link'
 import { supabase } from '@/lib/supabaseClient'
 
+type EventType = 'qualifying'|'tournament'|'practice'
+type EventStatus = 'draft'|'live'|'final'
+
 type EventRow = {
   id: string
   name: string
   team_id: string
-  type: 'qualifying'|'tournament'|'practice'
-  status: 'draft'|'live'|'final'
+  type: EventType
+  status: EventStatus
   start_date: string | null
   end_date: string | null
   course_id: string | null
@@ -47,68 +50,52 @@ export default function ManageEventPage() {
 
     // event
     const { data: e, error: ee } = await supabase
-      .from<EventRow>('events')
+      .from('events')
       .select('id,name,team_id,type,status,start_date,end_date,course_id,course_tee_id')
       .eq('id', eventId)
       .single()
     if (ee) { setErr(ee.message); return }
-    setEvt(e)
+    setEvt(e as EventRow)
 
-    // courses list
-    const { data: cs } = await supabase
-      .from<Course>('courses')
-      .select('id,name,city,state')
-      .order('name')
-    setCourses(cs ?? [])
+    // courses
+    const { data: cs } = await supabase.from('courses').select('id,name,city,state').order('name')
+    setCourses((cs ?? []) as Course[])
 
     // tees for selected course
-    if (e.course_id) {
+    if ((e as EventRow).course_id) {
       const { data: ts } = await supabase
-        .from<Tee>('course_tees')
+        .from('course_tees')
         .select('id,tee_name,color')
-        .eq('course_id', e.course_id)
+        .eq('course_id', (e as EventRow).course_id)
         .order('tee_name')
-      setTees(ts ?? [])
+      setTees((ts ?? []) as Tee[])
     } else {
       setTees([])
     }
 
     // entries
-    const { data: en } = await supabase
-      .from<Entry>('event_entries')
-      .select('player_id')
-      .eq('event_id', eventId)
-    const ens = en ?? []
+    const { data: en } = await supabase.from('event_entries').select('player_id').eq('event_id', eventId)
+    const ens = (en ?? []) as Entry[]
     setEntries(ens)
 
     // players for entries
     const pids = ens.map(x => x.player_id)
     if (pids.length) {
-      const { data: ps } = await supabase
-        .from<Player>('players')
-        .select('id,display_name')
-        .in('id', pids)
+      const { data: ps } = await supabase.from('players').select('id,display_name').in('id', pids)
       const map: Record<string, Player> = {}
-      for (const row of ps ?? []) map[row.id] = row
+      for (const row of (ps ?? []) as Player[]) map[row.id] = row
       setPlayers(map)
     } else {
       setPlayers({})
     }
 
     // team roster for add dropdown
-    if (e.team_id) {
-      const { data: tr } = await supabase
-        .from<{ player_id: string }>('team_roster')
-        .select('player_id')
-        .eq('team_id', e.team_id)
-      const trIds = (tr ?? []).map(x => x.player_id)
+    if ((e as EventRow).team_id) {
+      const { data: tr } = await supabase.from('team_roster').select('player_id').eq('team_id', (e as EventRow).team_id)
+      const trIds = (tr ?? []).map(x => (x as { player_id: string }).player_id)
       if (trIds.length) {
-        const { data: rp } = await supabase
-          .from<Player>('players')
-          .select('id,display_name')
-          .in('id', trIds)
-          .order('display_name')
-        const list = rp ?? []
+        const { data: rp } = await supabase.from('players').select('id,display_name').in('id', trIds).order('display_name')
+        const list = (rp ?? []) as Player[]
         setRoster(list)
         setAddPid(prev => (list.some(p => p.id === prev) ? prev : ''))
       } else {
@@ -118,11 +105,11 @@ export default function ManageEventPage() {
 
     // rounds for this event
     const { data: rd } = await supabase
-      .from<Round>('rounds')
+      .from('rounds')
       .select('id,player_id,status,start_time')
       .eq('event_id', eventId)
       .order('start_time', { ascending: false })
-    setRounds(rd ?? [])
+    setRounds((rd ?? []) as Round[])
   }, [eventId])
 
   useEffect(() => { loadAll() }, [loadAll])
@@ -131,12 +118,8 @@ export default function ManageEventPage() {
     if (!evt) return
     setEvt({ ...evt, course_id: cid || null, course_tee_id: null })
     if (cid) {
-      const { data: ts } = await supabase
-        .from<Tee>('course_tees')
-        .select('id,tee_name,color')
-        .eq('course_id', cid)
-        .order('tee_name')
-      setTees(ts ?? [])
+      const { data: ts } = await supabase.from('course_tees').select('id,tee_name,color').eq('course_id', cid).order('tee_name')
+      setTees((ts ?? []) as Tee[])
     } else {
       setTees([])
     }
@@ -154,7 +137,7 @@ export default function ManageEventPage() {
       const { error } = await supabase.from('events').update(payload).eq('id', evt.id)
       if (error) throw error
       setInfo('Event saved.')
-    } catch (e: unknown) {
+    } catch (e) {
       setErr(e instanceof Error ? e.message : 'Failed to save event')
     } finally {
       setSaving(false)
@@ -169,7 +152,7 @@ export default function ManageEventPage() {
       if (error && !String(error.message).toLowerCase().includes('duplicate')) throw error
       setAddPid('')
       await loadAll()
-    } catch (e: unknown) {
+    } catch (e) {
       setErr(e instanceof Error ? e.message : 'Failed to add entry')
     } finally {
       setSaving(false)
@@ -183,7 +166,7 @@ export default function ManageEventPage() {
       const { error } = await supabase.from('event_entries').delete().eq('event_id', evt.id).eq('player_id', pid)
       if (error) throw error
       await loadAll()
-    } catch (e: unknown) {
+    } catch (e) {
       setErr(e instanceof Error ? e.message : 'Failed to remove entry')
     } finally {
       setSaving(false)
@@ -206,13 +189,13 @@ export default function ManageEventPage() {
         played_at: nowIso.slice(0, 10)
       }
       const { data, error } = await supabase
-        .from<{ id: string }>('rounds')
+        .from('rounds')
         .insert(payload)
         .select('id')
         .single()
       if (error) throw error
-      router.push(`/rounds/${data!.id}`)
-    } catch (e: unknown) {
+      router.push(`/rounds/${(data as { id: string }).id}`)
+    } catch (e) {
       setErr(e instanceof Error ? e.message : 'Failed to start round')
     } finally {
       setSaving(false)
@@ -243,14 +226,14 @@ export default function ManageEventPage() {
         <div className="rounded border bg-white p-3">
           <div className="grid gap-3 md:grid-cols-2 lg:grid-cols-4">
             <Field label="Type">
-              <select className="w-full rounded border px-2 py-1" value={evt.type} onChange={e => setEvt({ ...evt, type: e.target.value as EventRow['type'] })}>
+              <select className="w-full rounded border px-2 py-1" value={evt.type} onChange={e => setEvt({ ...evt, type: e.target.value as EventType })}>
                 <option value="qualifying">Qualifying</option>
                 <option value="tournament">Tournament</option>
                 <option value="practice">Practice</option>
               </select>
             </Field>
             <Field label="Status">
-              <select className="w-full rounded border px-2 py-1" value={evt.status} onChange={e => setEvt({ ...evt, status: e.target.value as EventRow['status'] })}>
+              <select className="w-full rounded border px-2 py-1" value={evt.status} onChange={e => setEvt({ ...evt, status: e.target.value as EventStatus })}>
                 <option value="draft">Draft</option>
                 <option value="live">Live</option>
                 <option value="final">Final</option>

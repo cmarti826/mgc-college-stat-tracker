@@ -5,11 +5,13 @@ import { useParams, useRouter } from 'next/navigation'
 import Link from 'next/link'
 import { supabase } from '@/lib/supabaseClient'
 
+type EventType = 'qualifying'|'tournament'|'practice'
+type EventStatus = 'draft'|'live'|'final'
 type EventRow = {
   id: string
   name: string
-  type: 'qualifying'|'tournament'|'practice'
-  status: 'draft'|'live'|'final'
+  type: EventType
+  status: EventStatus
   start_date: string | null
   end_date: string | null
   team_id: string
@@ -43,72 +45,70 @@ export default function EventLeaderboardPage() {
 
     // Event
     const { data: e, error: ee } = await supabase
-      .from<EventRow>('events')
+      .from('events')
       .select('id,name,type,status,start_date,end_date,team_id,course_id,course_tee_id')
       .eq('id', eventId)
       .single()
     if (ee) { setErr(ee.message); return }
-    setEvt(e)
+    setEvt(e as EventRow)
 
     // Course + Tee (optional)
-    if (e.course_id) {
+    if ((e as EventRow).course_id) {
       const { data: c } = await supabase
-        .from<Course>('courses')
+        .from('courses')
         .select('name,city,state')
-        .eq('id', e.course_id)
+        .eq('id', (e as EventRow).course_id)
         .maybeSingle()
-      if (c) setCourse(c)
+      if (c) setCourse(c as Course)
     } else { setCourse(null) }
 
-    if (e.course_tee_id) {
+    if ((e as EventRow).course_tee_id) {
       const { data: t } = await supabase
-        .from<Tee>('course_tees')
+        .from('course_tees')
         .select('tee_name,color,course_rating,slope_rating')
-        .eq('id', e.course_tee_id)
+        .eq('id', (e as EventRow).course_tee_id)
         .maybeSingle()
-      if (t) setTee(t)
+      if (t) setTee(t as Tee)
     } else { setTee(null) }
 
     // Entries
     const { data: en, error: enErr } = await supabase
-      .from<Entry>('event_entries')
+      .from('event_entries')
       .select('player_id')
       .eq('event_id', eventId)
     if (enErr) { setErr(enErr.message); return }
-    const entryList = en ?? []
+    const entryList = (en ?? []) as Entry[]
     setEntries(entryList)
 
-    // Players for entries
+    // Players
     const pids = entryList.map(x => x.player_id)
     if (pids.length) {
       const { data: ps } = await supabase
-        .from<Player>('players')
+        .from('players')
         .select('id,display_name')
         .in('id', pids)
       const map: Record<string, Player> = {}
-      for (const row of ps ?? []) map[row.id] = row
+      for (const row of (ps ?? []) as Player[]) map[row.id] = row
       setPlayers(map)
-    } else {
-      setPlayers({})
-    }
+    } else setPlayers({})
 
-    // Rounds for this event
+    // Rounds
     const { data: rd } = await supabase
-      .from<Round>('rounds')
+      .from('rounds')
       .select('id,player_id,start_time,status')
       .eq('event_id', eventId)
       .order('start_time', { ascending: true })
-    const rds = rd ?? []
+    const rds = (rd ?? []) as Round[]
     setRounds(rds)
 
-    // Totals for those rounds
+    // Totals
     if (rds.length) {
       const { data: vt } = await supabase
-        .from<VTotal>('v_round_totals')
+        .from('v_round_totals')
         .select('round_id,strokes,to_par')
         .in('round_id', rds.map(r => r.id))
       const tmap: Record<string, VTotal> = {}
-      for (const row of vt ?? []) tmap[row.round_id] = row
+      for (const row of (vt ?? []) as VTotal[]) tmap[row.round_id] = row
       setTotals(tmap)
     } else {
       setTotals({})
@@ -117,7 +117,7 @@ export default function EventLeaderboardPage() {
 
   useEffect(() => { loadAll() }, [loadAll])
 
-  // Group rounds per player, sorted by start_time
+  // Group rounds per player
   const roundsByPlayer = useMemo(() => {
     const map: Record<string, Round[]> = {}
     for (const r of rounds) {

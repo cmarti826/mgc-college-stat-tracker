@@ -37,48 +37,38 @@ type EventRow = {
 }
 
 export default function HomePage() {
-  // auth / player
   const [userId, setUserId] = useState<string | null>(null)
   const [player, setPlayer] = useState<PlayerRow | null>(null)
 
-  // active round
   const [activeRound, setActiveRound] = useState<RoundRow | null>(null)
   const [activeCourse, setActiveCourse] = useState<CourseRow | null>(null)
   const [activeTee, setActiveTee] = useState<TeeRow | null>(null)
   const [nextHole, setNextHole] = useState<number>(1)
 
-  // recent rounds (mine)
   const [recent, setRecent] = useState<Array<RoundRow & { total?: VRoundTotal }>>([])
 
-  // team membership + latest event
   const [teams, setTeams] = useState<TeamRow[]>([])
   const [latestEvent, setLatestEvent] = useState<EventRow | null>(null)
 
-  // errors
   const [err, setErr] = useState<string | null>(null)
 
   useEffect(() => {
     let cancelled = false
     ;(async () => {
-      // who am I?
       const { data: u } = await supabase.auth.getUser()
       const uid = u?.user?.id ?? null
       if (cancelled) return
       setUserId(uid)
-
       if (!uid) return
 
-      // find my player row
       const { data: p } = await supabase
         .from('players')
         .select('id,display_name')
         .eq('user_id', uid)
         .maybeSingle()
-
       if (cancelled) return
       if (p) setPlayer(p as PlayerRow)
 
-      // load dashboard pieces in parallel
       await Promise.all([
         loadActiveRound(p?.id ?? null, setActiveRound, setActiveCourse, setActiveTee, setNextHole, setErr),
         loadRecentRounds(p?.id ?? null, setRecent, setErr),
@@ -102,13 +92,8 @@ export default function HomePage() {
         </div>
       </div>
 
-      {err && (
-        <div className="rounded border border-red-200 bg-red-50 p-3 text-red-700">
-          {err}
-        </div>
-      )}
+      {err && <div className="rounded border border-red-200 bg-red-50 p-3 text-red-700">{err}</div>}
 
-      {/* Top cards */}
       <div className="grid gap-4 md:grid-cols-2">
         {/* My Active Round */}
         <div className="rounded border bg-white p-4">
@@ -125,32 +110,21 @@ export default function HomePage() {
               <div className="text-sm text-gray-700">
                 {activeCourse?.name ?? 'Course'}
                 {activeCourse?.city || activeCourse?.state ? (
-                  <> • {[activeCourse.city, activeCourse.state].filter(Boolean).join(', ')}</>
+                  <> • {[activeCourse?.city ?? '', activeCourse?.state ?? ''].filter(Boolean).join(', ')}</>
                 ) : null}
               </div>
               <div className="text-xs text-gray-600">
                 Tee: {activeTee?.tee_name ?? '—'}
                 {activeTee?.color ? (
-                  <span
-                    className="ml-1 inline-block h-3 w-3 rounded-full border align-middle"
-                    style={{ backgroundColor: activeTee.color ?? undefined }}
-                  />
+                  <span className="ml-1 inline-block h-3 w-3 rounded-full border align-middle" style={{ backgroundColor: activeTee.color ?? undefined }} />
                 ) : null}
-                {activeTee?.course_rating ? <> • {activeTee.course_rating}/{activeTee.slope_rating ?? '—'}</> : null}
+                {activeTee?.course_rating ? <> • {String(activeTee.course_rating)}/{String(activeTee.slope_rating ?? '—')}</> : null}
               </div>
               <div className="mt-3 flex gap-2">
-                <Link
-                  prefetch={false}
-                  className="rounded bg-[#0B6B3A] px-4 py-2 text-white"
-                  href={`/rounds/${activeRound.id}/holes/${nextHole}`}
-                >
+                <Link prefetch={false} className="rounded bg-[#0B6B3A] px-4 py-2 text-white" href={`/rounds/${activeRound.id}/holes/${nextHole}`}>
                   Resume on Hole {nextHole}
                 </Link>
-                <Link
-                  prefetch={false}
-                  className="rounded border px-4 py-2"
-                  href={`/rounds/${activeRound.id}`}
-                >
+                <Link prefetch={false} className="rounded border px-4 py-2" href={`/rounds/${activeRound.id}`}>
                   Details
                 </Link>
               </div>
@@ -192,9 +166,8 @@ export default function HomePage() {
         </div>
       </div>
 
-      {/* Middle cards */}
       <div className="grid gap-4 lg:grid-cols-2">
-        {/* Recent Rounds (mine) */}
+        {/* Recent Rounds */}
         <div className="rounded border bg-white">
           <div className="flex items-center justify-between border-b px-3 py-2">
             <div className="font-semibold">Recent Rounds {player ? `• ${player.display_name}` : ''}</div>
@@ -208,7 +181,7 @@ export default function HomePage() {
             {recent.length ? recent.map(r => (
               <div key={r.id} className="flex items-center justify-between px-3 py-2 text-sm">
                 <div className="min-w-0">
-                  <div className="truncate">{r.start_time?.slice(0, 10) ?? '—'} • {r.status}</div>
+                  <div className="truncate">{r.start_time ? r.start_time.slice(0, 10) : '—'} • {r.status}</div>
                   <div className="text-xs text-gray-600">
                     {r.total?.strokes != null ? `${r.total.strokes} strokes` : '—'} {r.total?.to_par != null ? `• ${fmtPar(r.total.to_par)}` : ''}
                   </div>
@@ -224,7 +197,7 @@ export default function HomePage() {
           </div>
         </div>
 
-        {/* Team events (if coach/admin) */}
+        {/* Team events */}
         <div className="rounded border bg-white">
           <div className="flex items-center justify-between border-b px-3 py-2">
             <div className="font-semibold">My Teams & Events</div>
@@ -237,22 +210,19 @@ export default function HomePage() {
   )
 }
 
-/* ---------- helpers & subcomponents ---------- */
-
-/** Always return a string; normalize null/undefined to '' so TS is happy. */
-function formatRange(a?: string | null, b?: string | null): string {
+/** Safe range formatter that ALWAYS returns a string. */
+function formatRange(a: string | null, b: string | null): string {
   const sa = a ?? ''
   const sb = b ?? ''
   if (!sa && !sb) return '—'
   if (sa && !sb) return sa
   if (!sa && sb) return sb
-  return sa === sb ? sa : `${sa} → ${sb}`
+  return sa === sb ? sa : (sa + ' → ' + sb)
 }
 
-/** Format to-par; handle null/undefined defensively. */
+/** Safe to-par formatter that ALWAYS returns a string. */
 function fmtPar(v: number | null | undefined): string {
-  if (v == null) return '—'
-  return v > 0 ? `+${v}` : `${v}`
+  return v == null ? '—' : (v > 0 ? ('+' + String(v)) : String(v))
 }
 
 async function loadActiveRound(
@@ -295,7 +265,6 @@ async function loadActiveRound(
     } else setActiveTee(null)
 
     if (round) {
-      // last completed hole => next hole
       const { data: h } = await supabase
         .from('round_holes')
         .select('hole_number')
@@ -304,8 +273,7 @@ async function loadActiveRound(
         .limit(1)
         .maybeSingle()
       const last = (h ?? null) as RoundHoleRow | null
-      const next = Math.min(18, (last?.hole_number ?? 0) + 1)
-      setNextHole(next)
+      setNextHole(Math.min(18, (last?.hole_number ?? 0) + 1))
     } else {
       setNextHole(1)
     }
@@ -351,7 +319,6 @@ async function loadTeamsAndLatestEvent(
   setErr: (e: string | null) => void
 ) {
   try {
-    // teams I belong to
     const { data: tm } = await supabase
       .from('team_members')
       .select('team_id,role')
@@ -366,7 +333,6 @@ async function loadTeamsAndLatestEvent(
       .in('id', tids)
     setTeams(((ts ?? []) as TeamRow[]).sort((a, b) => a.name.localeCompare(b.name)))
 
-    // latest event across my teams
     const { data: ev } = await supabase
       .from('events')
       .select('id,team_id,name,type,status,start_date,end_date,course_id,course_tee_id')

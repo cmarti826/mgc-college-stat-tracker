@@ -2,7 +2,6 @@
 
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import Link from 'next/link'
-import { useRouter } from 'next/navigation'
 import { supabase } from '@/lib/supabaseClient'
 
 type Team = { id: string; name: string }
@@ -23,29 +22,22 @@ type Course = { id: string; name: string; city: string | null; state: string | n
 type Tee = { id: string; tee_name: string | null; color: string | null; course_rating: number | null; slope_rating: number | null }
 
 export default function EventsPage() {
-  const router = useRouter()
-
-  // teams
   const [teams, setTeams] = useState<Team[]>([])
   const [teamId, setTeamId] = useState<string>('')
 
-  // events
   const [events, setEvents] = useState<EventRow[]>([])
 
-  // create form
   const [name, setName] = useState('')
   const [type, setType] = useState<EventType>('qualifying')
   const [status, setStatus] = useState<EventStatus>('live')
   const [start, setStart] = useState<string>('')
   const [end, setEnd] = useState<string>('')
 
-  // optional course/tee
   const [courses, setCourses] = useState<Course[]>([])
   const [courseId, setCourseId] = useState<string>('')
   const [tees, setTees] = useState<Tee[]>([])
   const [teeId, setTeeId] = useState<string>('')
 
-  // ui
   const [saving, setSaving] = useState(false)
   const [err, setErr] = useState<string | null>(null)
   const [info, setInfo] = useState<string | null>(null)
@@ -196,6 +188,7 @@ export default function EventsPage() {
             className="rounded bg-[#0B6B3A] px-4 py-2 text-white disabled:opacity-50"
             onClick={createEvent}
             disabled={saving || !teamId || !name.trim()}
+            type="button"
           >
             {saving ? 'Creating…' : 'Create Event'}
           </button>
@@ -206,14 +199,14 @@ export default function EventsPage() {
       <div className="rounded border bg-white">
         <div className="flex items-center justify-between border-b px-3 py-2">
           <div className="font-semibold">Events for {teamName}</div>
-          <Link className="text-sm underline" href="/reports/team">Team Reports</Link>
+          <Link prefetch={false} className="text-sm underline" href="/reports/team">Team Reports</Link>
         </div>
         <div className="divide-y">
           {events.length ? events.map(e => (
             <div key={e.id} className="flex flex-wrap items-center justify-between gap-3 px-3 py-2">
               <div>
                 <div className="font-medium">
-                  <Link href={`/events/${e.id}`} className="text-[#0033A0] underline">
+                  <Link prefetch={false} href={`/events/${e.id}`} className="text-[#0033A0] underline">
                     {e.name}
                   </Link>
                 </div>
@@ -222,8 +215,8 @@ export default function EventsPage() {
                 </div>
               </div>
               <div className="flex gap-3 text-sm">
-                <button onClick={() => router.push(`/events/${e.id}`)} className="underline">Leaderboard</button>
-                <button onClick={() => router.push(`/events/${e.id}/manage`)} className="underline">Manage</button>
+                <Link prefetch={false} href={`/events/${e.id}`} className="underline">Leaderboard</Link>
+                <Link prefetch={false} href={`/events/${e.id}/manage`} className="underline">Manage</Link>
               </div>
             </div>
           )) : (

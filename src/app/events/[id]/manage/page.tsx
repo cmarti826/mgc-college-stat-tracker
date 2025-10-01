@@ -1,7 +1,7 @@
 'use client'
 
 import { useCallback, useEffect, useState } from 'react'
-import { useParams, useRouter } from 'next/navigation'
+import { useParams } from 'next/navigation'
 import Link from 'next/link'
 import { supabase } from '@/lib/supabaseClient'
 
@@ -28,7 +28,6 @@ type Round = { id: string; player_id: string | null; status: string; start_time:
 export default function ManageEventPage() {
   const { id } = useParams<{ id: string }>()
   const eventId = id
-  const router = useRouter()
 
   const [evt, setEvt] = useState<EventRow | null>(null)
   const [err, setErr] = useState<string | null>(null)
@@ -194,13 +193,15 @@ export default function ManageEventPage() {
         .select('id')
         .single()
       if (error) throw error
-      router.push(`/rounds/${(data as { id: string }).id}`)
+      const rid = (data as { id: string }).id
+      // Go straight to the shots entry page (Hole 1)
+      window.location.assign(`/rounds/${rid}/holes/1`)
     } catch (e) {
       setErr(e instanceof Error ? e.message : 'Failed to start round')
     } finally {
       setSaving(false)
     }
-  }, [evt, router])
+  }, [evt])
 
   return (
     <div className="space-y-4">
@@ -213,8 +214,8 @@ export default function ManageEventPage() {
           </div>
         </div>
         <div className="flex gap-2">
-          <button className="rounded border px-3 py-1.5" onClick={() => router.push(`/events/${eventId}`)}>Leaderboard</button>
-          <Link className="rounded border px-3 py-1.5" href="/events">Events</Link>
+          <Link prefetch={false} className="rounded border px-3 py-1.5" href={`/events/${eventId}`}>Leaderboard</Link>
+          <Link prefetch={false} className="rounded border px-3 py-1.5" href="/events">Events</Link>
         </div>
       </div>
 
@@ -268,7 +269,7 @@ export default function ManageEventPage() {
             </Field>
           </div>
           <div className="mt-3">
-            <button onClick={saveEvent} disabled={saving} className="rounded bg-[#0033A0] px-4 py-2 text-white disabled:opacity-50">
+            <button onClick={saveEvent} disabled={saving} className="rounded bg-[#0033A0] px-4 py-2 text-white disabled:opacity-50" type="button">
               {saving ? 'Saving…' : 'Save Event'}
             </button>
           </div>
@@ -290,7 +291,7 @@ export default function ManageEventPage() {
                 .filter(r => !entries.some(en => en.player_id === r.id))
                 .map(p => <option key={p.id} value={p.id}>{p.display_name}</option>)}
             </select>
-            <button onClick={addEntry} disabled={saving || !addPid} className="rounded border px-3 py-1.5">Add</button>
+            <button onClick={addEntry} disabled={saving || !addPid} className="rounded border px-3 py-1.5" type="button">Add</button>
           </div>
 
           {/* List entries */}
@@ -305,21 +306,22 @@ export default function ManageEventPage() {
                   <div className="flex items-center gap-2 text-sm">
                     {active ? (
                       <>
-                        <button
-                          onClick={() => router.push(`/rounds/${active.id}`)}
+                        <Link
+                          prefetch={false}
+                          href={`/rounds/${active.id}/holes/1`}
                           className="underline text-[#0033A0]"
                         >
                           Open Round
-                        </button>
+                        </Link>
                         <span className="text-gray-600">({prounds.length} total)</span>
                       </>
                     ) : (
                       <>
-                        <button onClick={() => startRound(e.player_id)} className="rounded bg-[#0B6B3A] px-3 py-1.5 text-white">Start Round</button>
+                        <button onClick={() => startRound(e.player_id)} className="rounded bg-[#0B6B3A] px-3 py-1.5 text-white" type="button">Start Round</button>
                         <span className="text-gray-600">({prounds.length} total)</span>
                       </>
                     )}
-                    <button onClick={() => removeEntry(e.player_id)} className="rounded border px-3 py-1.5">Remove</button>
+                    <button onClick={() => removeEntry(e.player_id)} className="rounded border px-3 py-1.5" type="button">Remove</button>
                   </div>
                 </div>
               )
@@ -334,7 +336,7 @@ export default function ManageEventPage() {
       <div className="rounded border bg-white">
         <div className="flex items-center justify-between border-b px-3 py-2">
           <div className="font-semibold">All Rounds</div>
-          <button className="text-sm underline" onClick={() => router.push(`/events/${eventId}`)}>Leaderboard</button>
+          <Link prefetch={false} className="text-sm underline" href={`/events/${eventId}`}>Leaderboard</Link>
         </div>
         <div className="divide-y">
           {rounds.length ? rounds.map(r => (
@@ -343,7 +345,7 @@ export default function ManageEventPage() {
                 <span className="font-medium">{players[r.player_id ?? '']?.display_name ?? r.player_id ?? '—'}</span>
                 <span className="ml-2 text-gray-600">{r.start_time?.slice(0, 19).replace('T', ' ') ?? '—'} • {r.status}</span>
               </div>
-              <button onClick={() => router.push(`/rounds/${r.id}`)} className="text-sm underline text-[#0033A0]">Open</button>
+              <Link prefetch={false} href={`/rounds/${r.id}/holes/1`} className="text-sm underline text-[#0033A0]">Open</Link>
             </div>
           )) : (
             <div className="px-3 py-4 text-sm text-gray-600">No rounds yet.</div>

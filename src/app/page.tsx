@@ -88,10 +88,7 @@ export default function HomePage() {
     return () => { cancelled = true }
   }, [])
 
-  const coachTeams = useMemo(
-    () => teams, // we already filtered to teams you belong to
-    [teams]
-  )
+  const coachTeams = useMemo(() => teams, [teams])
 
   return (
     <div className="space-y-6">
@@ -134,7 +131,10 @@ export default function HomePage() {
               <div className="text-xs text-gray-600">
                 Tee: {activeTee?.tee_name ?? '—'}
                 {activeTee?.color ? (
-                  <span className="ml-1 inline-block h-3 w-3 rounded-full border align-middle" style={{ backgroundColor: activeTee.color ?? undefined }} />
+                  <span
+                    className="ml-1 inline-block h-3 w-3 rounded-full border align-middle"
+                    style={{ backgroundColor: activeTee.color ?? undefined }}
+                  />
                 ) : null}
                 {activeTee?.course_rating ? <> • {activeTee.course_rating}/{activeTee.slope_rating ?? '—'}</> : null}
               </div>
@@ -239,13 +239,21 @@ export default function HomePage() {
 
 /* ---------- helpers & subcomponents ---------- */
 
-function formatRange(a: string | null, b: string | null): string {
-  if (!a && !b) return '—'
-  if (a && !b) return a
-  if (!a && b) return b
-  return a === b ? a : `${a} → ${b}`
+/** Always return a string; normalize null/undefined to '' so TS is happy. */
+function formatRange(a?: string | null, b?: string | null): string {
+  const sa = a ?? ''
+  const sb = b ?? ''
+  if (!sa && !sb) return '—'
+  if (sa && !sb) return sa
+  if (!sa && sb) return sb
+  return sa === sb ? sa : `${sa} → ${sb}`
 }
-function fmtPar(v: number) { return v > 0 ? `+${v}` : String(v) }
+
+/** Format to-par; handle null/undefined defensively. */
+function fmtPar(v: number | null | undefined): string {
+  if (v == null) return '—'
+  return v > 0 ? `+${v}` : `${v}`
+}
 
 async function loadActiveRound(
   playerId: string | null,
@@ -287,7 +295,7 @@ async function loadActiveRound(
     } else setActiveTee(null)
 
     if (round) {
-      // find last completed hole to compute next
+      // last completed hole => next hole
       const { data: h } = await supabase
         .from('round_holes')
         .select('hole_number')

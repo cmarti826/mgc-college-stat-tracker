@@ -1,281 +1,59 @@
-'use client'
+'use client';
 
-import { useCallback, useEffect, useMemo, useState } from 'react'
-import { useParams, useRouter } from 'next/navigation'
-import Link from 'next/link'
-import { supabase } from '@/lib/supabaseClient'
+import { useEffect, useState } from 'react';
+import { supabase } from '@/lib/supabaseClient';
+import Link from 'next/link';
 
-type EventType = 'qualifying'|'tournament'|'practice'
-type EventStatus = 'draft'|'live'|'final'
-type EventRow = {
-  id: string
-  name: string
-  type: EventType
-  status: EventStatus
-  start_date: string | null
-  end_date: string | null
-  team_id: string
-  course_id: string | null
-  course_tee_id: string | null
-}
-type Course = { name: string; city: string | null; state: string | null }
-type Tee = { tee_name: string | null; color: string | null; course_rating: number | null; slope_rating: number | null }
-type Entry = { player_id: string }
-type Player = { id: string; display_name: string }
-type Round = { id: string; player_id: string | null; start_time: string | null; status: string }
-type VTotal = { round_id: string; to_par: number | null; strokes: number | null }
+type Row = { event_id: string; player_id: string; display_name: string | null; rounds_played: number; strokes: number; to_par: number; event_name: string | null; };
 
-export default function EventLeaderboardPage() {
-  const { id } = useParams<{ id: string }>()
-  const eventId = id
-  const router = useRouter()
+export default function EventLeaderboard({ params }: { params: { id: string } }) {
+  const eventId = params.id;
+  const [rows, setRows] = useState<Row[]>([]);
+  const [err, setErr] = useState('');
 
-  const [evt, setEvt] = useState<EventRow | null>(null)
-  const [course, setCourse] = useState<Course | null>(null)
-  const [tee, setTee] = useState<Tee | null>(null)
-
-  const [entries, setEntries] = useState<Entry[]>([])
-  const [players, setPlayers] = useState<Record<string, Player>>({})
-  const [rounds, setRounds] = useState<Round[]>([])
-  const [totals, setTotals] = useState<Record<string, VTotal>>({})
-  const [err, setErr] = useState<string | null>(null)
-
-  const loadAll = useCallback(async () => {
-    setErr(null)
-
-    // Event
-    const { data: e, error: ee } = await supabase
-      .from('events')
-      .select('id,name,type,status,start_date,end_date,team_id,course_id,course_tee_id')
-      .eq('id', eventId)
-      .single()
-    if (ee) { setErr(ee.message); return }
-    setEvt(e as EventRow)
-
-    // Course + Tee (optional)
-    if ((e as EventRow).course_id) {
-      const { data: c } = await supabase
-        .from('courses')
-        .select('name,city,state')
-        .eq('id', (e as EventRow).course_id)
-        .maybeSingle()
-      if (c) setCourse(c as Course)
-    } else { setCourse(null) }
-
-    if ((e as EventRow).course_tee_id) {
-      const { data: t } = await supabase
-        .from('course_tees')
-        .select('tee_name,color,course_rating,slope_rating')
-        .eq('id', (e as EventRow).course_tee_id)
-        .maybeSingle()
-      if (t) setTee(t as Tee)
-    } else { setTee(null) }
-
-    // Entries
-    const { data: en, error: enErr } = await supabase
-      .from('event_entries')
-      .select('player_id')
+  async function load() {
+    const { data, error } = await supabase
+      .from<Row>('v_event_leaderboard')
+      .select('*')
       .eq('event_id', eventId)
-    if (enErr) { setErr(enErr.message); return }
-    const entryList = (en ?? []) as Entry[]
-    setEntries(entryList)
-
-    // Players
-    const pids = entryList.map(x => x.player_id)
-    if (pids.length) {
-      const { data: ps } = await supabase
-        .from('players')
-        .select('id,display_name')
-        .in('id', pids)
-      const map: Record<string, Player> = {}
-      for (const row of (ps ?? []) as Player[]) map[row.id] = row
-      setPlayers(map)
-    } else setPlayers({})
-
-    // Rounds
-    const { data: rd } = await supabase
-      .from('rounds')
-      .select('id,player_id,start_time,status')
-      .eq('event_id', eventId)
-      .order('start_time', { ascending: true })
-    const rds = (rd ?? []) as Round[]
-    setRounds(rds)
-
-    // Totals
-    if (rds.length) {
-      const { data: vt } = await supabase
-        .from('v_round_totals')
-        .select('round_id,strokes,to_par')
-        .in('round_id', rds.map(r => r.id))
-      const tmap: Record<string, VTotal> = {}
-      for (const row of (vt ?? []) as VTotal[]) tmap[row.round_id] = row
-      setTotals(tmap)
-    } else {
-      setTotals({})
-    }
-  }, [eventId])
-
-  useEffect(() => { loadAll() }, [loadAll])
-
-  // Group rounds per player
-  const roundsByPlayer = useMemo(() => {
-    const map: Record<string, Round[]> = {}
-    for (const r of rounds) {
-      const pid = r.player_id ?? '__unknown__'
-      if (!map[pid]) map[pid] = []
-      map[pid].push(r)
-    }
-    for (const pid of Object.keys(map)) {
-      map[pid].sort((a, b) => (a.start_time ?? '').localeCompare(b.start_time ?? ''))
-    }
-    return map
-  }, [rounds])
-
-  const playerRows = useMemo(() => {
-    const entryIds = entries.map(e => e.player_id)
-    const setIds = new Set(entryIds.length ? entryIds : Object.keys(roundsByPlayer))
-    return Array.from(setIds)
-  }, [entries, roundsByPlayer])
-
-  const maxRounds = useMemo(() => {
-    let m = 0
-    for (const pid of playerRows) m = Math.max(m, (roundsByPlayer[pid]?.length ?? 0))
-    return Math.min(Math.max(m, 1), 4)
-  }, [playerRows, roundsByPlayer])
-
-  type Row = {
-    player_id: string; name: string
-    r: { to_par: number | null; strokes: number | null; round_id: string | null }[]
-    total_to_par: number | null; total_strokes: number | null
+      .order('strokes', { ascending: true });
+    if (error) setErr(error.message);
+    setRows(data ?? []);
   }
 
-  const rows: Row[] = useMemo(() => {
-    const out: Row[] = []
-    for (const pid of playerRows) {
-      const prs = roundsByPlayer[pid] ?? []
-      const cells: Row['r'] = []
-      let sumPar = 0
-      let sumSt = 0
-      let haveAny = false
-      for (let i = 0; i < maxRounds; i++) {
-        const r = prs[i]
-        if (r) {
-          const vt = totals[r.id]
-          const tp = vt?.to_par ?? null
-          const st = vt?.strokes ?? null
-          if (tp != null) { sumPar += tp; haveAny = true }
-          if (st != null) { sumSt += st }
-          cells.push({ to_par: tp, strokes: st, round_id: r.id })
-        } else {
-          cells.push({ to_par: null, strokes: null, round_id: null })
-        }
-      }
-      out.push({
-        player_id: pid,
-        name: players[pid]?.display_name ?? '—',
-        r: cells,
-        total_to_par: haveAny ? sumPar : null,
-        total_strokes: haveAny ? sumSt : null
-      })
-    }
-    out.sort((a, b) => {
-      const ap = a.total_to_par; const bp = b.total_to_par
-      if (ap == null && bp == null) return a.name.localeCompare(b.name)
-      if (ap == null) return 1
-      if (bp == null) return -1
-      if (ap !== bp) return ap - bp
-      const as = a.total_strokes ?? Number.POSITIVE_INFINITY
-      const bs = b.total_strokes ?? Number.POSITIVE_INFINITY
-      return as - bs
-    })
-    return out
-  }, [playerRows, roundsByPlayer, maxRounds, totals, players])
+  useEffect(() => {
+    load();
+    const ch = supabase.channel(`evt-${eventId}`)
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'round_holes' }, load)
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'rounds' }, load)
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'event_entries', filter: `event_id=eq.${eventId}` }, load)
+      .subscribe();
+    return () => { supabase.removeChannel(ch); };
+  }, [eventId]);
 
   return (
-    <div className="space-y-4">
-      {/* Header */}
-      <div className="flex flex-wrap items-end justify-between gap-3">
-        <div>
-          <h1 className="text-2xl font-bold">{evt?.name ?? 'Event'}</h1>
-          <div className="text-sm text-gray-600">
-            {evt?.type ?? '—'} • {evt?.status ?? '—'} • {fmtRange(evt?.start_date, evt?.end_date)}
-          </div>
-        </div>
-        <div className="flex gap-2">
-          <button
-            onClick={() => router.push(`/events/${eventId}/manage`)}
-            className="rounded border px-3 py-1.5"
-          >
-            Manage
-          </button>
-          <Link className="rounded border px-3 py-1.5" href="/events">Events</Link>
-        </div>
+    <div className="space-y-3">
+      <div className="flex items-center justify-between">
+        <h1 className="text-xl font-semibold">Leaderboard</h1>
+        <Link href={`/events/${eventId}/manage`} className="underline">Manage</Link>
       </div>
-
-      {/* Course/Tee summary */}
-      <div className="rounded border bg-white p-3">
-        <div className="flex flex-wrap items-center justify-between gap-3">
-          <div className="text-sm text-gray-700">
-            <div className="font-semibold">
-              {course?.name ?? 'Course'}
-              {course ? <span className="ml-1 text-gray-600">• {[course.city, course.state].filter(Boolean).join(', ')}</span> : null}
-            </div>
-            <div className="mt-0.5">
-              <span className="font-medium">Tee:</span>{' '}
-              {tee?.tee_name ?? '—'}{' '}
-              {tee?.color ? <span className="ml-1 inline-block h-3 w-3 rounded-full border align-middle" style={{ backgroundColor: tee.color ?? undefined }} /> : null}
-              {tee?.course_rating ? <> • <span className="font-medium">CR/SR:</span> {tee.course_rating}/{tee?.slope_rating ?? '—'}</> : null}
-            </div>
-          </div>
-          <div className="text-sm text-gray-700">
-            <Link className="underline text-[#0033A0]" href="/events">← All Events</Link>
-          </div>
+      {err && <div className="rounded border border-red-200 bg-red-50 p-2 text-red-700">{err}</div>}
+      <div className="rounded border bg-white">
+        <div className="grid grid-cols-6 gap-2 border-b px-3 py-2 text-sm font-medium">
+          <div>#</div><div>Player</div><div>Rounds</div><div>Strokes</div><div>To Par</div><div>Open</div>
         </div>
-      </div>
-
-      {/* Error */}
-      {err && <div className="rounded border border-red-200 bg-red-50 p-3 text-red-700">{err}</div>}
-
-      {/* Leaderboard */}
-      <div className="overflow-x-auto rounded border bg-white">
-        <table className="w-full text-sm">
-          <thead className="bg-gray-50">
-            <tr>
-              <th className="px-3 py-2 text-left">Player</th>
-              {Array.from({ length: maxRounds }, (_, i) => (
-                <th key={i} className="px-3 py-2 text-right">R{i + 1}</th>
-              ))}
-              <th className="px-3 py-2 text-right">Total</th>
-            </tr>
-          </thead>
-          <tbody>
-            {rows.map((row, idx) => (
-              <tr key={row.player_id || String(idx)} className="border-t">
-                <td className="px-3 py-2">{row.name}</td>
-                {row.r.map((cell, i) => (
-                  <td key={i} className="px-3 py-2 text-right">
-                    {cell.to_par == null ? '—' : fmtPar(cell.to_par)}
-                  </td>
-                ))}
-                <td className="px-3 py-2 text-right font-semibold">
-                  {row.total_to_par == null ? '—' : fmtPar(row.total_to_par)}
-                </td>
-              </tr>
-            ))}
-            {!rows.length && (
-              <tr><td className="px-3 py-4 text-gray-600" colSpan={2 + maxRounds}>No entries.</td></tr>
-            )}
-          </tbody>
-        </table>
+        {rows.map((r, i) => (
+          <div key={r.player_id} className="grid grid-cols-6 items-center gap-2 border-t px-3 py-2 text-sm">
+            <div>{i + 1}</div>
+            <div>{r.display_name ?? '(player)'}</div>
+            <div>{r.rounds_played}</div>
+            <div>{r.strokes}</div>
+            <div>{r.to_par}</div>
+            <div><Link className="underline" href={`/players/${r.player_id}`}>Player</Link></div>
+          </div>
+        ))}
+        {rows.length === 0 && <div className="px-3 py-3 text-sm text-gray-600">No entries yet.</div>}
       </div>
     </div>
-  )
+  );
 }
-
-function fmtRange(a?: string | null, b?: string | null) {
-  if (!a && !b) return '—'
-  if (a && !b) return a
-  if (!a && b) return b
-  return a === b ? a : `${a} → ${b}`
-}
-function fmtPar(v: number) { return v > 0 ? `+${v}` : String(v) }

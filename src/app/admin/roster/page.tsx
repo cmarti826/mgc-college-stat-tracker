@@ -1,235 +1,318 @@
-'use client'
+'use client';
 
-import { useEffect, useState } from 'react'
-import Link from 'next/link'
-import { supabase } from '@/lib/supabaseClient'
+import React, { useEffect, useMemo, useState } from 'react';
+import Link from 'next/link';
+import { createClient } from '@supabase/supabase-js';
 
-type Team   = { id:string; name:string }
-type Player = { id:string; display_name:string; graduation_year:number|null }
-type Invite = { player_id:string; email:string|null; code:string|null; expires_at:string|null }
+// If you already have a helper that creates a browser client, import that instead.
+const supabase =
+  (globalThis as any).__sb ??
+  ((): any => {
+    const c = createClient(
+      process.env.NEXT_PUBLIC_SUPABASE_URL as string,
+      process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY as string,
+    );
+    (globalThis as any).__sb = c;
+    return c;
+  })();
 
-export default function RosterAdminPage() {
-  const [teams, setTeams] = useState<Team[]>([])
-  const [teamId, setTeamId] = useState<string>('')
+type Team = { id: string; name: string };
+type RosterRow = {
+  team_id: string;
+  player_id: string;
+  display_name: string | null;
+  graduation_year: number | null;
+  invite_email: string | null;
+  join_code: string | null;
+  expires_at: string | null;
+};
+type Player = { id: string; display_name: string | null; graduation_year: number | null };
 
-  const [players, setPlayers] = useState<Player[]>([])
-  const [invites, setInvites] = useState<Record<string, Invite>>({})
+function fmtDate(iso: string | null) {
+  if (!iso) return '';
+  const d = new Date(iso);
+  if (Number.isNaN(d.getTime())) return '';
+  return d.toLocaleDateString();
+}
 
-  // form
-  const [name, setName] = useState('')
-  const [grad, setGrad] = useState<string>('')        // keep as string for input
-  const [email, setEmail] = useState('')
+export default function RosterPage() {
+  const [teams, setTeams] = useState<Team[]>([]);
+  const [teamId, setTeamId] = useState<string>('');
+  const [rows, setRows] = useState<RosterRow[]>([]);
+  const [loading, setLoading] = useState(false);
+  const [err, setErr] = useState<string>('');
 
-  const [err, setErr] = useState<string|null>(null)
-  const [saving, setSaving] = useState(false)
-  const [busyId, setBusyId] = useState<string|null>(null)
+  // form state
+  const [newName, setNewName] = useState('');
+  const [newGrad, setNewGrad] = useState<number | ''>('');
+  const [newEmail, setNewEmail] = useState('');
 
-  // ---- Load teams the user can access (RLS controls visibility) ----
-  const { data, error } = await supabase
-  .from('v_team_roster_details')
-  .select('*')
-  .eq('team_id', teamId)
-  .order('display_name', { ascending: true });
-    if (error) { setErr(error.message); return }
-    const list = (data ?? []) as Team[]
-    setTeams(list)
-    // preserve current team if still present; else pick first
-    setTeamId(prev => (list.some(t => t.id === prev) ? prev : (list[0]?.id ?? '')))
+  const selectedTeam = useMemo(() => teams.find(t => t.id === teamId) ?? null, [teams, teamId]);
+
+  // --- load teams user can administer/coach
+  useEffect(() => {
+    (async () => {
+      setErr('');
+      const { data, error } = await supabase
+        .from<Team>('teams')
+        .select('id,name')
+        .order('name', { ascending: true });
+      if (error) {
+        setErr(error.message);
+        setTeams([]);
+        return;
+      }
+      setTeams(data ?? []);
+      if (!teamId && data && data.length) setTeamId(data[0].id);
+    })();
+  }, []); // eslint-disable-line react-hooks/exhaustive-deps
+
+  // --- load roster
+  useEffect(() => {
+    if (!teamId) return;
+    (async () => {
+      setLoading(true);
+      setErr('');
+      const { data, error } = await supabase
+        .from<RosterRow>('v_team_roster_details')
+        .select('*')
+        .eq('team_id', teamId)
+        .order('display_name', { ascending: true });
+      if (error) {
+        setErr(error.message);
+        setRows([]);
+      } else {
+        setRows(data ?? []);
+      }
+      setLoading(false);
+    })();
+  }, [teamId]);
+
+  async function refresh() {
+    if (!teamId) return;
+    setLoading(true);
+    setErr('');
+    const { data, error } = await supabase
+      .from<RosterRow>('v_team_roster_details')
+      .select('*')
+      .eq('team_id', teamId)
+      .order('display_name', { ascending: true });
+    if (error) setErr(error.message);
+    setRows(data ?? []);
+    setLoading(false);
   }
 
-  // ---- Load roster + invites for selected team ----
-  const loadRosterFor = async (tid: string) => {
-    if (!tid) { setPlayers([]); setInvites({}); return }
-
-    const { data: tr, error: er } = await supabase
-      .from('team_roster').select('player_id').eq('team_id', tid)
-    if (er) { setErr(er.message); return }
-    const ids = (tr ?? []).map((x:any)=> x.player_id)
-
-    // players
-    if (ids.length) {
-      const { data: p, error: ep } = await supabase
-        .from('players')
-        .select('id,display_name,graduation_year')
-        .in('id', ids)
-        .order('display_name')
-      if (ep) { setErr(ep.message); return }
-      setPlayers((p ?? []) as Player[])
-    } else {
-      setPlayers([])
+  async function addPlayer() {
+    setErr('');
+    if (!teamId) {
+      setErr('Select a team first.');
+      return;
+    }
+    if (!newName.trim()) {
+      setErr('Enter a player name.');
+      return;
     }
 
-    // invites
-    if (ids.length) {
-      const { data: inv, error: einv } = await supabase
-        .from('invites')
-        .select('player_id,email,code,expires_at')
-        .eq('team_id', tid)
-        .in('player_id', ids)
-      if (einv) { setErr(einv.message); return }
-      const map: Record<string, Invite> = {}
-      for (const row of inv ?? []) map[(row as any).player_id] = row as Invite
-      setInvites(map)
-    } else {
-      setInvites({})
-    }
-  }
-
-  useEffect(() => { loadTeams() }, [])
-  useEffect(() => { loadRosterFor(teamId) }, [teamId])
-
-  // ---- Actions ----
-  const addPlayer = async () => {
-    if (!teamId || !name.trim()) return
-    setSaving(true); setErr(null)
-    try {
-      const gradInt = grad.trim() === '' ? null : Number(grad)
-      const { error } = await supabase.rpc('create_player_with_invite', {
-        p_team: teamId,
-        p_display: name.trim(),
-        p_grad: gradInt,
-        p_email: email.trim() || null
+    // 1) create player
+    const { data: p, error: e1 } = await supabase
+      .from<Player>('players')
+      .insert({
+        display_name: newName.trim(),
+        graduation_year: newGrad === '' ? null : Number(newGrad),
       })
-      if (error) throw error
-      setName(''); setGrad(''); setEmail('')
-      await loadRosterFor(teamId)
-    } catch (e:any) {
-      setErr(e.message ?? 'Failed to add')
-    } finally {
-      setSaving(false)
+      .select('id,display_name,graduation_year')
+      .single();
+
+    if (e1 || !p) {
+      setErr(e1?.message || 'Failed to create player');
+      return;
     }
+
+    // 2) add to team_roster
+    const { error: e2 } = await supabase
+      .from('team_roster')
+      .insert({ team_id: teamId, player_id: p.id });
+
+    if (e2) {
+      setErr(e2.message);
+      return;
+    }
+
+    // 3) optional invite
+    if (newEmail.trim()) {
+      const expiresAt = new Date(Date.now() + 14 * 24 * 3600 * 1000).toISOString();
+      const { error: e3 } = await supabase.from('invites').insert({
+        team_id: teamId,
+        player_id: p.id,
+        email: newEmail.trim(),
+        expires_at: expiresAt,
+      });
+      if (e3) {
+        // Not fatal for adding to roster
+        setErr(`Player added, invite error: ${e3.message}`);
+      }
+    }
+
+    // reset + refresh
+    setNewName('');
+    setNewGrad('');
+    setNewEmail('');
+    await refresh();
   }
 
-  const regenCode = async (playerId: string) => {
-    if (!teamId) return
-    setBusyId(playerId); setErr(null)
-    try {
-      const { error } = await supabase.rpc('regenerate_join_code', {
-        p_team: teamId, p_player: playerId
-      })
-      if (error) throw error
-      await loadRosterFor(teamId)
-    } catch (e:any) {
-      setErr(e.message ?? 'Failed to regenerate')
-    } finally {
-      setBusyId(null)
+  async function reissueInvite(playerId: string, emailFromRow: string | null) {
+    setErr('');
+    if (!teamId) return;
+    const email = (emailFromRow || newEmail || '').trim();
+    if (!email) {
+      setErr('No email on file for this player. Enter an email above and click Add to create a fresh invite.');
+      return;
     }
+    const expiresAt = new Date(Date.now() + 14 * 24 * 3600 * 1000).toISOString();
+    const { error } = await supabase.from('invites').insert({
+      team_id: teamId,
+      player_id: playerId,
+      email,
+      expires_at: expiresAt,
+    });
+    if (error) {
+      setErr(error.message);
+      return;
+    }
+    await refresh();
   }
 
-  const copy = async (txt: string | null | undefined) => {
-    if (!txt) return
-    await navigator.clipboard.writeText(txt)
+  async function removeFromTeam(playerId: string) {
+    setErr('');
+    if (!teamId) return;
+    const { error } = await supabase
+      .from('team_roster')
+      .delete()
+      .eq('team_id', teamId)
+      .eq('player_id', playerId);
+    if (error) {
+      setErr(error.message);
+      return;
+    }
+    await refresh();
   }
 
   return (
-    <div className="space-y-4">
-      {/* Header with Team selector */}
-      <div className="flex flex-wrap items-end justify-between gap-3">
-        <h1 className="text-2xl font-bold">Roster</h1>
-        <div className="flex items-center gap-2">
-          <span className="text-sm text-gray-700">Team:</span>
-          <select
-            className="rounded border px-2 py-1"
-            value={teamId}
-            onChange={e => setTeamId(e.target.value)}
-          >
-            {teams.map(t => <option key={t.id} value={t.id}>{t.name}</option>)}
-            {!teams.length && <option value="">No teams</option>}
-          </select>
+    <div className="mx-auto max-w-5xl p-4">
+      <div className="mb-4 flex items-center justify-between">
+        <h1 className="text-xl font-semibold">Roster</h1>
+        <div>
+          <Link className="mr-3 underline" href="/events">Events</Link>
+          <Link className="underline" href="/admin/team">Team Settings</Link>
         </div>
       </div>
 
-      {err && <div className="rounded border border-red-200 bg-red-50 p-3 text-red-700">{err}</div>}
+      <div className="mb-3 flex items-center gap-2">
+        <span className="text-sm text-gray-700">Team:</span>
+        <select
+          className="rounded border px-2 py-1"
+          value={teamId}
+          onChange={(e) => setTeamId(e.target.value)}
+        >
+          {teams.map((t) => (
+            <option key={t.id} value={t.id}>
+              {t.name}
+            </option>
+          ))}
+        </select>
+      </div>
 
-      {/* Add Player */}
-      <div className="rounded border bg-white p-3">
-        <div className="mb-2 text-sm text-gray-600">Add Player to <b>{teams.find(t=>t.id===teamId)?.name ?? '—'}</b></div>
-        <div className="flex flex-wrap items-center gap-2">
+      {err && (
+        <div className="mb-4 rounded border border-red-400 bg-red-50 px-3 py-2 text-red-700">
+          {err}
+        </div>
+      )}
+
+      {/* Add player form */}
+      <div className="mb-6 rounded border bg-white p-4">
+        <div className="mb-2 font-medium">
+          Add Player to {selectedTeam ? selectedTeam.name : 'Team'}
+        </div>
+        <div className="grid grid-cols-1 gap-2 md:grid-cols-4">
           <input
-            className="w-64 rounded border px-2 py-1"
-            placeholder="Display name"
-            value={name}
-            onChange={e=>setName(e.target.value)}
+            className="rounded border px-3 py-2"
+            placeholder="Player name"
+            value={newName}
+            onChange={(e) => setNewName(e.target.value)}
           />
           <input
-            className="w-32 rounded border px-2 py-1"
-            placeholder="Graduation (e.g., 2028)"
-            value={grad}
-            onChange={e=>setGrad(e.target.value.replace(/[^0-9]/g,''))}
+            className="rounded border px-3 py-2"
+            placeholder="Graduation year (optional)"
+            inputMode="numeric"
+            value={newGrad}
+            onChange={(e) => {
+              const v = e.target.value.replace(/\D+/g, '');
+              setNewGrad(v ? Number(v) : '');
+            }}
           />
           <input
-            className="w-80 rounded border px-2 py-1"
-            placeholder="Email (optional — creates a join code)"
-            value={email}
-            onChange={e=>setEmail(e.target.value)}
+            className="rounded border px-3 py-2"
+            placeholder="Email (optional)"
+            type="email"
+            value={newEmail}
+            onChange={(e) => setNewEmail(e.target.value)}
           />
           <button
+            className="rounded bg-[#0033A0] px-4 py-2 text-white hover:opacity-90 disabled:opacity-50"
             onClick={addPlayer}
-            disabled={saving || !name.trim() || !teamId}
-            className="rounded bg-[#0B6B3A] px-3 py-1.5 text-white disabled:opacity-50"
+            disabled={loading || !teamId}
+            type="button"
           >
-            {saving ? 'Adding…' : 'Add'}
+            Add
           </button>
         </div>
         <div className="mt-1 text-xs text-gray-500">
-          Email creates/refreshes a <b>Join Code</b> for that player (expires in 14 days).
+          Email creates / refreshes a Join Code for that player (expires in 14 days).
         </div>
       </div>
 
-      {/* Roster Table */}
-      <div className="overflow-x-auto rounded border bg-white">
-        <table className="w-full text-sm">
-          <thead className="bg-gray-50">
-            <tr>
-              <th className="px-3 py-2 text-left">Player</th>
-              <th className="px-3 py-2 text-left">Grad</th>
-              <th className="px-3 py-2 text-left">Email</th>
-              <th className="px-3 py-2 text-left">Join Code</th>
-              <th className="px-3 py-2 text-left">Expires</th>
-              <th className="px-3 py-2 text-right">Actions</th>
-            </tr>
-          </thead>
-          <tbody>
-            {players.map(p => {
-              const inv = invites[p.id]
-              return (
-                <tr key={p.id} className="border-t">
-                  <td className="px-3 py-2">{p.display_name}</td>
-                  <td className="px-3 py-2">{p.graduation_year ?? '—'}</td>
-                  <td className="px-3 py-2">{inv?.email ?? '—'}</td>
-                  <td className="px-3 py-2">
-                    {inv?.code ? (
-                      <button onClick={() => copy(inv.code)} className="rounded border px-2 py-0.5">
-                        {inv.code} <span className="text-xs text-gray-500">(copy)</span>
-                      </button>
-                    ) : '—'}
-                  </td>
-                  <td className="px-3 py-2">{inv?.expires_at ? inv.expires_at.slice(0,10) : '—'}</td>
-                  <td className="px-3 py-2 text-right">
-                    <div className="flex justify-end gap-2">
-                      <Link className="text-[#0033A0] underline" href={`/players/${p.id}`}>Report</Link>
-                      <button
-                        onClick={() => regenCode(p.id)}
-                        disabled={busyId === p.id || !teamId}
-                        className="rounded border px-3 py-1.5"
-                      >
-                        {busyId === p.id ? 'Regenerating…' : 'Regenerate Code'}
-                      </button>
-                    </div>
-                  </td>
-                </tr>
-              )
-            })}
-            {!players.length && (
-              <tr>
-                <td className="px-3 py-4 text-gray-600" colSpan={6}>
-                  No players yet for this team.
-                </td>
-              </tr>
-            )}
-          </tbody>
-        </table>
+      <div className="rounded border bg-white">
+        <div className="grid grid-cols-12 gap-2 border-b px-3 py-2 text-sm font-medium">
+          <div className="col-span-4">Player</div>
+          <div className="col-span-1">Grad</div>
+          <div className="col-span-3">Email</div>
+          <div className="col-span-2">Join Code</div>
+          <div className="col-span-1">Expires</div>
+          <div className="col-span-1 text-right">Actions</div>
+        </div>
+
+        {rows.length === 0 && (
+          <div className="px-3 py-3 text-sm text-gray-600">
+            {loading ? 'Loading…' : 'No players yet for this team.'}
+          </div>
+        )}
+
+        {rows.map((r) => (
+          <div key={`${r.team_id}-${r.player_id}`} className="grid grid-cols-12 items-center gap-2 border-t px-3 py-2 text-sm">
+            <div className="col-span-4">{r.display_name || '(no name)'}</div>
+            <div className="col-span-1">{r.graduation_year ?? ''}</div>
+            <div className="col-span-3">{r.invite_email ?? ''}</div>
+            <div className="col-span-2 font-mono">{r.join_code ?? ''}</div>
+            <div className="col-span-1">{fmtDate(r.expires_at)}</div>
+            <div className="col-span-1 text-right">
+              <button
+                className="mr-2 rounded border px-2 py-1 hover:bg-gray-50"
+                onClick={() => reissueInvite(r.player_id, r.invite_email)}
+                type="button"
+              >
+                Invite
+              </button>
+              <button
+                className="rounded border px-2 py-1 text-red-700 hover:bg-red-50"
+                onClick={() => removeFromTeam(r.player_id)}
+                type="button"
+              >
+                Remove
+              </button>
+            </div>
+          </div>
+        ))}
       </div>
     </div>
-  )
+  );
 }

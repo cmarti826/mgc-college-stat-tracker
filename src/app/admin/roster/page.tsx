@@ -25,12 +25,11 @@ export default function RosterAdminPage() {
   const [busyId, setBusyId] = useState<string|null>(null)
 
   // ---- Load teams the user can access (RLS controls visibility) ----
-  const loadTeams = async () => {
-    setErr(null)
-    const { data, error } = await supabase
-      .from('teams')
-      .select('id,name')
-      .order('name')
+  const { data, error } = await supabase
+  .from('v_team_roster_details')
+  .select('*')
+  .eq('team_id', teamId)
+  .order('display_name', { ascending: true });
     if (error) { setErr(error.message); return }
     const list = (data ?? []) as Team[]
     setTeams(list)

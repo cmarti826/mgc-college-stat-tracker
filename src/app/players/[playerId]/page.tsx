@@ -1,107 +1,165 @@
-'use client'
+'use client';
 
-import { useEffect, useMemo, useState } from 'react'
-import { useParams } from 'next/navigation'
-import { supabase } from '@/lib/supabaseClient'
+import React, { useEffect, useState } from 'react';
+import Link from 'next/link';
+import { createClient } from '@supabase/supabase-js';
 
-type RoundRow = {
-  round_id:string; played_at:string|null; status:string;
-  strokes:number|null; to_par:number|null;
-  sg_ott:number|null; sg_app:number|null; sg_arg:number|null; sg_putt:number|null;
-  fw_hits:number|null; fw_opps:number|null; gir_hits:number|null; holes:number|null
+type PlayerRow = {
+  id: string;
+  display_name: string | null;
+  graduation_year: number | null;
+};
+
+type PlayerRoundLite = {
+  id: string;                 // aliased from round_id
+  status: string | null;
+  strokes: number | null;
+  to_par: number | null;
+  start_time: string | null;
+  event_name: string | null;
+};
+
+const supabase =
+  (globalThis as any).__sb ??
+  ((): any => {
+    const c = createClient(
+      process.env.NEXT_PUBLIC_SUPABASE_URL as string,
+      process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY as string,
+    );
+    (globalThis as any).__sb = c;
+    return c;
+  })();
+
+function fmtDate(iso: string | null) {
+  if (!iso) return '';
+  const d = new Date(iso);
+  return Number.isNaN(d.getTime()) ? '' : d.toLocaleString();
 }
 
-export default function PlayerReportPage() {
-  const { playerId } = useParams<{playerId:string}>()
-  const [name, setName] = useState<string>('Player')
-  const [rows, setRows] = useState<RoundRow[]>([])
-  const [err, setErr] = useState<string|null>(null)
+export default function PlayerPage({
+  params,
+}: {
+  params: { playerId: string };
+}) {
+  const playerId = params.playerId;
 
-  const load = async () => {
-    setErr(null)
-    const [{ data: p }, { data, error }] = await Promise.all([
-      supabase.from('players').select('display_name').eq('id', playerId).single(),
-      supabase.from('v_player_rounds').select('*').eq('player_id', playerId).order('played_at', { ascending:false }),
-    ])
-    if (p?.display_name) setName(p.display_name)
-    if (error) setErr(error.message)
-    else setRows((data ?? []) as RoundRow[])
-  }
-  useEffect(() => { load() }, [playerId])
+  const [err, setErr] = useState<string>('');
+  const [loading, setLoading] = useState<boolean>(true);
 
-  const totals = useMemo(() => {
-    if (!rows.length) return null
-    const s = (k: keyof RoundRow) => rows.reduce((a,r)=> a + Number(r[k] ?? 0), 0)
-    const fwOpp = rows.reduce((a,r)=> a + Number(r.fw_opps ?? 0), 0)
-    const res = {
-      rds: rows.length,
-      strokes: s('strokes'),
-      to_par: s('to_par'),
-      sg_ott: s('sg_ott'), sg_app: s('sg_app'), sg_arg: s('sg_arg'), sg_putt: s('sg_putt'),
-      fw_pct: fwOpp ? (rows.reduce((a,r)=> a + Number(r.fw_hits ?? 0),0) / fwOpp) : null,
-      gir_pct: (() => {
-        const holes = rows.reduce((a,r)=> a + Number(r.holes ?? 0), 0)
-        const gir = rows.reduce((a,r)=> a + Number(r.gir_hits ?? 0), 0)
-        return holes ? gir/holes : null
-      })(),
-    }
-    return res
-  }, [rows])
+  const [player, setPlayer] = useState<PlayerRow | null>(null);
+  const [rounds, setRounds] = useState<PlayerRoundLite[]>([]);
+
+  useEffect(() => {
+    (async () => {
+      setErr('');
+      setLoading(true);
+
+      // Player
+      const { data: p, error: ep } = await supabase
+        .from<PlayerRow>('players')
+        .select('id,display_name,graduation_year')
+        .eq('id', playerId)
+        .single();
+
+      if (ep) {
+        setErr(ep.message);
+        setPlayer(null);
+      } else {
+        setPlayer(p);
+      }
+
+      // Rounds for this player
+      const { data: r, error: er } = await supabase
+        .from<PlayerRoundLite>('v_player_rounds')
+        //           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+        // NOTE: alias round_id => id so UI can use .id normally
+        .select('round_id:id,status,strokes,to_par,start_time,event_name')
+        .eq('player_id', playerId)
+        .order('round_id', { ascending: false }) // order by real column name
+        .limit(25);
+
+      if (er) {
+        setErr((prev) => prev || er.message);
+        setRounds([]);
+      } else {
+        setRounds(r ?? []);
+      }
+
+      setLoading(false);
+    })();
+  }, [playerId]);
 
   return (
-    <div className="space-y-4">
-      <h1 className="text-2xl font-bold">{name} — Report</h1>
-      {err && <div className="rounded border border-red-200 bg-red-50 p-3 text-red-700">{err}</div>}
+    <div className="mx-auto max-w-5xl p-4">
+      <div className="mb-4 flex items-center justify-between">
+        <h1 className="text-xl font-semibold">
+          {player?.display_name ?? 'Player'}{' '}
+          {player?.graduation_year ? (
+            <span className="text-gray-500">({player.graduation_year})</span>
+          ) : null}
+        </h1>
+        <div className="space-x-2">
+          <Link className="rounded border px-3 py-1 hover:bg-gray-50" href="/events">
+            Events
+          </Link>
+          <Link className="rounded border px-3 py-1 hover:bg-gray-50" href="/admin/roster">
+            Roster
+          </Link>
+        </div>
+      </div>
 
-      {totals && (
-        <div className="grid gap-3 rounded border bg-white p-3 sm:grid-cols-3">
-          <Stat label="Rounds" value={totals.rds}/>
-          <Stat label="To Par" value={totals.to_par}/>
-          <Stat label="Strokes Gained (Total)" value={(totals.sg_ott+totals.sg_app+totals.sg_arg+totals.sg_putt).toFixed(2)}/>
-          <Stat label="SG OTT" value={totals.sg_ott.toFixed(2)}/>
-          <Stat label="SG APP" value={totals.sg_app.toFixed(2)}/>
-          <Stat label="SG ARG" value={totals.sg_arg.toFixed(2)}/>
-          <Stat label="SG PUTT" value={totals.sg_putt.toFixed(2)}/>
-          <Stat label="Fairways" value={totals.fw_pct!=null ? `${Math.round(totals.fw_pct*100)}%` : '—'}/>
-          <Stat label="GIR" value={totals.gir_pct!=null ? `${Math.round(totals.gir_pct*100)}%` : '—'}/>
+      {err && (
+        <div className="mb-4 rounded border border-red-300 bg-red-50 px-3 py-2 text-red-800">
+          {err}
         </div>
       )}
 
-      <div className="overflow-x-auto rounded border bg-white">
-        <table className="w-full text-sm">
-          <thead className="bg-gray-50">
-            <tr>
-              <th className="px-3 py-2 text-left">Played</th>
-              <th className="px-3 py-2 text-right">Strokes</th>
-              <th className="px-3 py-2 text-right">To Par</th>
-              <th className="px-3 py-2 text-right">SG OTT</th>
-              <th className="px-3 py-2 text-right">SG APP</th>
-              <th className="px-3 py-2 text-right">SG ARG</th>
-              <th className="px-3 py-2 text-right">SG PUTT</th>
-              <th className="px-3 py-2 text-right">Status</th>
-            </tr>
-          </thead>
-          <tbody>
-            {rows.map(r => (
-              <tr key={r.round_id} className="border-t">
-                <td className="px-3 py-2">{r.played_at?.slice(0,10) ?? '—'}</td>
-                <td className="px-3 py-2 text-right">{r.strokes ?? '—'}</td>
-                <td className="px-3 py-2 text-right">{r.to_par!=null ? (r.to_par>0?`+${r.to_par}`:r.to_par) : '—'}</td>
-                <td className="px-3 py-2 text-right">{fmt(r.sg_ott)}</td>
-                <td className="px-3 py-2 text-right">{fmt(r.sg_app)}</td>
-                <td className="px-3 py-2 text-right">{fmt(r.sg_arg)}</td>
-                <td className="px-3 py-2 text-right">{fmt(r.sg_putt)}</td>
-                <td className="px-3 py-2 text-right">{r.status}</td>
-              </tr>
-            ))}
-            {!rows.length && <tr><td className="px-3 py-4 text-gray-600" colSpan={8}>No rounds yet.</td></tr>}
-          </tbody>
-        </table>
+      <div className="rounded border bg-white">
+        <div className="grid grid-cols-12 gap-2 border-b px-3 py-2 text-sm font-medium">
+          <div className="col-span-4">Round</div>
+          <div className="col-span-3">Event</div>
+          <div className="col-span-2">Strokes</div>
+          <div className="col-span-1">To Par</div>
+          <div className="col-span-2">Started</div>
+        </div>
+
+        {loading && <div className="px-3 py-3 text-sm text-gray-600">Loading…</div>}
+
+        {!loading && rounds.length === 0 && (
+          <div className="px-3 py-3 text-sm text-gray-600">No rounds yet.</div>
+        )}
+
+        {rounds.map((r) => (
+          <div
+            key={r.id}
+            className="grid grid-cols-12 items-center gap-2 border-t px-3 py-2 text-sm"
+          >
+            <div className="col-span-4">
+              <div className="font-medium text-gray-800">
+                {r.status ?? '—'}
+              </div>
+              <div className="space-x-2 text-xs">
+                <Link
+                  href={`/rounds/${r.id}`}
+                  className="text-[#0033A0] underline"
+                >
+                  Round Page
+                </Link>
+                <Link
+                  href={`/rounds/${r.id}/holes/1`}
+                  className="text-[#0033A0] underline"
+                >
+                  Open Hole 1
+                </Link>
+              </div>
+            </div>
+            <div className="col-span-3">{r.event_name ?? ''}</div>
+            <div className="col-span-2">{r.strokes ?? 0}</div>
+            <div className="col-span-1">{r.to_par ?? 0}</div>
+            <div className="col-span-2">{fmtDate(r.start_time)}</div>
+          </div>
+        ))}
       </div>
     </div>
-  )
+  );
 }
-function Stat({label, value}:{label:string; value:any}) {
-  return <div className="rounded border p-3"><div className="text-xs text-gray-600">{label}</div><div className="text-lg font-semibold">{value}</div></div>
-}
-function fmt(n:any){ return n==null ? '—' : Number(n).toFixed(2) }

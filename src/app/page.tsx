@@ -95,7 +95,7 @@ export default function HomePage() {
       // 3) Recent rounds (show last 3 regardless of status)
       const { data: rr, error: e2 } = await supabase
         .from<RecentRound>('v_player_rounds')
-        .select('id,status,strokes,to_par')
+        .select('round_id:id,status,strokes,to_par')
         .order('round_id', { ascending: false })
         .limit(3);
 

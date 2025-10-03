@@ -7,8 +7,8 @@ import { createClient } from '@/lib/supabaseClient'
 type RoundStatus = 'in_progress' | 'submitted' | 'final' | 'abandoned'
 
 type VPlayerRound = {
-  id: string            // alias of round_id
-  round_id: string      // also keep original if you want it
+  id: string              // alias of round_id
+  round_id: string        // keep original too (handy for debugging)
   status: RoundStatus
   strokes: number | null
   to_par: number | null

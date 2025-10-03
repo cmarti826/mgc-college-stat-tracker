@@ -1,165 +1,108 @@
-'use client';
+'use client'
 
-import React, { useEffect, useState } from 'react';
-import Link from 'next/link';
-import { createClient } from '@supabase/supabase-js';
+import Link from 'next/link'
+import { useEffect, useState } from 'react'
+import { createClient } from '@/lib/supabaseClient'
 
-type PlayerRow = {
-  id: string;
-  display_name: string | null;
-  graduation_year: number | null;
-};
+type RoundStatus = 'in_progress' | 'submitted' | 'final' | 'abandoned'
 
-type PlayerRoundLite = {
-  id: string;                 // aliased from round_id
-  status: string | null;
-  strokes: number | null;
-  to_par: number | null;
-  start_time: string | null;
-  event_name: string | null;
-};
-
-const supabase =
-  (globalThis as any).__sb ??
-  ((): any => {
-    const c = createClient(
-      process.env.NEXT_PUBLIC_SUPABASE_URL as string,
-      process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY as string,
-    );
-    (globalThis as any).__sb = c;
-    return c;
-  })();
-
-function fmtDate(iso: string | null) {
-  if (!iso) return '';
-  const d = new Date(iso);
-  return Number.isNaN(d.getTime()) ? '' : d.toLocaleString();
+type Player = {
+  id: string
+  display_name: string
+  graduation_year: number | null
 }
 
-export default function PlayerPage({
-  params,
-}: {
-  params: { playerId: string };
-}) {
-  const playerId = params.playerId;
+type VPlayerRound = {
+  id: string            // alias of round_id
+  status: RoundStatus
+  strokes: number | null
+  to_par: number | null
+  event_name: string | null
+  start_time: string | null
+}
 
-  const [err, setErr] = useState<string>('');
-  const [loading, setLoading] = useState<boolean>(true);
-
-  const [player, setPlayer] = useState<PlayerRow | null>(null);
-  const [rounds, setRounds] = useState<PlayerRoundLite[]>([]);
+export default function PlayerPage({ params }: { params: { playerId: string } }) {
+  const supabase = createClient()
+  const [player, setPlayer] = useState<Player | null>(null)
+  const [rounds, setRounds] = useState<VPlayerRound[]>([])
+  const [err, setErr] = useState<string | null>(null)
+  const [loading, setLoading] = useState(true)
 
   useEffect(() => {
-    (async () => {
-      setErr('');
-      setLoading(true);
+    const load = async () => {
+      setLoading(true)
+      setErr(null)
 
-      // Player
-      const { data: p, error: ep } = await supabase
-        .from<PlayerRow>('players')
-        .select('id,display_name,graduation_year')
-        .eq('id', playerId)
-        .single();
+      const [{ data: p, error: pe }, { data: r, error: re }] = await Promise.all([
+        supabase.from('players')
+          .select('id, display_name, graduation_year')
+          .eq('id', params.playerId)
+          .single(),
+        supabase.from('v_player_rounds')
+          .select('id:round_id, status, strokes, to_par, event_name, start_time')
+          .eq('player_id', params.playerId)
+          .order('start_time', { ascending: false })
+      ])
 
-      if (ep) {
-        setErr(ep.message);
-        setPlayer(null);
+      if (pe) {
+        console.error(pe); setErr(pe.message || 'Failed to load player')
       } else {
-        setPlayer(p);
+        setPlayer(p)
       }
-
-      // Rounds for this player
-      const { data: r, error: er } = await supabase
-        .from<PlayerRoundLite>('v_player_rounds')
-        //           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
-        // NOTE: alias round_id => id so UI can use .id normally
-        .select('round_id:id,status,strokes,to_par,start_time,event_name')
-        .eq('player_id', playerId)
-        .order('round_id', { ascending: false }) // order by real column name
-        .limit(25);
-
-      if (er) {
-        setErr((prev) => prev || er.message);
-        setRounds([]);
+      if (re) {
+        console.error(re); setErr(prev => prev ?? re.message || 'Failed to load rounds')
       } else {
-        setRounds(r ?? []);
+        setRounds(r ?? [])
       }
+      setLoading(false)
+    }
+    load()
+  }, [params.playerId, supabase])
 
-      setLoading(false);
-    })();
-  }, [playerId]);
+  if (loading) return <div className="p-4">Loading…</div>
+  if (err) return <div className="p-4 text-red-600">Error: {err}</div>
+  if (!player) return <div className="p-4">Player not found.</div>
 
   return (
-    <div className="mx-auto max-w-5xl p-4">
-      <div className="mb-4 flex items-center justify-between">
-        <h1 className="text-xl font-semibold">
-          {player?.display_name ?? 'Player'}{' '}
-          {player?.graduation_year ? (
-            <span className="text-gray-500">({player.graduation_year})</span>
-          ) : null}
-        </h1>
-        <div className="space-x-2">
-          <Link className="rounded border px-3 py-1 hover:bg-gray-50" href="/events">
-            Events
-          </Link>
-          <Link className="rounded border px-3 py-1 hover:bg-gray-50" href="/admin/roster">
-            Roster
-          </Link>
-        </div>
+    <div className="mx-auto max-w-5xl p-4 space-y-6">
+      <div>
+        <h1 className="text-2xl font-semibold">{player.display_name}</h1>
+        <div className="text-gray-600">Grad year: {player.graduation_year ?? '—'}</div>
       </div>
 
-      {err && (
-        <div className="mb-4 rounded border border-red-300 bg-red-50 px-3 py-2 text-red-800">
-          {err}
-        </div>
-      )}
-
-      <div className="rounded border bg-white">
-        <div className="grid grid-cols-12 gap-2 border-b px-3 py-2 text-sm font-medium">
-          <div className="col-span-4">Round</div>
-          <div className="col-span-3">Event</div>
-          <div className="col-span-2">Strokes</div>
-          <div className="col-span-1">To Par</div>
-          <div className="col-span-2">Started</div>
-        </div>
-
-        {loading && <div className="px-3 py-3 text-sm text-gray-600">Loading…</div>}
-
-        {!loading && rounds.length === 0 && (
-          <div className="px-3 py-3 text-sm text-gray-600">No rounds yet.</div>
-        )}
-
-        {rounds.map((r) => (
-          <div
-            key={r.id}
-            className="grid grid-cols-12 items-center gap-2 border-t px-3 py-2 text-sm"
-          >
-            <div className="col-span-4">
-              <div className="font-medium text-gray-800">
-                {r.status ?? '—'}
+      <section className="space-y-3">
+        <h2 className="text-xl font-medium">Rounds</h2>
+        <ul className="grid gap-3 md:grid-cols-2">
+          {rounds.map(r => (
+            <li key={r.id} className="rounded border bg-white p-3">
+              <div className="flex items-center justify-between">
+                <div className="font-medium">
+                  <Link href={`/rounds/${r.id}`} className="text-[#0033A0] underline">
+                    {r.event_name || 'Unassigned event'}
+                  </Link>
+                </div>
+                <span className="text-xs rounded px-2 py-0.5 border">{r.status}</span>
               </div>
-              <div className="space-x-2 text-xs">
-                <Link
-                  href={`/rounds/${r.id}`}
-                  className="text-[#0033A0] underline"
-                >
-                  Round Page
-                </Link>
-                <Link
-                  href={`/rounds/${r.id}/holes/1`}
-                  className="text-[#0033A0] underline"
-                >
-                  Open Hole 1
+              <div className="text-sm text-gray-600">{r.start_time ? new Date(r.start_time).toLocaleString() : '—'}</div>
+              <div className="mt-2 text-sm">
+                {r.strokes ?? '—'} strokes &middot; {formatToPar(r.to_par)}
+              </div>
+              <div className="mt-2">
+                <Link href={`/rounds/${r.id}/holes/1`} className="text-sm text-[#0076ff] underline">
+                  Open scoring
                 </Link>
               </div>
-            </div>
-            <div className="col-span-3">{r.event_name ?? ''}</div>
-            <div className="col-span-2">{r.strokes ?? 0}</div>
-            <div className="col-span-1">{r.to_par ?? 0}</div>
-            <div className="col-span-2">{fmtDate(r.start_time)}</div>
-          </div>
-        ))}
-      </div>
+            </li>
+          ))}
+          {rounds.length === 0 && <li className="text-gray-600">No rounds yet.</li>}
+        </ul>
+      </section>
     </div>
-  );
+  )
+}
+
+function formatToPar(tp: number | null) {
+  if (tp === null || tp === undefined) return 'E'
+  if (tp === 0) return 'E'
+  return tp > 0 ? `+${tp}` : `${tp}`
 }

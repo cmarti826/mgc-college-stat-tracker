@@ -2,13 +2,14 @@
 
 import Link from 'next/link'
 import { useEffect, useState } from 'react'
+import type { Session } from '@supabase/supabase-js'
 import { createClient } from '@/lib/supabaseClient'
 
 type RoundStatus = 'in_progress' | 'submitted' | 'final' | 'abandoned'
 
 type VPlayerRound = {
   id: string              // alias of round_id
-  round_id: string        // keep original too (handy for debugging)
+  round_id: string
   status: RoundStatus
   strokes: number | null
   to_par: number | null
@@ -17,13 +18,23 @@ type VPlayerRound = {
   start_time: string | null
 }
 
-export default function HomePage() {
+export default function HomePage(): JSX.Element {
   const supabase = createClient()
+  const [session, setSession] = useState<Session | null>(null)
   const [rounds, setRounds] = useState<VPlayerRound[]>([])
   const [loading, setLoading] = useState(true)
   const [err, setErr] = useState<string | null>(null)
 
   useEffect(() => {
+    let mounted = true
+
+    // keep a local session (useful for debugging login state)
+    supabase.auth.getSession().then(({ data }) => {
+      if (!mounted) return
+      setSession(data.session ?? null)
+    })
+    const { data: sub } = supabase.auth.onAuthStateChange((_e, s) => setSession(s))
+
     const load = async () => {
       setLoading(true)
       setErr(null)
@@ -43,19 +54,18 @@ export default function HomePage() {
       }
       setLoading(false)
     }
+
     load()
+    return () => { mounted = false; sub.subscription.unsubscribe() }
   }, [supabase])
 
   return (
     <div className="mx-auto max-w-5xl p-4 space-y-8">
       <h1 className="text-2xl font-semibold">Dashboard</h1>
-// in HomePage(), right under the <h1>
-<div className="text-sm text-gray-600">
-  {session
-    ? <>Logged in as <strong>{session.user.email}</strong></>
-    : <>Not logged in</>
-  }
-</div>
+
+      <div className="text-sm text-gray-600">
+        {session ? <>Logged in as <strong>{session.user.email}</strong></> : <>Not logged in</>}
+      </div>
 
       <section className="space-y-3">
         <div className="flex items-center justify-between">
@@ -63,12 +73,12 @@ export default function HomePage() {
           <Link href="/events" className="text-[#0033A0] underline">All events</Link>
         </div>
 
-        {loading && <div className="text-gray-500">Loading…</div>}
+        {loading && <div className="text-gray-500">Loading...</div>}
         {err && <div className="text-red-600">Error: {err}</div>}
 
         {!loading && !err && (
           <ul className="grid gap-3 md:grid-cols-2">
-            {rounds.map(r => (
+            {rounds.map((r) => (
               <li key={r.id} className="rounded border bg-white p-3">
                 <div className="flex items-center justify-between">
                   <div className="font-medium">
@@ -80,12 +90,15 @@ export default function HomePage() {
                     {r.status}
                   </span>
                 </div>
+
                 <div className="text-sm text-gray-600">
-                  {r.display_name || 'Player'} • {r.start_time ? new Date(r.start_time).toLocaleString() : '—'}
+                  {r.display_name || 'Player'} • {r.start_time ? new Date(r.start_time).toLocaleString() : '-'}
                 </div>
+
                 <div className="mt-2 text-sm">
-                  {r.strokes ?? '—'} strokes &middot; {formatToPar(r.to_par)}
+                  {r.strokes ?? '-'} strokes · {formatToPar(r.to_par)}
                 </div>
+
                 <div className="mt-2">
                   <Link href={`/rounds/${r.id}/holes/1`} className="text-sm text-[#0076ff] underline">
                     Open scoring
@@ -93,9 +106,7 @@ export default function HomePage() {
                 </div>
               </li>
             ))}
-            {rounds.length === 0 && (
-              <li className="text-gray-600">No rounds yet.</li>
-            )}
+            {rounds.length === 0 && <li className="text-gray-600">No rounds yet.</li>}
           </ul>
         )}
       </section>
@@ -103,7 +114,7 @@ export default function HomePage() {
   )
 }
 
-function formatToPar(tp: number | null) {
+function formatToPar(tp: number | null): string {
   if (tp === null || tp === undefined) return 'E'
   if (tp === 0) return 'E'
   return tp > 0 ? `+${tp}` : `${tp}`

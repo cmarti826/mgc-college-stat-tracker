@@ -49,6 +49,13 @@ export default function HomePage() {
   return (
     <div className="mx-auto max-w-5xl p-4 space-y-8">
       <h1 className="text-2xl font-semibold">Dashboard</h1>
+// in HomePage(), right under the <h1>
+<div className="text-sm text-gray-600">
+  {session
+    ? <>Logged in as <strong>{session.user.email}</strong></>
+    : <>Not logged in</>
+  }
+</div>
 
       <section className="space-y-3">
         <div className="flex items-center justify-between">

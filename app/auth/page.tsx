@@ -13,9 +13,13 @@ export default function AuthPage() {
     setMsg(''); setLoading(true)
     try {
       const { error } = await supabase.auth.signInWithOtp({
-        email,
-        options: { emailRedirectTo: `${window.location.origin}/auth/callback` },
-      })
+  email,
+  options: {
+    emailRedirectTo: `${window.location.origin}/auth/callback`,
+    shouldCreateUser: false,   // 🔐 only send to existing users
+  },
+})
+
       if (error) throw error
       setMsg('Magic link sent. Check your inbox/junk (Outlook may put it in "Other").')
     } catch (e: any) {

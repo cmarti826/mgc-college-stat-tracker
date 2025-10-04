@@ -29,29 +29,43 @@ export default function TeamsPage() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
 
+  // Utility: load members + profile names (no implicit join needed)
+  const loadMembers = async (tid: string) => {
+    setMsg('')
+    // team name (for the rename input)
+    const { data: t } = await supabase.from('teams').select('name').eq('id', tid).single()
+    setRename((t?.name as string) || '')
+
+    const { data: tm, error } = await supabase
+      .from('team_members')
+      .select('user_id, role')
+      .eq('team_id', tid)
+      .order('role', { ascending: false })
+    if (error) { setMsg(error.message); return }
+
+    const ids = (tm || []).map((m: any) => m.user_id)
+    const profMap: Record<string, string | null> = {}
+    if (ids.length) {
+      const { data: profs } = await supabase.from('profiles').select('id, full_name').in('id', ids)
+      ;(profs || []).forEach((p: any) => { profMap[p.id] = p.full_name ?? null })
+    }
+
+    const rows: Member[] = (tm || []).map((m: any) => ({
+      user_id: m.user_id,
+      role: m.role,
+      full_name: profMap[m.user_id] ?? null,
+    }))
+    setMembers(rows)
+  }
+
   // Load members when team changes
   useEffect(() => {
     if (!teamId) { setMembers([]); setRename(''); return }
-    ;(async () => {
-      const { data: t } = await supabase.from('teams').select('name').eq('id', teamId).single()
-      setRename((t?.name as string) || '')
-      const { data, error } = await supabase
-        .from('team_members')
-        .select('user_id, role, profiles!inner(id, full_name)')
-        .eq('team_id', teamId)
-        .order('role', { ascending: false })
-      if (error) { setMsg(error.message); return }
-      const rows = (data || []).map((r: any) => ({
-        user_id: r.user_id,
-        role: r.role,
-        full_name: r.profiles?.full_name ?? null,
-      }))
-      setMembers(rows)
-      setMsg('')
-    })()
+    loadMembers(teamId)
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [teamId])
 
-  // Create team: also add current user as coach and set their default_team_id
+  // Create team: add current user as coach and set default team
   const createTeam = async () => {
     setMsg('')
     const name = newTeam.trim()
@@ -63,10 +77,10 @@ export default function TeamsPage() {
     if (error) return setMsg(error.message)
     const tid = t!.id as string
 
-    // upsert profile (in case it doesn't exist) and set default team
-    await supabase.from('profiles').upsert({ id: me.user.id, full_name: me.user.email, role: 'coach', default_team_id: tid }, { onConflict: 'id' })
-
-    // add creator as coach
+    await supabase.from('profiles').upsert(
+      { id: me.user.id, full_name: me.user.email, role: 'coach', default_team_id: tid },
+      { onConflict: 'id' }
+    )
     await supabase.from('team_members').upsert({ team_id: tid, user_id: me.user.id, role: 'coach' })
 
     setTeams(prev => [...prev, { id: tid, name: t!.name }])
@@ -77,35 +91,24 @@ export default function TeamsPage() {
 
   const renameTeam = async () => {
     if (!teamId) return
-    const { error } = await supabase.from('teams').update({ name: rename.trim() || selected?.name }).eq('id', teamId)
+    const newName = rename.trim()
+    const { error } = await supabase.from('teams').update({ name: newName || selected?.name }).eq('id', teamId)
     if (error) return setMsg(error.message)
-    setTeams(prev => prev.map(t => (t.id === teamId ? { ...t, name: rename.trim() || t.name } : t)))
+    setTeams(prev => prev.map(t => (t.id === teamId ? { ...t, name: newName || t.name } : t)))
     setMsg('Renamed ✅')
   }
 
   const addByEmail = async () => {
     if (!teamId || !email.trim()) return
-    // Use RPC (works only if the user has signed in once)
     const { error } = await supabase.rpc('add_team_member_by_email', {
       p_team: teamId,
       p_email: email.trim(),
       p_role: role,
     })
-    if (error) {
-      // Fallback: tell the coach why it failed
-      return setMsg(error.message + ' — ask them to sign in once so their account exists.')
-    }
+    if (error) return setMsg(error.message + ' — ask them to sign in once so their account exists.')
     setEmail('')
     setRole('player')
-    // reload members
-    const { data, error: e2 } = await supabase
-      .from('team_members')
-      .select('user_id, role, profiles!inner(id, full_name)')
-      .eq('team_id', teamId)
-    if (!e2) {
-      const rows = (data || []).map((r: any) => ({ user_id: r.user_id, role: r.role, full_name: r.profiles?.full_name ?? null }))
-      setMembers(rows)
-    }
+    await loadMembers(teamId)
     setMsg('Member added ✅')
   }
 
@@ -120,7 +123,6 @@ export default function TeamsPage() {
     <div style={{ padding: 24, fontFamily: 'system-ui, sans-serif' }}>
       <h1 style={{ marginBottom: 12 }}>Teams</h1>
 
-      {/* Create team */}
       <section style={{ marginBottom: 18 }}>
         <h3>Create a Team</h3>
         <div style={{ display: 'flex', gap: 8, alignItems: 'center', flexWrap: 'wrap' }}>
@@ -129,7 +131,6 @@ export default function TeamsPage() {
         </div>
       </section>
 
-      {/* Select / manage */}
       <section>
         <h3>Manage Team</h3>
         <div style={{ display: 'flex', gap: 8, alignItems: 'center', flexWrap: 'wrap', marginBottom: 10 }}>

@@ -2,8 +2,17 @@
 import { supabase } from '@/lib/supabaseClient'
 import { useEffect, useState } from 'react'
 
-type Round = { id: string; name: string | null; round_date: string; courses: { name: string } | null }
+type Round = {
+  id: string
+  name: string | null
+  round_date: string
+  // Supabase can return a single object or an array depending on rel config
+  courses: { name: string } | { name: string }[] | null
+}
+
 type Player = { id: string; full_name: string | null }
+
+const courseLabel = (c: Round['courses']) => (Array.isArray(c) ? c[0]?.name : c?.name) || ''
 
 export default function Scoring() {
   const [rounds, setRounds] = useState<Round[]>([])
@@ -37,11 +46,12 @@ export default function Scoring() {
         .select('id,name,round_date,courses(name)')
         .eq('status', 'open')
         .order('round_date', { ascending: false })
+
       if (error) {
         alert(error.message)
         return
       }
-      setRounds((data as Round[]) || [])
+      setRounds((data as any) || [])
     })()
   }, [])
 
@@ -49,7 +59,6 @@ export default function Scoring() {
   useEffect(() => {
     if (!roundId) return
     ;(async () => {
-      // get user_ids from round_players
       const { data: rp, error: e1 } = await supabase
         .from('round_players')
         .select('user_id')
@@ -59,8 +68,9 @@ export default function Scoring() {
         alert(e1.message)
         return
       }
-      const userIds = (rp || []).map((r) => r.user_id)
-      if (userIds.length === 0) {
+
+      const userIds = (rp || []).map((r: any) => r.user_id)
+      if (!userIds.length) {
         setPlayers([])
         return
       }
@@ -75,16 +85,17 @@ export default function Scoring() {
         return
       }
 
-      const mapped: Player[] = (profs || []).map((p) => ({
+      const mapped: Player[] = (profs || []).map((p: any) => ({
         id: p.id as string,
-        full_name: (p as any).full_name ?? null,
+        full_name: p.full_name ?? null,
       }))
       setPlayers(mapped)
     })()
   }, [roundId])
 
   const save = async () => {
-    if (!roundId || !userId) return alert('Select round and player first')
+    if (!roundId || !userId) return alert('Select a round and player first')
+
     for (const r of rows) {
       const { error } = await supabase.rpc('upsert_score', {
         p_round: roundId,
@@ -112,7 +123,7 @@ export default function Scoring() {
     <div>
       <h2>Open Scoring</h2>
 
-      <div style={{ display: 'flex', gap: 12, alignItems: 'center' }}>
+      <div style={{ display: 'flex', gap: 12, alignItems: 'center', flexWrap: 'wrap' }}>
         <label>
           Round{' '}
           <select
@@ -125,7 +136,7 @@ export default function Scoring() {
             <option value="">Select</option>
             {rounds.map((r) => (
               <option key={r.id} value={r.id}>
-                {new Date(r.round_date).toLocaleDateString()} — {r.courses?.name}{' '}
+                {new Date(r.round_date).toLocaleDateString()} — {courseLabel(r.courses)}{' '}
                 {r.name ? `(${r.name})` : ''}
               </option>
             ))}
@@ -147,7 +158,7 @@ export default function Scoring() {
         <button onClick={save}>Save All 18</button>
       </div>
 
-      <table style={{ marginTop: 16, borderCollapse: 'collapse' }}>
+      <table style={{ marginTop: 16, borderCollapse: 'collapse', width: '100%' }}>
         <thead>
           <tr>
             <th>Hole</th>
@@ -175,7 +186,7 @@ export default function Scoring() {
                   value={r.strokes}
                   onChange={(e) => {
                     const v = [...rows]
-                    v[idx].strokes = parseInt(e.target.value || '0', 10)
+                    v[idx].strokes = Number(e.target.value || 0)
                     setRows(v)
                   }}
                 />
@@ -186,7 +197,7 @@ export default function Scoring() {
                   value={r.putts}
                   onChange={(e) => {
                     const v = [...rows]
-                    v[idx].putts = parseInt(e.target.value || '0', 10)
+                    v[idx].putts = Number(e.target.value || 0)
                     setRows(v)
                   }}
                 />
@@ -241,7 +252,7 @@ export default function Scoring() {
                   value={r.penalties}
                   onChange={(e) => {
                     const v = [...rows]
-                    v[idx].penalties = parseInt(e.target.value || '0', 10)
+                    v[idx].penalties = Number(e.target.value || 0)
                     setRows(v)
                   }}
                 />
@@ -253,7 +264,7 @@ export default function Scoring() {
                   value={r.sg_ott}
                   onChange={(e) => {
                     const v = [...rows]
-                    v[idx].sg_ott = parseFloat(e.target.value || '0')
+                    v[idx].sg_ott = Number(e.target.value || 0)
                     setRows(v)
                   }}
                 />
@@ -265,7 +276,7 @@ export default function Scoring() {
                   value={r.sg_app}
                   onChange={(e) => {
                     const v = [...rows]
-                    v[idx].sg_app = parseFloat(e.target.value || '0')
+                    v[idx].sg_app = Number(e.target.value || 0)
                     setRows(v)
                   }}
                 />
@@ -277,7 +288,7 @@ export default function Scoring() {
                   value={r.sg_arg}
                   onChange={(e) => {
                     const v = [...rows]
-                    v[idx].sg_arg = parseFloat(e.target.value || '0')
+                    v[idx].sg_arg = Number(e.target.value || 0)
                     setRows(v)
                   }}
                 />
@@ -289,7 +300,7 @@ export default function Scoring() {
                   value={r.sg_putt}
                   onChange={(e) => {
                     const v = [...rows]
-                    v[idx].sg_putt = parseFloat(e.target.value || '0')
+                    v[idx].sg_putt = Number(e.target.value || 0)
                     setRows(v)
                   }}
                 />

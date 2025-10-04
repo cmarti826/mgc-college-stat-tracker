@@ -24,9 +24,10 @@ export default function Nav() {
     }
   }, [])
 
-  const items = useMemo(
+    const items = useMemo(
     () => [
       { href: '/', label: 'Dashboard' },
+      { href: '/teams', label: 'Teams' },          // ← add this
       { href: '/courses', label: 'Courses' },
       { href: '/courses/new', label: 'New Course' },
       { href: '/schedule', label: 'Schedule' },
@@ -36,6 +37,7 @@ export default function Nav() {
     ],
     []
   )
+
 
   const isActive = (href: string) =>
     pathname === href || (href !== '/' && pathname.startsWith(href))

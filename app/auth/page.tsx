@@ -28,7 +28,9 @@ export default function AuthPage() {
         email: email.trim(),
         options: {
           emailRedirectTo: `${window.location.origin}/auth/callback`,
-          shouldCreateUser: false, // ⬅️ important
+          // set shouldCreateUser to true to allow OTP signups
+shouldCreateUser: true
+
         },
       })
       if (error) throw error

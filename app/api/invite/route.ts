@@ -35,25 +35,30 @@ export async function POST(req: Request) {
     const redirectTo = `${process.env.NEXT_PUBLIC_SITE_URL || 'https://mgcstats.vercel.app'}/auth/callback`
     const inviteRes = await supabaseAdmin.auth.admin.inviteUserByEmail(email, { redirectTo })
 
-    let userId: string | undefined = inviteRes.data?.user?.id
-    let info = 'invited'
+    // ...after inviteUserByEmail(...)
+let userId: string | undefined = inviteRes.data?.user?.id
+let info = 'invited'
+let actionLink: string | undefined
 
-    // If user already exists, generate a magic link instead
-    if (inviteRes.error && inviteRes.error.status === 422) {
-      const linkRes = await supabaseAdmin.auth.admin.generateLink({
-        type: 'magiclink',
-        email,
-        options: { redirectTo },
-      })
-      if (linkRes.error) {
-        return NextResponse.json({ error: linkRes.error.message }, { status: linkRes.error.status || 500 })
-      }
-      userId = linkRes.data?.user?.id
-      info = 'existing_user_magic_link'
-    } else if (inviteRes.error) {
-      // Any other admin error
-      return NextResponse.json({ error: inviteRes.error.message }, { status: inviteRes.error.status || 500 })
-    }
+if (inviteRes.error && inviteRes.error.status === 422) {
+  // existing user → generate a magic link
+  const linkRes = await supabaseAdmin.auth.admin.generateLink({
+    type: 'magiclink',
+    email,
+    options: { redirectTo },
+  })
+  if (linkRes.error) {
+    return NextResponse.json({ error: linkRes.error.message }, { status: linkRes.error.status || 500 })
+  }
+  userId = linkRes.data?.user?.id
+  // supabase-js v2 exposes the url here:
+  actionLink = (linkRes.data as any)?.properties?.action_link || (linkRes.data as any)?.action_link
+  info = 'existing_user_magic_link'
+}
+
+// ... later, successful return:
+return NextResponse.json({ ok: true, status: info, userId, action_link: actionLink })
+
 
     // Add the user to the team by email (works once user exists/invited)
     const rpc = await supabaseAdmin.rpc('add_team_member_by_email', {

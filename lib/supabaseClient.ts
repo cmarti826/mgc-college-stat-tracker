@@ -1,17 +1,25 @@
+// /lib/supabaseClient.ts
 import { createClient } from '@supabase/supabase-js'
 
-// IMPORTANT: these must be the production project's values (no trailing slash)
+// Make sure these env vars are set in Vercel
 const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL!
 const supabaseAnonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!
 
+// Single browser client used across the app
 export const supabase = createClient(supabaseUrl, supabaseAnonKey, {
   auth: {
-    // keep a single session in the browser and refresh automatically
     persistSession: true,
     autoRefreshToken: true,
   },
   global: {
-    // Identify your app; helps support track requests
     headers: { 'x-application-name': 'mgcstats' },
   },
 })
+
+/**
+ * Back-compat helper for files that import getSupabaseBrowser()
+ * (e.g., app/rounds/[id]/score/ui.tsx and app/rounds/new/ui.tsx)
+ */
+export function getSupabaseBrowser() {
+  return supabase
+}

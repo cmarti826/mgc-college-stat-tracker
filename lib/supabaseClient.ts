@@ -1,15 +1,17 @@
-import { createClient, SupabaseClient } from '@supabase/supabase-js'
+import { createClient } from '@supabase/supabase-js'
 
-// Singleton so the browser only instantiates once during HMR/build
-let browserClient: SupabaseClient | null = null
+// IMPORTANT: these must be the production project's values (no trailing slash)
+const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL!
+const supabaseAnonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!
 
-export function getSupabaseBrowser(): SupabaseClient {
-  if (browserClient) return browserClient
-  const url = process.env.NEXT_PUBLIC_SUPABASE_URL!
-  const anon = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!
-  browserClient = createClient(url, anon)
-  return browserClient
-}
-
-// Optional convenience export for files that expect `supabase` directly
-export const supabase = getSupabaseBrowser()
+export const supabase = createClient(supabaseUrl, supabaseAnonKey, {
+  auth: {
+    // keep a single session in the browser and refresh automatically
+    persistSession: true,
+    autoRefreshToken: true,
+  },
+  global: {
+    // Identify your app; helps support track requests
+    headers: { 'x-application-name': 'mgcstats' },
+  },
+})

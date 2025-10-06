@@ -2,12 +2,21 @@
 
 import { useEffect, useMemo, useState } from 'react'
 import { supabase } from '@/lib/supabaseClient'
+import RoleGate from '@/components/RoleGate'
 
 type Team = { id: string; name: string }
 type Role = 'player' | 'coach' | 'admin'
 type Member = { user_id: string; role: Role; full_name: string | null }
 
 export default function TeamsPage() {
+  return (
+    <RoleGate allow={['coach', 'admin']}>
+      <TeamsInner />
+    </RoleGate>
+  )
+}
+
+function TeamsInner() {
   const [teams, setTeams] = useState<Team[]>([])
   const [teamId, setTeamId] = useState<string>('')
   const [newTeam, setNewTeam] = useState('')
@@ -17,23 +26,46 @@ export default function TeamsPage() {
   const [role, setRole] = useState<Role>('player')
   const [msg, setMsg] = useState('')
   const [busy, setBusy] = useState(false)
-  const [inviteLink, setInviteLink] = useState<string | null>(null) // optional if API returns a direct link
+  const [inviteLink, setInviteLink] = useState<string | null>(null)
 
-  const selected = useMemo(() => teams.find((t) => t.id === teamId) || null, [teams, teamId])
+  const selected = useMemo(
+    () => teams.find((t) => t.id === teamId) || null,
+    [teams, teamId]
+  )
 
-  // Load teams on mount
+  // Load teams on mount, prefer default team from profile if present
   useEffect(() => {
     ;(async () => {
-      const { data, error } = await supabase.from('teams').select('id,name').order('created_at')
+      setMsg('')
+      const { data: tms, error } = await supabase
+        .from('teams')
+        .select('id,name')
+        .order('created_at')
+
       if (error) { setMsg(error.message); return }
-      const list = (data as Team[]) || []
+      const list = (tms as Team[]) || []
       setTeams(list)
+
+      const { data: u } = await supabase.auth.getUser()
+      const uid = u?.user?.id
+      if (uid) {
+        const { data: prof } = await supabase
+          .from('profiles')
+          .select('default_team_id')
+          .eq('id', uid)
+          .maybeSingle()
+        const def = (prof as any)?.default_team_id as string | undefined
+        if (def && list.some(t => t.id === def)) {
+          setTeamId(def)
+          return
+        }
+      }
       if (list.length && !teamId) setTeamId(list[0].id)
     })()
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
 
-  // Load members + team name whenever team changes
+  // Load members & current name when team changes
   useEffect(() => {
     if (!teamId) { setMembers([]); setRename(''); return }
     loadMembers(teamId)
@@ -43,24 +75,32 @@ export default function TeamsPage() {
   async function loadMembers(tid: string) {
     setMsg('')
     setInviteLink(null)
-    // get current name
-    const { data: t } = await supabase.from('teams').select('name').eq('id', tid).single()
-    setRename((t?.name as string) || '')
 
-    // load members (no implicit join)
-    const { data: tm, error } = await supabase
+    const { data: t, error: e1 } = await supabase
+      .from('teams')
+      .select('name')
+      .eq('id', tid)
+      .maybeSingle()
+    if (!e1 && t) setRename((t as any).name as string)
+
+    const { data: tm, error: e2 } = await supabase
       .from('team_members')
       .select('user_id, role')
       .eq('team_id', tid)
       .order('role', { ascending: false })
-    if (error) { setMsg(error.message); return }
-    const ids = (tm || []).map((m: any) => m.user_id)
+    if (e2) { setMsg(e2.message); return }
+
+    const ids = ((tm as any[]) || []).map(m => m.user_id)
     const profMap: Record<string, string | null> = {}
     if (ids.length) {
-      const { data: profs } = await supabase.from('profiles').select('id, full_name').in('id', ids)
-      ;(profs || []).forEach((p: any) => { profMap[p.id] = p.full_name ?? null })
+      const { data: profs } = await supabase
+        .from('profiles')
+        .select('id, full_name')
+        .in('id', ids)
+      ;(profs as any[] || []).forEach(p => { profMap[p.id] = p.full_name ?? null })
     }
-    const rows: Member[] = (tm || []).map((m: any) => ({
+
+    const rows: Member[] = ((tm as any[]) || []).map(m => ({
       user_id: m.user_id,
       role: m.role,
       full_name: profMap[m.user_id] ?? null,
@@ -75,25 +115,28 @@ export default function TeamsPage() {
     if (!name) return alert('Enter a team name')
     setBusy(true)
     try {
-      const { data: me } = await supabase.auth.getUser()
-      if (!me?.user) throw new Error('Sign in first')
+      const { data: u } = await supabase.auth.getUser()
+      const me = u?.user
+      if (!me) throw new Error('Sign in first')
 
-      const { data: t, error } = await supabase.from('teams')
+      const { data: t, error } = await supabase
+        .from('teams')
         .insert({ name })
         .select('id,name')
         .single()
       if (error) throw error
-      const tid = t!.id as string
+      const tid = (t as any).id as string
 
-      // make sure coach profile exists + set default team
       await supabase.from('profiles').upsert(
-        { id: me.user.id, full_name: me.user.email, role: 'coach', default_team_id: tid },
+        { id: me.id, full_name: me.email, role: 'coach', default_team_id: tid },
         { onConflict: 'id' }
       )
-      // add as coach
-      await supabase.from('team_members').upsert({ team_id: tid, user_id: me.user.id, role: 'coach' })
 
-      setTeams((prev) => [...prev, { id: tid, name: t!.name }])
+      await supabase
+        .from('team_members')
+        .upsert({ team_id: tid, user_id: me.id, role: 'coach' })
+
+      setTeams(prev => [...prev, { id: tid, name }])
       setTeamId(tid)
       setNewTeam('')
       setMsg('Team created ✅')
@@ -107,11 +150,15 @@ export default function TeamsPage() {
   const renameTeam = async () => {
     if (!teamId) return
     const name = rename.trim()
+    if (!name) return
     setBusy(true)
     try {
-      const { error } = await supabase.from('teams').update({ name: name || selected?.name }).eq('id', teamId)
+      const { error } = await supabase
+        .from('teams')
+        .update({ name })
+        .eq('id', teamId)
       if (error) throw error
-      setTeams((prev) => prev.map((t) => (t.id === teamId ? { ...t, name: name || t.name } : t)))
+      setTeams(prev => prev.map(t => (t.id === teamId ? { ...t, name } : t)))
       setMsg('Renamed ✅')
     } catch (e: any) {
       setMsg(e.message || 'Error renaming team')
@@ -120,7 +167,7 @@ export default function TeamsPage() {
     }
   }
 
-  // Coach/admin invite via API (server uses service key)
+  // Invite via server API (uses service role; also adds to team)
   const addByEmail = async () => {
     if (!teamId || !email.trim()) return
     setBusy(true)
@@ -141,7 +188,6 @@ export default function TeamsPage() {
       const json = await res.json()
       if (!res.ok) throw new Error(json.error || 'Invite failed')
 
-      // Optional: if your API returns an action link, expose it here.
       if (json.action_link) setInviteLink(json.action_link as string)
 
       setEmail('')
@@ -159,12 +205,13 @@ export default function TeamsPage() {
     if (!teamId) return
     setBusy(true)
     try {
-      const { error } = await supabase.from('team_members')
+      const { error } = await supabase
+        .from('team_members')
         .delete()
         .eq('team_id', teamId)
         .eq('user_id', uid)
       if (error) throw error
-      setMembers((prev) => prev.filter((m) => m.user_id !== uid))
+      setMembers(prev => prev.filter(m => m.user_id !== uid))
       setMsg('Member removed ✅')
     } catch (e: any) {
       setMsg(e.message || 'Error removing member')

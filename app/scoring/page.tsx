@@ -56,9 +56,6 @@ export default function OpenScoringPage() {
         }
       })
       setTeams(opts)
-      if (opts.length && teamId === 'all') {
-        // keep 'all' as default; user can narrow to a team
-      }
     })()
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
@@ -81,7 +78,26 @@ export default function OpenScoringPage() {
       const { data, error } = await query
       if (error) { setRows([]); setMsg(error.message); return }
 
-      const list = (data as RoundRow[]) || []
+      // normalize related rows (Supabase can return arrays)
+      const list: RoundRow[] = ((data as any[]) || []).map((r) => {
+        const c = Array.isArray(r.courses) ? (r.courses[0] ?? null) : (r.courses ?? null)
+        const t = Array.isArray(r.tee_sets) ? (r.tee_sets[0] ?? null) : (r.tee_sets ?? null)
+        return {
+          id: r.id,
+          team_id: r.team_id,
+          name: r.name ?? null,
+          round_date: r.round_date ?? null,
+          status: r.status ?? null,
+          sg_model: r.sg_model ?? null,
+          courses: c ? { name: c.name ?? null } : null,
+          tee_sets: t ? {
+            tee_name: t.tee_name ?? null,
+            name: t.name ?? null,
+            rating: t.rating ?? null,
+            slope: t.slope ?? null,
+          } : null,
+        }
+      })
       setRows(list)
 
       // figure out which of these rounds I'm on
@@ -148,7 +164,7 @@ export default function OpenScoringPage() {
               <Th>Course / Tee</Th>
               <Th>Model</Th>
               <Th>Status</Th>
-              <Th></Th>
+              <Th /> {/* action column */}
             </tr>
           </thead>
           <tbody>
@@ -232,7 +248,7 @@ function StatusChip({ status }: { status: string }) {
   )
 }
 
-function Th({ children }: { children: React.ReactNode }) {
+function Th({ children }: { children?: React.ReactNode }) {
   return <th style={{ textAlign: 'left', padding: 8, background: '#fafafa', borderBottom: '1px solid #eee' }}>{children}</th>
 }
 function Td({ children, ...rest }: React.DetailedHTMLProps<React.TdHTMLAttributes<HTMLTableCellElement>, HTMLTableCellElement>) {

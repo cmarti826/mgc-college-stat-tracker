@@ -56,7 +56,7 @@ export default function RoundsPage() {
       setMsg('')
       let query = supabase
         .from('rounds')
-        // requires FKs for PostgREST relationship names; if not, fetch names separately
+        // related tables may come back as arrays -> we normalize below
         .select('id, team_id, name, round_date, status, sg_model, courses(name), tee_sets(tee_name, name, rating, slope)')
         .eq('team_id', teamId)
         .order('round_date', { ascending: false })
@@ -68,7 +68,29 @@ export default function RoundsPage() {
 
       const { data, error } = await query
       if (error) { setMsg(error.message); return }
-      setRows((data as RoundRow[]) || [])
+
+      const list = ((data as any[]) || []).map((r) => {
+        const c = Array.isArray(r.courses) ? (r.courses[0] ?? null) : (r.courses ?? null)
+        const t = Array.isArray(r.tee_sets) ? (r.tee_sets[0] ?? null) : (r.tee_sets ?? null)
+        const out: RoundRow = {
+          id: r.id,
+          team_id: r.team_id,
+          name: r.name ?? null,
+          round_date: r.round_date ?? null,
+          status: r.status ?? null,
+          sg_model: r.sg_model ?? null,
+          courses: c ? { name: c.name ?? null } : null,
+          tee_sets: t ? {
+            tee_name: t.tee_name ?? null,
+            name: t.name ?? null,
+            rating: t.rating ?? null,
+            slope: t.slope ?? null,
+          } : null,
+        }
+        return out
+      }) as RoundRow[]
+
+      setRows(list)
     })()
   }, [teamId, status])
 

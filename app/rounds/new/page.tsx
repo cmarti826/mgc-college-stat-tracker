@@ -23,7 +23,6 @@ export default function NewRoundPage() {
   const [teeSetId, setTeeSetId] = useState<string>('')
   const [roundDate, setRoundDate] = useState<string>(() => new Date().toISOString().slice(0, 10))
   const [roundType, setRoundType] = useState<RoundType>('PRACTICE')
-  const [notes, setNotes] = useState<string>('')
 
   useEffect(() => {
     let alive = true
@@ -65,12 +64,12 @@ export default function NewRoundPage() {
       const { data, error } = await supabase
         .from('rounds')
         .insert({
-          player_id: user.id,             // also auto-filled by DB trigger if omitted
+          player_id: user.id,   // also auto-filled by DB trigger if omitted
           course_id: courseId,
           tee_set_id: teeSetId,
           round_date: roundDate,
           round_type: roundType,
-          notes: notes || null,
+          // no notes
         })
         .select('id')
         .single()
@@ -125,11 +124,6 @@ export default function NewRoundPage() {
               {ROUND_TYPES.map(rt => <option key={rt} value={rt}>{rt}</option>)}
             </select>
           </div>
-        </div>
-
-        <div>
-          <label className="block text-sm font-medium mb-1">Notes</label>
-          <textarea className="w-full rounded-xl border p-2" rows={3} value={notes} onChange={e => setNotes(e.target.value)} placeholder="Optional" />
         </div>
 
         <button type="submit" disabled={submitting} className="rounded-2xl px-4 py-2 border shadow disabled:opacity-60">

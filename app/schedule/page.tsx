@@ -127,13 +127,15 @@ export default function CreateRoundPage() {
       if (!name.trim()) throw new Error('Enter a round name')
 
       const payload = {
-        team_id: teamId || null,
-        name: name.trim(),
-        round_date: date,                // YYYY-MM-DD
-        status,                          // 'open' | 'scheduled'
-        sg_model: sgModel,               // 'pga_tour' | 'ncaa_d1'
-        tee_set_id: teeSetId,            // CRITICAL: ensures holes/yardage populate later
-      }
+  team_id: teamId || null,
+  name: name.trim(),
+  round_date: date,                // YYYY-MM-DD
+  status,                          // 'open' | 'scheduled'
+  sg_model: sgModel,               // 'pga_tour' | 'ncaa_d1'
+  course_id: courseId,             // ✅ include course_id
+  tee_set_id: teeSetId,            // ✅ still store tee set for holes/yardages
+}
+
 
       const { data, error } = await supabase.from('rounds').insert(payload).select('id').maybeSingle()
       if (error) throw error

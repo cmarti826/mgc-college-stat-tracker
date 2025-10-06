@@ -29,7 +29,14 @@ type HoleSG = {
 }
 
 type Course = { id: string; name: string }
-type TeeSet = { id: string; course_id: string; tee_name?: string | null; name?: string | null; rating?: number | null; slope?: number | null }
+type TeeSet = {
+  id: string
+  course_id: string
+  tee_name?: string | null
+  name?: string | null
+  rating?: number | null
+  slope?: number | null
+}
 
 type ParRow = { hole_number: number; par: number | null }
 type YdgRow = { hole_number: number; yardage: number | null }
@@ -180,11 +187,9 @@ export default function ScoreForm({ round, players }: { round: any; players: any
     const rs =
       (tee?.rating ? `${tee.rating}` : '') +
       (tee?.slope ? `/${tee.slope}` : '')
-    return [
-      course?.name || 'Course',
-      teeLabel ? `• ${teeLabel}` : '',
-      rs ? `(${rs})` : '',
-    ].filter(Boolean).join(' ')
+    return [course?.name || 'Course', teeLabel ? `• ${teeLabel}` : '', rs ? `(${rs})` : '']
+      .filter(Boolean)
+      .join(' ')
   })()
 
   // ---------- Render ----------
@@ -243,7 +248,11 @@ export default function ScoreForm({ round, players }: { round: any; players: any
               {(() => {
                 const o = sumRange(parByHole, 1, 9)
                 const n = sumRange(parByHole, 10, 18)
-                return (o && n) ? (o + n) : (holesList.length ? sumRange(parByHole, Math.min(...holesList), Math.max(...holesList)) : '-')
+                return (o && n)
+                  ? (o + n)
+                  : (holesList.length
+                      ? sumRange(parByHole, Math.min(...holesList), Math.max(...holesList))
+                      : '-')
               })()}
             </Cell>
           </div>
@@ -274,7 +283,11 @@ export default function ScoreForm({ round, players }: { round: any; players: any
               {(() => {
                 const o = sumRange(ydgByHole, 1, 9)
                 const n = sumRange(ydgByHole, 10, 18)
-                return (o && n) ? (o + n) : (holesList.length ? sumRange(ydgByHole, Math.min(...holesList), Math.max(...holesList)) : '-')
+                return (o && n)
+                  ? (o + n)
+                  : (holesList.length
+                      ? sumRange(ydgByHole, Math.min(...holesList), Math.max(...holesList))
+                      : '-')
               })()}
             </Cell>
           </div>
@@ -366,22 +379,43 @@ export default function ScoreForm({ round, players }: { round: any; players: any
 /* ---------- Tiny presentational helpers ---------- */
 function CellH({ children, center }: { children: any; center?: boolean }) {
   return (
-    <div style={{ padding: '6px 8px', fontWeight: 600, background: '#fafafa', border: '1px solid #eee', textAlign: center ? 'center' as const : 'left' }}>
+    <div
+      style={{
+        padding: '6px 8px',
+        fontWeight: 600,
+        background: '#fafafa',
+        border: '1px solid #eee',
+        textAlign: center ? 'center' as const : 'left',
+      }}
+    >
       {children}
     </div>
   )
 }
-function Cell({ children, center, muted, bold }: { children: any; center?: boolean; muted?: boolean; bold?: boolean }) {
+
+function Cell({
+  children,
+  center,
+  muted,
+  bold,
+}: {
+  children?: any // <-- make optional to allow <Cell muted />
+  center?: boolean
+  muted?: boolean
+  bold?: boolean
+}) {
   return (
-    <div style={{
-      padding: '6px 8px',
-      border: '1px solid #f2f2f2',
-      textAlign: center ? 'center' as const : 'left',
-      color: muted ? '#777' : undefined,
-      fontWeight: bold ? 700 : 400,
-      whiteSpace: 'nowrap'
-    }}>
-      {children}
+    <div
+      style={{
+        padding: '6px 8px',
+        border: '1px solid #f2f2f2',
+        textAlign: center ? 'center' as const : 'left',
+        color: muted ? '#777' : undefined,
+        fontWeight: bold ? 700 : 400,
+        whiteSpace: 'nowrap',
+      }}
+    >
+      {children ?? null}
     </div>
   )
 }

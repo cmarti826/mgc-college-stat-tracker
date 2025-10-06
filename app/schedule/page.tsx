@@ -2,276 +2,281 @@
 
 import { useEffect, useMemo, useState } from 'react'
 import { useRouter } from 'next/navigation'
-import { supabase } from '@/lib/supabaseClient'
+import { getSupabaseBrowser } from '@/lib/supabaseClient'
 
-type Team = { id: string; name: string }
 type Course = { id: string; name: string }
-type Tee = { id: string; tee_name?: string | null; name?: string | null; rating?: number | null; slope?: number | null }
+type TeeSet = {
+  id: string
+  course_id: string
+  tee_name?: string | null
+  name?: string | null
+  rating?: number | null
+  slope?: number | null
+}
+type ParRow = { hole_number: number; par: number | null }
+type YdgRow = { hole_number: number; yardage: number | null }
 
-type RoundStatus = 'open' | 'scheduled'
-type SGModel = 'pga_tour' | 'ncaa_d1'
-
-export default function SchedulePage() {
+export default function CreateRoundPage() {
+  const supabase = getSupabaseBrowser()
   const router = useRouter()
 
   // form state
-  const [teamId, setTeamId] = useState<string>('')
-  const [courseId, setCourseId] = useState<string>('')
-  const [teeId, setTeeId] = useState<string>('')
-  const [roundName, setRoundName] = useState<string>('')
-  const [date, setDate] = useState<string>(today())
-  const [status, setStatus] = useState<RoundStatus>('open')
-  const [sgModel, setSgModel] = useState<SGModel>('pga_tour')
-  const [autoAddPlayers, setAutoAddPlayers] = useState<boolean>(true)
+  const [teamId, setTeamId] = useState<string | ''>('')
+  const [courseId, setCourseId] = useState<string | ''>('')
+  const [teeSetId, setTeeSetId] = useState<string | ''>('')
+  const [name, setName] = useState('')
+  const [date, setDate] = useState<string>(() => new Date().toISOString().slice(0, 10))
+  const [sgModel, setSgModel] = useState<'pga_tour' | 'ncaa_d1'>('pga_tour')
+  const [status, setStatus] = useState<'open' | 'scheduled'>('open')
 
   // data
-  const [teams, setTeams] = useState<Team[]>([])
+  const [teams, setTeams] = useState<{ id: string; name: string | null }[]>([])
   const [courses, setCourses] = useState<Course[]>([])
-  const [tees, setTees] = useState<Tee[]>([])
+  const [teeSets, setTeeSets] = useState<TeeSet[]>([])
+  const [pars, setPars] = useState<ParRow[]>([])
+  const [ydgs, setYdgs] = useState<YdgRow[]>([])
+  const [msg, setMsg] = useState('')
 
-  // ui
-  const [busy, setBusy] = useState(false)
-  const [msg, setMsg] = useState<string>('')
-
-  // load teams + default team
+  // load teams (optional), courses
   useEffect(() => {
     ;(async () => {
-      setMsg('')
-      // teams
-      const { data: tms, error: e1 } = await supabase
-        .from('teams')
-        .select('id,name')
-        .order('created_at', { ascending: true })
-      if (e1) { setMsg(e1.message); return }
-      setTeams((tms as Team[]) || [])
+      // Teams are optional; if you don’t use them, you can remove this block safely.
+      const { data: t } = await supabase.from('teams').select('id, name').order('name', { ascending: true })
+      setTeams((t as any[]) || [])
 
-      // default team from profile (if exists)
-      const { data: me } = await supabase.auth.getUser()
-      if (me?.user?.id) {
-        const { data: prof } = await supabase
-          .from('profiles')
-          .select('default_team_id')
-          .eq('id', me.user.id)
-          .maybeSingle()
-        const defTeam = (prof as any)?.default_team_id as string | undefined
-        if (defTeam) setTeamId(defTeam)
-      } else if (tms && tms.length) {
-        setTeamId(tms[0].id)
-      }
+      const { data: c, error } = await supabase.from('courses').select('id, name').order('name', { ascending: true })
+      if (error) setMsg(error.message)
+      setCourses((c as Course[]) || [])
     })()
-  }, [])
+  }, [supabase])
 
-  // load courses
+  // when course changes, load tee sets and pars
   useEffect(() => {
-    ;(async () => {
-      const { data, error } = await supabase
-        .from('courses')
-        .select('id,name')
-        .order('name', { ascending: true })
-      if (error) { setMsg(error.message); return }
-      setCourses((data as Course[]) || [])
-    })()
-  }, [])
-
-  // load tee sets when course changes
-  useEffect(() => {
-    setTeeId('')
-    if (!courseId) { setTees([]); return }
-    ;(async () => {
-      const { data, error } = await supabase
-        .from('tee_sets')
-        .select('id, tee_name, name, rating, slope')
-        .eq('course_id', courseId)
-        .order('rating', { ascending: false })
-      if (error) { setMsg(error.message); return }
-      setTees((data as Tee[]) || [])
-    })()
-  }, [courseId])
-
-  // default round name when course changes (only if name empty)
-  useEffect(() => {
-    if (!roundName) {
-      const c = courses.find(c => c.id === courseId)
-      if (c) setRoundName(`Round at ${c.name}`)
+    if (!courseId) {
+      setTeeSets([])
+      setPars([])
+      setTeeSetId('')
+      return
     }
-  }, [courseId, courses, roundName])
+    ;(async () => {
+      // tee sets for the course
+      const { data: ts, error: e1 } = await supabase
+        .from('tee_sets')
+        .select('id, course_id, tee_name, name, rating, slope')
+        .eq('course_id', courseId)
+        .order('tee_name', { ascending: true })
+      if (e1) { setMsg(e1.message); return }
+      setTeeSets((ts as TeeSet[]) || [])
+      // default to first tee (if any)
+      setTeeSetId((ts && ts[0]?.id) || '')
 
-  const teeLabel = (t: Tee) => {
-    const nm = t.tee_name || t.name || 'Tee'
-    const rs = (t.rating ? `${t.rating}` : '') + (t.slope ? `/${t.slope}` : '')
-    return rs ? `${nm} (${rs})` : nm
-  }
+      // pars for the course
+      const { data: ch, error: e2 } = await supabase
+        .from('course_holes')
+        .select('hole_number, par')
+        .eq('course_id', courseId)
+        .order('hole_number')
+      if (e2) { setMsg(e2.message); return }
+      setPars((ch as ParRow[]) || [])
+    })()
+  }, [courseId, supabase])
 
-  const canCreate = useMemo(
-    () => !!teamId && !!courseId && !!teeId && !!date && !!roundName.trim(),
-    [teamId, courseId, teeId, date, roundName]
-  )
+  // when tee set changes, load yardages
+  useEffect(() => {
+    if (!teeSetId) { setYdgs([]); return }
+    ;(async () => {
+      const { data: th, error } = await supabase
+        .from('tee_set_holes')
+        .select('hole_number, yardage')
+        .eq('tee_set_id', teeSetId)
+        .order('hole_number')
+      if (error) { setMsg(error.message); return }
+      setYdgs((th as YdgRow[]) || [])
+    })()
+  }, [teeSetId, supabase])
 
-  const createRound = async () => {
+  const holes = useMemo(() => {
+    // Show actual holes when we have them; otherwise show 1..18 so UI doesn't look empty
+    const s = new Set<number>()
+    pars.forEach(h => s.add(h.hole_number))
+    ydgs.forEach(h => s.add(h.hole_number))
+    const list = Array.from(s).sort((a, b) => a - b)
+    return list.length ? list : Array.from({ length: 18 }, (_, i) => i + 1)
+  }, [pars, ydgs])
+
+  const parByHole = useMemo(() => {
+    const m = new Map<number, number | null>()
+    pars.forEach(h => m.set(h.hole_number, h.par))
+    return m
+  }, [pars])
+  const ydgByHole = useMemo(() => {
+    const m = new Map<number, number | null>()
+    ydgs.forEach(h => m.set(h.hole_number, h.yardage))
+    return m
+  }, [ydgs])
+
+  const selectedTee = teeSets.find(t => t.id === teeSetId)
+  const teeLabel = selectedTee?.tee_name || selectedTee?.name || ''
+  const teeRS = selectedTee ? [selectedTee.rating, selectedTee.slope].filter(Boolean).join('/') : ''
+
+  async function createRound() {
     try {
-      setBusy(true)
       setMsg('')
+      if (!courseId) throw new Error('Pick a course')
+      if (!teeSetId) throw new Error('Pick a tee set')
+      if (!name.trim()) throw new Error('Enter a round name')
 
-      if (!canCreate) {
-        setMsg('Missing fields.')
-        return
+      const payload = {
+        team_id: teamId || null,
+        name: name.trim(),
+        round_date: date,                // YYYY-MM-DD
+        status,                          // 'open' | 'scheduled'
+        sg_model: sgModel,               // 'pga_tour' | 'ncaa_d1'
+        tee_set_id: teeSetId,            // CRITICAL: ensures holes/yardage populate later
       }
 
-      // insert round
-      const payload: any = {
-        team_id: teamId,
-        course_id: courseId,
-        tee_set_id: teeId,
-        round_date: date,       // expects ISO yyyy-mm-dd
-        name: roundName.trim(),
-        status,                 // enum round_status: 'open' | 'scheduled'
-        sg_model: sgModel,      // enum sg_model
-      }
-
-      const { data: ins, error } = await supabase
-        .from('rounds')
-        .insert(payload)
-        .select('id')
-        .single()
+      const { data, error } = await supabase.from('rounds').insert(payload).select('id').maybeSingle()
       if (error) throw error
 
-      const roundId = (ins as any).id as string
-
-      // optionally auto-add all team members to round_players
-      if (autoAddPlayers) {
-        const { data: members, error: e2 } = await supabase
-          .from('team_members')
-          .select('user_id')
-          .eq('team_id', teamId)
-        if (!e2 && members && members.length) {
-          const rows = (members as any[]).map(m => ({
-            round_id: roundId,
-            user_id: m.user_id,
-            role: 'player', // if your round_players has a role column
-          }))
-          // insert ignoring duplicates if re-run
-          await supabase.from('round_players').insert(rows).select('round_id').maybeSingle()
-        }
-      }
-
-      setMsg('Round created ✅ Redirecting to scoring…')
-      router.push(`/rounds/${roundId}/score`)
+      router.push(`/rounds/${data!.id}/score`)
     } catch (e: any) {
-      setMsg(e.message || 'Error creating round')
-    } finally {
-      setBusy(false)
+      setMsg(e.message || 'Failed to create round')
     }
   }
 
   return (
-    <div style={{ padding: 24, fontFamily: 'system-ui, sans-serif' }}>
-      <h1 style={{ marginBottom: 12 }}>Schedule / Create Round</h1>
+    <div style={{ padding: 16, display: 'grid', gap: 18 }}>
+      <h2 style={{ margin: 0 }}>Create Round</h2>
 
-      <div style={{ display: 'grid', gap: 10, maxWidth: 760 }}>
-        {/* Team */}
-        <label style={label}>
-          <span>Team</span>
-          <select value={teamId} onChange={(e) => setTeamId(e.target.value)}>
-            <option value="">Select team</option>
-            {teams.map(t => <option key={t.id} value={t.id}>{t.name}</option>)}
+      <div style={{ display: 'grid', gap: 12, gridTemplateColumns: 'repeat(2, minmax(240px, 1fr))' }}>
+        {/* Team (optional) */}
+        <label>Team
+          <select value={teamId} onChange={e => setTeamId(e.target.value)} style={input}>
+            <option value="">(none)</option>
+            {teams.map(t => <option key={t.id} value={t.id}>{t.name || t.id}</option>)}
           </select>
         </label>
 
-        {/* Course */}
-        <label style={label}>
-          <span>Course</span>
-          <select value={courseId} onChange={(e) => setCourseId(e.target.value)}>
-            <option value="">Select course</option>
+        <label>Round date
+          <input type="date" value={date} onChange={e => setDate(e.target.value)} style={input} />
+        </label>
+
+        <label>Course
+          <select
+            value={courseId}
+            onChange={e => setCourseId(e.target.value)}
+            style={input}
+          >
+            <option value="">Pick a course</option>
             {courses.map(c => <option key={c.id} value={c.id}>{c.name}</option>)}
           </select>
         </label>
 
-        {/* Tee set */}
-        <label style={label}>
-          <span>Tee Set</span>
-          <select value={teeId} onChange={(e) => setTeeId(e.target.value)} disabled={!courseId || tees.length === 0}>
-            <option value="">{courseId ? (tees.length ? 'Select tee set' : 'No tees for this course') : 'Select a course first'}</option>
-            {tees.map(t => <option key={t.id} value={t.id}>{teeLabel(t)}</option>)}
+        <label>Tee set
+          <select
+            value={teeSetId}
+            onChange={e => setTeeSetId(e.target.value)}
+            style={input}
+            disabled={!courseId || teeSets.length === 0}
+          >
+            <option value="">{teeSets.length ? 'Pick a tee set' : 'No tees for this course'}</option>
+            {teeSets.map(t => (
+              <option key={t.id} value={t.id}>
+                {(t.tee_name || t.name || 'Tee')} {t.rating && t.slope ? `(${t.rating}/${t.slope})` : ''}
+              </option>
+            ))}
           </select>
         </label>
 
-        {/* Date */}
-        <label style={label}>
-          <span>Date</span>
-          <input
-            type="date"
-            value={date}
-            onChange={(e) => setDate(e.target.value)}
-          />
+        <label>Round name
+          <input value={name} onChange={e => setName(e.target.value)} placeholder="e.g., Bayou City Q Round 2" style={input} />
         </label>
 
-        {/* Round name */}
-        <label style={label}>
-          <span>Round Name</span>
-          <input
-            value={roundName}
-            onChange={(e) => setRoundName(e.target.value)}
-            placeholder="e.g., Conference Match vs. North"
-          />
-        </label>
-
-        {/* Status */}
-        <label style={label}>
-          <span>Status</span>
-          <select value={status} onChange={(e) => setStatus(e.target.value as RoundStatus)}>
-            <option value="open">Open (live scoring)</option>
-            <option value="scheduled">Scheduled</option>
-          </select>
-        </label>
-
-        {/* SG Model */}
-        <label style={label}>
-          <span>Strokes Gained Model</span>
-          <select value={sgModel} onChange={(e) => setSgModel(e.target.value as SGModel)}>
-            <option value="pga_tour">PGA Tour</option>
-            <option value="ncaa_d1">NCAA D1</option>
-          </select>
-        </label>
-
-        {/* Auto add */}
-        <label style={{ ...label, alignItems: 'center', gap: 10 }}>
-          <input
-            type="checkbox"
-            checked={autoAddPlayers}
-            onChange={(e) => setAutoAddPlayers(e.target.checked)}
-          />
-          <span>Auto-add all team members to this round</span>
-        </label>
-
-        {/* Actions */}
-        <div style={{ display: 'flex', gap: 10, alignItems: 'center', marginTop: 8 }}>
-          <button onClick={createRound} disabled={!canCreate || busy}>
-            {busy ? 'Creating…' : `Create Round (${status === 'open' ? 'Open' : 'Scheduled'})`}
-          </button>
-          {!canCreate && <span style={{ color: '#666' }}>Fill all fields to enable</span>}
+        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8 }}>
+          <label>SG model
+            <select value={sgModel} onChange={e => setSgModel(e.target.value as any)} style={input}>
+              <option value="pga_tour">PGA Tour Baseline</option>
+              <option value="ncaa_d1">NCAA D1</option>
+            </select>
+          </label>
+          <label>Status
+            <select value={status} onChange={e => setStatus(e.target.value as any)} style={input}>
+              <option value="open">Open</option>
+              <option value="scheduled">Scheduled</option>
+            </select>
+          </label>
         </div>
-
-        {msg && (
-          <div style={{ color: msg.toLowerCase().includes('error') ? '#c00' : '#2a6' }}>
-            {msg}
-          </div>
-        )}
       </div>
+
+      {/* Tee summary */}
+      {courseId && teeSetId && (
+        <div style={{ color: '#555' }}>
+          <b>Selected:</b> {courses.find(c => c.id === courseId)?.name} • {teeLabel}
+          {teeRS ? ` (${teeRS})` : ''}
+        </div>
+      )}
+
+      {/* Hole preview */}
+      <div style={{ overflowX: 'auto' }}>
+        <h3 style={{ margin: '8px 0' }}>Hole Preview</h3>
+        <table style={{ borderCollapse: 'collapse', minWidth: 760 }}>
+          <thead>
+            <tr>
+              <th style={th}>#</th>
+              {holes.map(h => <th key={h} style={th}>H{h}</th>)}
+              <th style={th}>Out</th>
+              <th style={th}>In</th>
+              <th style={th}>Total</th>
+            </tr>
+          </thead>
+          <tbody>
+            {/* Par row */}
+            <tr>
+              <td style={td}><b>Par</b></td>
+              {holes.map(h => <td key={h} style={tdCenter}>{parByHole.get(h) ?? '-'}</td>)}
+              <td style={tdCenter}>{sumRange(parByHole, 1, 9) ?? '-'}</td>
+              <td style={tdCenter}>{sumRange(parByHole, 10, 18) ?? '-'}</td>
+              <td style={tdCenter}><b>{sumRange(parByHole, 1, 18) ?? '-'}</b></td>
+            </tr>
+            {/* Yardage row */}
+            <tr>
+              <td style={td}><b>Yards</b></td>
+              {holes.map(h => <td key={h} style={tdRight}>{ydgByHole.get(h) ?? '-'}</td>)}
+              <td style={tdRight}>{sumRange(ydgByHole, 1, 9) ?? '-'}</td>
+              <td style={tdRight}>{sumRange(ydgByHole, 10, 18) ?? '-'}</td>
+              <td style={tdRight}><b>{sumRange(ydgByHole, 1, 18) ?? '-'}</b></td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+
+      <div>
+        <button
+          onClick={createRound}
+          disabled={!courseId || !teeSetId || !name.trim()}
+          style={{ padding: '10px 14px' }}
+        >
+          Create Round
+        </button>
+      </div>
+
+      {msg && <div style={{ color: '#c00' }}>{msg}</div>}
     </div>
   )
 }
 
-function today() {
-  const d = new Date()
-  const yyyy = d.getFullYear()
-  const mm = String(d.getMonth() + 1).padStart(2, '0')
-  const dd = String(d.getDate()).padStart(2, '0')
-  return `${yyyy}-${mm}-${dd}`
+/* helpers + styles */
+function sumRange(map: Map<number, number | null>, start: number, end: number) {
+  let s = 0
+  for (let h = start; h <= end; h++) {
+    const v = map.get(h)
+    if (typeof v === 'number') s += v
+  }
+  return s || null
 }
 
-const label: React.CSSProperties = {
-  display: 'grid',
-  gridTemplateColumns: '160px 1fr',
-  gap: 8,
-  alignItems: 'baseline',
-}
+const th: React.CSSProperties = { textAlign: 'left', padding: 6, borderBottom: '1px solid #eee', background: '#fafafa', whiteSpace: 'nowrap' }
+const td: React.CSSProperties = { padding: 6, borderBottom: '1px solid #f2f2f2' }
+const tdCenter: React.CSSProperties = { ...td, textAlign: 'center' }
+const tdRight: React.CSSProperties = { ...td, textAlign: 'right' }
+const input: React.CSSProperties = { width: '100%', padding: 6, border: '1px solid #ddd', borderRadius: 6 }

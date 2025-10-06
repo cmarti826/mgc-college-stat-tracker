@@ -56,7 +56,7 @@ export default function RoundsPage() {
       setMsg('')
       let query = supabase
         .from('rounds')
-        // related tables may come back as arrays -> we normalize below
+        // related tables may come back as arrays -> normalize below
         .select('id, team_id, name, round_date, status, sg_model, courses(name), tee_sets(tee_name, name, rating, slope)')
         .eq('team_id', teamId)
         .order('round_date', { ascending: false })
@@ -138,7 +138,7 @@ export default function RoundsPage() {
               <Th>Course / Tee</Th>
               <Th>Model</Th>
               <Th>Status</Th>
-              <Th></Th>
+              <Th /> {/* empty header for action buttons */}
             </tr>
           </thead>
           <tbody>
@@ -218,7 +218,7 @@ function StatusChip({ status }: { status: string }) {
   )
 }
 
-function Th({ children }: { children: React.ReactNode }) {
+function Th({ children }: { children?: React.ReactNode }) {
   return <th style={{ textAlign: 'left', padding: 8, background: '#fafafa', borderBottom: '1px solid #eee' }}>{children}</th>
 }
 function Td({ children, ...rest }: React.DetailedHTMLProps<React.TdHTMLAttributes<HTMLTableCellElement>, HTMLTableCellElement>) {

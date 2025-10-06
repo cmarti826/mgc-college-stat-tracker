@@ -44,6 +44,13 @@ type Hole = {
   penalty_strokes: number
 }
 
+// handle relation typed as array OR object
+function getName(rel: any): string {
+  if (!rel) return ''
+  if (Array.isArray(rel)) return rel[0]?.name ?? ''
+  return rel.name ?? ''
+}
+
 export default function RoundDetailPage() {
   const params = useParams<{ id: string }>()
   const roundId = params.id
@@ -75,8 +82,8 @@ export default function RoundDetailPage() {
       if (!alive) return
       setTotals(t as any)
       setHoles((hs ?? []) as any)
-      setCourseName(r?.course?.name ?? '')
-      setTeeName(r?.tee?.name ?? '')
+      setCourseName(getName(r?.course))
+      setTeeName(getName(r?.tee))
       setLoading(false)
     })()
     return () => { alive = false }
@@ -84,7 +91,7 @@ export default function RoundDetailPage() {
 
   if (loading) {
     return (
-      <div>
+      <div className="mx-auto max-w-4xl p-6">
         <h1 className="text-2xl font-semibold mb-3">Round</h1>
         <div className="animate-pulse h-24 rounded-xl bg-gray-200" />
       </div>
@@ -93,7 +100,7 @@ export default function RoundDetailPage() {
 
   if (!totals) {
     return (
-      <div>
+      <div className="mx-auto max-w-3xl p-6">
         <h1 className="text-2xl font-semibold mb-3">Round</h1>
         <p className="text-sm">No data yet. Add holes:</p>
         <button onClick={() => router.push(`/rounds/${roundId}/edit`)} className="mt-2 rounded-2xl px-4 py-2 border">
@@ -104,7 +111,7 @@ export default function RoundDetailPage() {
   }
 
   return (
-    <div className="space-y-6">
+    <div className="mx-auto max-w-5xl p-6 space-y-6">
       <div className="flex items-center justify-between">
         <h1 className="text-2xl font-semibold">Round • {totals.round_date}</h1>
         <div className="text-sm opacity-75">

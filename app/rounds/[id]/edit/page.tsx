@@ -19,6 +19,13 @@ type HoleRow = {
   penalty_strokes: number
 }
 
+// handle relation typed as array OR object
+function getName(rel: any): string {
+  if (!rel) return ''
+  if (Array.isArray(rel)) return rel[0]?.name ?? ''
+  return rel.name ?? ''
+}
+
 export default function EditRoundPage() {
   const router = useRouter()
   const params = useParams<{ id: string }>()
@@ -54,6 +61,7 @@ export default function EditRoundPage() {
       const { data: { user } } = await supabase.auth.getUser()
       if (!user) { router.push('/auth/login'); return }
 
+      // Load round context (course/tee)
       const { data: round, error: rErr } = await supabase
         .from('rounds')
         .select('id, course:courses(name), tee:tee_sets(name)')
@@ -62,9 +70,11 @@ export default function EditRoundPage() {
 
       if (rErr) { alert(`Could not load round: ${rErr.message}`); return }
       if (!alive) return
-      setCourseName(round?.course?.name ?? '')
-      setTeeName(round?.tee?.name ?? '')
 
+      setCourseName(getName(round?.course))
+      setTeeName(getName(round?.tee))
+
+      // Load existing hole rows
       const { data: existing, error: hErr } = await supabase
         .from('round_holes')
         .select('*')
@@ -76,7 +86,7 @@ export default function EditRoundPage() {
 
       if (existing && existing.length > 0) {
         const merged = holes.map(h => {
-          const found = existing.find(e => e.hole_number === h.hole_number)
+          const found = (existing as any[]).find(e => e.hole_number === h.hole_number)
           if (!found) return h
           return {
             hole_number: found.hole_number,
@@ -120,9 +130,9 @@ export default function EditRoundPage() {
         round_id: roundId,
         hole_number: h.hole_number,
         par: Number(h.par) || 3,
-        yardage: h.yardage === null || h.yardage === undefined || h.yardage === ('' as any) ? null : Number(h.yardage),
-        strokes: h.strokes === null || h.strokes === undefined || h.strokes === ('' as any) ? null : Number(h.strokes),
-        putts: h.putts === null || h.putts === undefined || h.putts === ('' as any) ? null : Number(h.putts),
+        yardage: h.yardage === null || h.yardage === undefined || (h.yardage as any) === '' ? null : Number(h.yardage),
+        strokes: h.strokes === null || h.strokes === undefined || (h.strokes as any) === '' ? null : Number(h.strokes),
+        putts: h.putts === null || h.putts === undefined || (h.putts as any) === '' ? null : Number(h.putts),
         fairway_hit: (Number(h.par) === 3) ? null : (h.fairway_hit === null ? false : !!h.fairway_hit),
         gir: h.gir === null ? false : !!h.gir,
         up_down_attempt: !!h.up_down_attempt,
@@ -150,7 +160,7 @@ export default function EditRoundPage() {
 
   if (loading) {
     return (
-      <div>
+      <div className="mx-auto max-w-4xl p-6">
         <h1 className="text-2xl font-semibold mb-2">Edit Round</h1>
         <div className="animate-pulse h-24 rounded-xl bg-gray-200" />
       </div>
@@ -158,7 +168,7 @@ export default function EditRoundPage() {
   }
 
   return (
-    <div>
+    <div className="mx-auto max-w-5xl p-6">
       <div className="flex items-center justify-between mb-4">
         <h1 className="text-2xl font-semibold">Edit Round</h1>
         <div className="text-sm opacity-75">{courseName}{teeName ? ` • ${teeName}` : ''}</div>

@@ -1,7 +1,8 @@
 'use client'
 
 import { useEffect, useMemo, useState } from 'react'
-import { getSupabaseBrowser } from '@/lib/supabaseClient'
+import { supabase } from '@/lib/supabaseClient'
+import { useSearchParams } from 'next/navigation'
 
 type ShotRow = {
   id: string
@@ -23,22 +24,26 @@ type ShotRow = {
 type HoleSG = { round_id: string; player_id: string; hole: number; sg_hole: number }
 
 type Course = { id: string; name: string }
-type TeeSet = { id: string; course_id: string; tee_name?: string | null; name?: string | null; rating?: number | null; slope?: number | null }
+type TeeSet = {
+  id: string
+  course_id: string
+  tee_name?: string | null
+  name?: string | null
+  rating?: number | null
+  slope?: number | null
+}
 type ParRow = { hole_number: number; par: number | null }
 type YdgRow = { hole_number: number; yardage: number | null }
-type LineupPlayer = { user_id: string; full_name: string | null }
 
 const LIES = ['tee', 'fairway', 'rough', 'sand', 'recovery', 'green', 'penalty', 'hole'] as const
 
 export default function ScoreForm({ round }: { round: any }) {
-  const supabase = getSupabaseBrowser()
+  const searchParams = useSearchParams()
+  // Optional admin override: allow scoring for a specific user via ?player=<uuid>
+  const overridePlayer = searchParams.get('player') || undefined
 
-  // identity
+  // identity (current scorer)
   const [me, setMe] = useState<{ id: string | null; name: string | null }>({ id: null, name: null })
-
-  // lineup
-  const [lineup, setLineup] = useState<LineupPlayer[]>([])
-  const inLineup = useMemo(() => (me.id ? lineup.some(p => p.user_id === me.id) : false), [lineup, me.id])
 
   // course / tee / holes
   const [course, setCourse] = useState<Course | null>(null)
@@ -46,14 +51,13 @@ export default function ScoreForm({ round }: { round: any }) {
   const [pars, setPars] = useState<ParRow[]>([])
   const [ydgs, setYdgs] = useState<YdgRow[]>([])
 
-  // sg data
+  // sg data – only for current scorer
   const [shots, setShots] = useState<ShotRow[]>([])
   const [holeSG, setHoleSG] = useState<HoleSG[]>([])
   const [msg, setMsg] = useState('')
 
-  // --- shot entry form state
+  // shot entry form
   const [form, setForm] = useState<{
-    playerId: string | ''
     hole: number | ''
     start_lie: string
     start_distance: number | ''
@@ -63,7 +67,6 @@ export default function ScoreForm({ round }: { round: any }) {
     holed: boolean
     snapFromPrev: boolean
   }>({
-    playerId: '',
     hole: '',
     start_lie: 'tee',
     start_distance: '',
@@ -74,7 +77,81 @@ export default function ScoreForm({ round }: { round: any }) {
     snapFromPrev: true,
   })
 
-  // helpers
+  // ---- identity
+  useEffect(() => {
+    ;(async () => {
+      const { data } = await supabase.auth.getUser()
+      setMe({
+        id: overridePlayer ?? data?.user?.id ?? null,
+        name: data?.user?.email ?? null,
+      })
+    })()
+  }, [overridePlayer])
+
+  // ---- course + holes
+  useEffect(() => {
+    if (!round?.tee_set_id) return
+    ;(async () => {
+      const { data: t } = await supabase
+        .from('tee_sets')
+        .select('id, course_id, tee_name, name, rating, slope')
+        .eq('id', round.tee_set_id)
+        .maybeSingle()
+      setTee(t as any)
+
+      const courseId = (t as any)?.course_id
+      if (courseId) {
+        const { data: c } = await supabase
+          .from('courses')
+          .select('id, name')
+          .eq('id', courseId)
+          .maybeSingle()
+        setCourse(c as any)
+
+        const { data: ch } = await supabase
+          .from('course_holes')
+          .select('hole_number, par')
+          .eq('course_id', courseId)
+          .order('hole_number')
+        setPars((ch as ParRow[]) || [])
+      }
+
+      const { data: th } = await supabase
+        .from('tee_set_holes')
+        .select('hole_number, yardage')
+        .eq('tee_set_id', round.tee_set_id)
+        .order('hole_number')
+      setYdgs((th as YdgRow[]) || [])
+    })()
+  }, [round?.tee_set_id])
+
+  // ---- load views (only for current player)
+  async function loadViews(playerId?: string | null) {
+    if (!round?.id || !playerId) return
+    const { data: s, error: e1 } = await supabase
+      .from('v_shots_sg')
+      .select('*')
+      .eq('round_id', round.id)
+      .eq('player_id', playerId)
+      .order('hole')
+      .order('shot_no')
+    if (e1) { setMsg(e1.message); return }
+    setShots((s as ShotRow[]) || [])
+
+    const { data: h, error: e2 } = await supabase
+      .from('v_hole_sg')
+      .select('*')
+      .eq('round_id', round.id)
+      .eq('player_id', playerId)
+      .order('hole')
+    if (e2) { setMsg(e2.message); return }
+    setHoleSG((h as HoleSG[]) || [])
+    setMsg('')
+  }
+
+  useEffect(() => { loadViews(me.id) }, [round?.id, me.id])
+
+  // ---- helpers
   const parByHole = useMemo(() => {
     const m = new Map<number, number | null>()
     pars.forEach(r => m.set(r.hole_number, r.par))
@@ -94,143 +171,25 @@ export default function ScoreForm({ round }: { round: any }) {
     return Array.from(s).sort((a, b) => a - b)
   }, [pars, ydgs])
 
-  const playersById = useMemo(() => {
-    const m = new Map<string, LineupPlayer>()
-    lineup.forEach(p => m.set(p.user_id, p))
-    return m
-  }, [lineup])
-
-  const holeSgMap = useMemo(() => {
-    const m = new Map<string, number>()
-    holeSG.forEach(h => m.set(`${h.player_id}-${h.hole}`, h.sg_hole))
+  const sgByHole = useMemo(() => {
+    const m = new Map<number, number>()
+    holeSG.forEach(h => m.set(h.hole, h.sg_hole))
     return m
   }, [holeSG])
 
-  const totalsSG = useMemo(() => {
-    const m = new Map<string, number>()
-    holeSG.forEach(h => m.set(h.player_id, (m.get(h.player_id) || 0) + h.sg_hole))
-    return m
-  }, [holeSG])
+  const sgTotal = useMemo(() => holeSG.reduce((acc, h) => acc + (h.sg_hole ?? 0), 0), [holeSG])
 
-  // --- load me
-  useEffect(() => {
-    ;(async () => {
-      const { data } = await supabase.auth.getUser()
-      setMe({ id: data?.user?.id ?? null, name: data?.user?.email ?? null })
-    })()
-  }, [supabase])
-
-  // --- load lineup
-  useEffect(() => {
-    if (!round?.id) return
-    ;(async () => {
-      const { data } = await supabase
-        .from('round_players')
-        .select('user_id, profiles(full_name)')
-        .eq('round_id', round.id)
-        .order('user_id', { ascending: true })
-      const rows: LineupPlayer[] = ((data as any[]) || []).map(r => ({
-        user_id: r.user_id,
-        full_name: r.profiles?.full_name ?? null,
-      }))
-      setLineup(rows)
-
-      // default the shot-entry player to me if I'm in lineup
-      if (rows.length && me.id && rows.some(r => r.user_id === me.id)) {
-        setForm(f => ({ ...f, playerId: me.id! }))
-      }
-    })()
-  }, [round?.id, me.id, supabase])
-
-  // --- load course + holes (par/ydg)
-  useEffect(() => {
-    if (!round?.tee_set_id) return
-    ;(async () => {
-      const { data: t } = await supabase
-        .from('tee_sets')
-        .select('id, course_id, tee_name, name, rating, slope')
-        .eq('id', round.tee_set_id)
-        .maybeSingle()
-      setTee(t as any)
-      const courseId = (t as any)?.course_id
-      if (courseId) {
-        const { data: c } = await supabase.from('courses').select('id, name').eq('id', courseId).maybeSingle()
-        setCourse(c as any)
-        const { data: ch } = await supabase
-          .from('course_holes')
-          .select('hole_number, par')
-          .eq('course_id', courseId)
-          .order('hole_number', { ascending: true })
-        setPars((ch as ParRow[]) || [])
-      }
-      const { data: th } = await supabase
-        .from('tee_set_holes')
-        .select('hole_number, yardage')
-        .eq('tee_set_id', round.tee_set_id)
-        .order('hole_number', { ascending: true })
-      setYdgs((th as YdgRow[]) || [])
-    })()
-  }, [round?.tee_set_id, supabase])
-
-  // --- load SG views
-  async function loadViews() {
-    if (!round?.id) return
-    const { data: s, error: e1 } = await supabase
-      .from('v_shots_sg')
-      .select('*')
-      .eq('round_id', round.id)
-      .order('player_id', { ascending: true })
-      .order('hole', { ascending: true })
-      .order('shot_no', { ascending: true })
-    if (e1) { setMsg(e1.message); return }
-    setShots((s as ShotRow[]) || [])
-
-    const { data: h, error: e2 } = await supabase
-      .from('v_hole_sg')
-      .select('*')
-      .eq('round_id', round.id)
-      .order('player_id', { ascending: true })
-      .order('hole', { ascending: true })
-    if (e2) { setMsg(e2.message); return }
-    setHoleSG((h as HoleSG[]) || [])
-    setMsg('')
-  }
-
-  useEffect(() => { loadViews() }, [round?.id]) // initial
-
-  // ----- lineup actions
-  async function toggleMe() {
-    if (!me.id || !round?.id) return
-    if (inLineup) {
-      await supabase.from('round_players').delete().eq('round_id', round.id).eq('user_id', me.id)
-    } else {
-      await supabase.from('round_players').insert({ round_id: round.id, user_id: me.id })
-      setForm(f => ({ ...f, playerId: me.id! }))
-    }
-    // refresh
-    const { data } = await supabase
-      .from('round_players')
-      .select('user_id, profiles(full_name)')
-      .eq('round_id', round.id)
-      .order('user_id', { ascending: true })
-    const rows: LineupPlayer[] = ((data as any[]) || []).map(r => ({
-      user_id: r.user_id,
-      full_name: r.profiles?.full_name ?? null,
-    }))
-    setLineup(rows)
-  }
-
-  // ----- shot utils
-  function lastShotFor(playerId: string, hole: number) {
-    const list = shots.filter(s => s.player_id === playerId && s.hole === hole)
+  function lastShotFor(hole: number) {
+    const list = shots.filter(s => s.hole === hole)
     if (!list.length) return null
     return list.reduce((a, b) => (a.shot_no > b.shot_no ? a : b))
   }
 
+  // ---- shot add / undo
   async function addShot() {
     try {
+      if (!me.id) throw new Error('Please sign in to record shots.')
       if (!round?.id) throw new Error('Missing round')
-      if (!form.playerId) throw new Error('Pick a player')
       if (!form.hole) throw new Error('Pick a hole')
 
       let start_lie = form.start_lie
@@ -240,9 +199,9 @@ export default function ScoreForm({ round }: { round: any }) {
       let penalty = !!form.penalty
       let holed = !!form.holed
 
-      // snap from previous
+      // snap from previous end
       if (form.snapFromPrev) {
-        const last = lastShotFor(form.playerId, Number(form.hole))
+        const last = lastShotFor(Number(form.hole))
         if (last) {
           start_lie = last.end_lie
           start_distance = last.end_distance
@@ -252,19 +211,17 @@ export default function ScoreForm({ round }: { round: any }) {
         }
       }
 
-      // if holed, enforce end_lie / end_distance
       if (holed) {
         end_lie = 'hole'
         end_distance = 0
       }
 
-      // determine next shot_no
-      const last = lastShotFor(form.playerId, Number(form.hole))
+      const last = lastShotFor(Number(form.hole))
       const nextNo = last ? last.shot_no + 1 : 1
 
       const { error } = await supabase.from('shots').insert({
         round_id: round.id,
-        player_id: form.playerId,
+        player_id: me.id,
         hole: Number(form.hole),
         shot_no: nextNo,
         start_lie,
@@ -276,9 +233,9 @@ export default function ScoreForm({ round }: { round: any }) {
       })
       if (error) throw error
 
-      await loadViews()
+      await loadViews(me.id)
 
-      // Prepare form for next shot on same hole
+      // prep for next shot
       setForm(f => ({
         ...f,
         start_lie: end_lie,
@@ -295,28 +252,41 @@ export default function ScoreForm({ round }: { round: any }) {
 
   async function undoLast() {
     try {
+      if (!me.id) throw new Error('Please sign in')
       if (!round?.id) throw new Error('Missing round')
-      if (!form.playerId) throw new Error('Pick a player')
       if (!form.hole) throw new Error('Pick a hole')
 
-      const last = lastShotFor(form.playerId, Number(form.hole))
+      const last = lastShotFor(Number(form.hole))
       if (!last) return
+
       const { error } = await supabase.from('shots').delete().eq('id', last.id)
       if (error) throw error
-      await loadViews()
+
+      await loadViews(me.id)
     } catch (e: any) {
       setMsg(e.message || 'Failed to undo')
     }
   }
 
+  // ---- header strings
   const courseLine = (() => {
     const teeLabel = tee?.tee_name || tee?.name
     const rs = (tee?.rating ? `${tee.rating}` : '') + (tee?.slope ? `/${tee.slope}` : '')
     return [course?.name || 'Course', teeLabel ? `• ${teeLabel}` : '', rs ? `(${rs})` : ''].filter(Boolean).join(' ')
   })()
 
+  if (!me.id) {
+    return (
+      <div style={{ padding: 16 }}>
+        <h2>{round?.name || 'Round'}</h2>
+        <p>Please sign in to enter your shots.</p>
+      </div>
+    )
+  }
+
   return (
     <div style={{ padding: 16, display: 'grid', gap: 18 }}>
+      {/* Header */}
       <div>
         <h2 style={{ margin: 0 }}>{round?.name || 'Round'}</h2>
         <div style={{ color: '#555' }}>
@@ -327,47 +297,10 @@ export default function ScoreForm({ round }: { round: any }) {
         </div>
       </div>
 
-      {/* Lineup */}
-      <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
-        <h3 style={{ margin: '8px 0' }}>Lineup</h3>
-        {me.id && (
-          <button onClick={toggleMe}>
-            {inLineup ? 'Leave lineup' : 'Add me to lineup'}
-          </button>
-        )}
-      </div>
-      <div style={{ overflowX: 'auto' }}>
-        <table style={{ borderCollapse: 'collapse', minWidth: 420 }}>
-          <thead><tr><th style={th}>Player</th></tr></thead>
-          <tbody>
-            {lineup.length === 0 ? (
-              <tr><td style={td}>No players yet.</td></tr>
-            ) : (
-              lineup.map(p => (
-                <tr key={p.user_id}>
-                  <td style={td}>{p.full_name || p.user_id.slice(0, 8)}{me.id === p.user_id ? ' (you)' : ''}</td>
-                </tr>
-              ))
-            )}
-          </tbody>
-        </table>
-      </div>
-
-      {/* Shot Entry */}
+      {/* Shot Entry – for YOU only */}
       <div>
-        <h3 style={{ margin: '8px 0' }}>Shot Entry</h3>
+        <h3 style={{ margin: '8px 0' }}>Enter Shot (You)</h3>
         <div style={{ display: 'grid', gap: 8, gridTemplateColumns: 'repeat(6, minmax(140px, 1fr))', alignItems: 'end' }}>
-          <label>Player
-            <select
-              value={form.playerId}
-              onChange={e => setForm(f => ({ ...f, playerId: e.target.value }))}
-              style={input}
-            >
-              <option value="">Pick player</option>
-              {lineup.map(p => <option key={p.user_id} value={p.user_id}>{p.full_name || p.user_id.slice(0, 8)}</option>)}
-            </select>
-          </label>
-
           <label>Hole
             <select
               value={form.hole}
@@ -411,6 +344,8 @@ export default function ScoreForm({ round }: { round: any }) {
           <label>End dist (y/ft)
             <input type="number" value={form.end_distance as any} onChange={e => setForm(f => ({ ...f, end_distance: e.target.value === '' ? '' : Number(e.target.value) }))} style={input} />
           </label>
+
+          <div />
         </div>
 
         <div style={{ display: 'flex', gap: 16, alignItems: 'center', marginTop: 8 }}>
@@ -429,46 +364,32 @@ export default function ScoreForm({ round }: { round: any }) {
         </div>
       </div>
 
-      {/* Computed SG */}
+      {/* SG (You) */}
       <div style={{ overflowX: 'auto', marginTop: 4 }}>
-        <h3 style={{ margin: '8px 0' }}>Computed Strokes Gained</h3>
-        <table style={{ borderCollapse: 'collapse', minWidth: 760 }}>
+        <h3 style={{ margin: '8px 0' }}>Your Strokes Gained</h3>
+        <table style={{ borderCollapse: 'collapse', minWidth: 640 }}>
           <thead>
             <tr>
-              <th style={th}>Player</th>
               {holesList.map(h => <th key={h} style={th}>H{h}</th>)}
               <th style={th}>Total</th>
             </tr>
           </thead>
           <tbody>
-            {lineup.map(p => {
-              const pid = p.user_id
-              return (
-                <tr key={pid}>
-                  <td style={td}>{p.full_name || pid.slice(0, 8)}{me.id === pid ? ' (you)' : ''}</td>
-                  {holesList.map(h => {
-                    const val = holeSgMap.get(`${pid}-${h}`)
-                    return <td key={h} style={tdRight}>{val?.toFixed(2) ?? '-'}</td>
-                  })}
-                  <td style={tdRight}><b>{(totalsSG.get(pid) ?? 0).toFixed(2)}</b></td>
-                </tr>
-              )
-            })}
-            {lineup.length === 0 && (
-              <tr><td style={td} colSpan={holesList.length + 2}>No players yet.</td></tr>
-            )}
+            <tr>
+              {holesList.map(h => <td key={h} style={tdRight}>{sgByHole.get(h)?.toFixed(2) ?? '-'}</td>)}
+              <td style={tdRight}><b>{sgTotal.toFixed(2)}</b></td>
+            </tr>
           </tbody>
         </table>
       </div>
 
-      {/* Shot detail */}
+      {/* Shot detail (you) */}
       <details>
-        <summary>Shot detail</summary>
+        <summary>Shot detail (you)</summary>
         <div style={{ overflowX: 'auto', marginTop: 8 }}>
           <table style={{ borderCollapse: 'collapse', minWidth: 920 }}>
             <thead>
               <tr>
-                <th style={th}>Player</th>
                 <th style={th}>Hole</th>
                 <th style={th}>#</th>
                 <th style={th}>Start</th>
@@ -483,26 +404,22 @@ export default function ScoreForm({ round }: { round: any }) {
               </tr>
             </thead>
             <tbody>
-              {shots.map(s => {
-                const pp = playersById.get(s.player_id)
-                return (
-                  <tr key={s.id}>
-                    <td style={td}>{pp?.full_name || s.player_id.slice(0, 8)}</td>
-                    <td style={tdCenter}>{s.hole}</td>
-                    <td style={tdCenter}>{s.shot_no}</td>
-                    <td style={td}>{s.start_lie}</td>
-                    <td style={tdRight}>{s.start_distance}</td>
-                    <td style={td}>{s.end_lie}</td>
-                    <td style={tdRight}>{s.end_distance}</td>
-                    <td style={tdCenter}>{s.penalty ? 'Y' : ''}</td>
-                    <td style={tdCenter}>{s.holed ? 'Y' : ''}</td>
-                    <td style={tdRight}>{s.e_start?.toFixed(2)}</td>
-                    <td style={tdRight}>{s.e_end?.toFixed(2)}</td>
-                    <td style={tdRight}><b>{s.sg?.toFixed(3)}</b></td>
-                  </tr>
-                )
-              })}
-              {shots.length === 0 && <tr><td style={td} colSpan={12}>No shots yet.</td></tr>}
+              {shots.map(s => (
+                <tr key={s.id}>
+                  <td style={tdCenter}>{s.hole}</td>
+                  <td style={tdCenter}>{s.shot_no}</td>
+                  <td style={td}>{s.start_lie}</td>
+                  <td style={tdRight}>{s.start_distance}</td>
+                  <td style={td}>{s.end_lie}</td>
+                  <td style={tdRight}>{s.end_distance}</td>
+                  <td style={tdCenter}>{s.penalty ? 'Y' : ''}</td>
+                  <td style={tdCenter}>{s.holed ? 'Y' : ''}</td>
+                  <td style={tdRight}>{s.e_start?.toFixed(2)}</td>
+                  <td style={tdRight}>{s.e_end?.toFixed(2)}</td>
+                  <td style={tdRight}><b>{s.sg?.toFixed(3)}</b></td>
+                </tr>
+              ))}
+              {shots.length === 0 && <tr><td style={td} colSpan={11}>No shots yet.</td></tr>}
             </tbody>
           </table>
         </div>
@@ -513,9 +430,8 @@ export default function ScoreForm({ round }: { round: any }) {
   )
 }
 
-/* ======= little styles ======= */
+/* styles */
 const th: React.CSSProperties = { textAlign: 'left', padding: 6, borderBottom: '1px solid #eee', background: '#fafafa', whiteSpace: 'nowrap' }
-const thRight: React.CSSProperties = { ...th, textAlign: 'right' }
 const td: React.CSSProperties = { padding: 6, borderBottom: '1px solid #f2f2f2' }
 const tdRight: React.CSSProperties = { ...td, textAlign: 'right' }
 const tdCenter: React.CSSProperties = { ...td, textAlign: 'center' }

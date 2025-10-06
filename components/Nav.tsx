@@ -1,62 +1,45 @@
+// components/Nav.tsx
 'use client'
 
 import Link from 'next/link'
-import { usePathname } from 'next/navigation'
-import { useProfile } from '@/lib/useProfile'
-
-const linkStyle: React.CSSProperties = {
-  padding: '8px 10px',
-  borderRadius: 8,
-  textDecoration: 'none',
-  display: 'inline-block',
-}
-
-function NavLink({ href, label }: { href: string; label: string }) {
-  const pathname = usePathname()
-  const active = pathname === href || pathname?.startsWith(href + '/')
-  return (
-    <Link
-      href={href}
-      style={{
-        ...linkStyle,
-        background: active ? '#eef4ff' : undefined,
-        color: active ? '#1849a9' : '#111',
-        border: active ? '1px solid #cfe0ff' : '1px solid transparent',
-      }}
-    >
-      {label}
-    </Link>
-  )
-}
+import { useEffect, useMemo, useState } from 'react'
+import { supabaseBrowser } from '@/lib/supabase-browser'
 
 export default function Nav() {
-  const { loading, role } = useProfile()
+  const supabase = useMemo(() => supabaseBrowser(), [])
+  const [email, setEmail] = useState<string | null>(null)
 
-  const common = [
-    { href: '/', label: 'Home' },
-    { href: '/schedule', label: 'Schedule' },
-    { href: '/scoring', label: 'Open Scoring' },
-    { href: '/rounds', label: 'Rounds' },
-  ]
+  useEffect(() => {
+    ;(async () => {
+      const { data: { user } } = await supabase.auth.getUser()
+      setEmail(user?.email ?? null)
+    })()
+  }, [supabase])
 
-  const coachAdmin = [
-    { href: '/teams', label: 'Teams' },
-    { href: '/courses', label: 'Courses' },
-    { href: '/players', label: 'Players' },
-  ]
+  async function handleSignOut() {
+    await supabase.auth.signOut()
+    window.location.href = '/auth/login' // adjust if your route differs
+  }
 
   return (
-    <header style={{ borderBottom: '1px solid #eee', background: '#fff' }}>
-      <div style={{ maxWidth: 1100, margin: '0 auto', padding: '10px 16px', display: 'flex', gap: 10, alignItems: 'center', flexWrap: 'wrap' }}>
-        <div style={{ fontWeight: 700, marginRight: 8 }}>MGC Stats</div>
-        {common.map(l => <NavLink key={l.href} {...l} />)}
-        {!loading && (role === 'coach' || role === 'admin') &&
-          coachAdmin.map(l => <NavLink key={l.href} {...l} />)
-        }
-        <div style={{ marginLeft: 'auto' }}>
-          <NavLink href="/auth" label="Sign in" />
+    <header className="border-b">
+      <nav className="mx-auto max-w-6xl px-4 py-3 flex items-center justify-between">
+        <div className="flex items-center gap-3">
+          <Link href="/" className="font-semibold">MGC Stats</Link>
+          <Link href="/rounds" className="px-3 py-1.5 rounded-xl hover:bg-gray-100">Rounds</Link>
+          <Link href="/rounds/new" className="px-3 py-1.5 rounded-xl hover:bg-gray-100">New Round</Link>
         </div>
-      </div>
+        <div className="flex items-center gap-3 text-sm">
+          {email ? (
+            <>
+              <span className="opacity-70">{email}</span>
+              <button onClick={handleSignOut} className="px-3 py-1.5 rounded-xl border">Sign out</button>
+            </>
+          ) : (
+            <Link href="/auth/login" className="px-3 py-1.5 rounded-xl border">Sign in</Link>
+          )}
+        </div>
+      </nav>
     </header>
   )
 }

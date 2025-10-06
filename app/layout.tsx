@@ -1,18 +1,49 @@
-// /app/layout.tsx
+// app/layout.tsx
 import './globals.css'
-import type { Metadata } from 'next'
+import type { Metadata, Viewport } from 'next'
 import Nav from '@/components/Nav'
 
-export const metadata: Metadata = { title: 'MGC Stats', description: 'College golf stat tracker' }
+export const metadata: Metadata = {
+  title: 'MGC Stats',
+  description: 'College golf stat tracker',
+}
+
+export const viewport: Viewport = {
+  themeColor: '#ffffff',
+  colorScheme: 'light',
+}
 
 export default function RootLayout({ children }: { children: React.ReactNode }) {
   return (
     <html lang="en">
-      <body style={{ background: '#fcfcfc' }}>
+      <body className="min-h-screen bg-[#fcfcfc] text-gray-900">
         <Nav />
-        <main style={{ maxWidth: 1100, margin: '0 auto', padding: 16 }}>
-          {children}
-        </main>
+        <main className="mx-auto max-w-[1100px] p-4">{children}</main>
+      </body>
+    </html>
+  )
+}
+// app/layout.tsx
+import './globals.css'
+import type { Metadata, Viewport } from 'next'
+import Nav from '@/components/Nav'
+
+export const metadata: Metadata = {
+  title: 'MGC Stats',
+  description: 'College golf stat tracker',
+}
+
+export const viewport: Viewport = {
+  themeColor: '#ffffff',
+  colorScheme: 'light',
+}
+
+export default function RootLayout({ children }: { children: React.ReactNode }) {
+  return (
+    <html lang="en">
+      <body className="min-h-screen bg-[#fcfcfc] text-gray-900">
+        <Nav />
+        <main className="mx-auto max-w-[1100px] p-4">{children}</main>
       </body>
     </html>
   )

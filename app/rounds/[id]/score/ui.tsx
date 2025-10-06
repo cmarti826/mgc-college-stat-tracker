@@ -1,8 +1,8 @@
 'use client'
 
 import { useEffect, useMemo, useState } from 'react'
-import { supabase } from '@/lib/supabaseClient'
 import { useSearchParams } from 'next/navigation'
+import { supabase } from '@/lib/supabaseClient'
 
 type ShotRow = {
   id: string
@@ -39,7 +39,7 @@ const LIES = ['tee', 'fairway', 'rough', 'sand', 'recovery', 'green', 'penalty',
 
 export default function ScoreForm({ round }: { round: any }) {
   const searchParams = useSearchParams()
-  // Optional admin override: allow scoring for a specific user via ?player=<uuid>
+  // optional coach/admin override -> score for a specific user
   const overridePlayer = searchParams.get('player') || undefined
 
   // identity (current scorer)
@@ -164,11 +164,13 @@ export default function ScoreForm({ round }: { round: any }) {
     return m
   }, [ydgs])
 
+  // ✅ FALLBACK: if no rows in course_holes/tee_set_holes, still show 1..18
   const holesList = useMemo(() => {
     const s = new Set<number>()
     pars.forEach(h => s.add(h.hole_number))
     ydgs.forEach(h => s.add(h.hole_number))
-    return Array.from(s).sort((a, b) => a - b)
+    const list = Array.from(s).sort((a, b) => a - b)
+    return list.length ? list : Array.from({ length: 18 }, (_, i) => i + 1)
   }, [pars, ydgs])
 
   const sgByHole = useMemo(() => {
@@ -438,8 +440,6 @@ const th: React.CSSProperties = {
   background: '#fafafa',
   whiteSpace: 'nowrap',
 }
-
-// ✅ missing definition
 const thRight: React.CSSProperties = { ...th, textAlign: 'right' }
 
 const td: React.CSSProperties = { padding: 6, borderBottom: '1px solid #f2f2f2' }

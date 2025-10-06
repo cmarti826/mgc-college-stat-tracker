@@ -431,7 +431,17 @@ export default function ScoreForm({ round }: { round: any }) {
 }
 
 /* styles */
-const th: React.CSSProperties = { textAlign: 'left', padding: 6, borderBottom: '1px solid #eee', background: '#fafafa', whiteSpace: 'nowrap' }
+const th: React.CSSProperties = {
+  textAlign: 'left',
+  padding: 6,
+  borderBottom: '1px solid #eee',
+  background: '#fafafa',
+  whiteSpace: 'nowrap',
+}
+
+// ✅ missing definition
+const thRight: React.CSSProperties = { ...th, textAlign: 'right' }
+
 const td: React.CSSProperties = { padding: 6, borderBottom: '1px solid #f2f2f2' }
 const tdRight: React.CSSProperties = { ...td, textAlign: 'right' }
 const tdCenter: React.CSSProperties = { ...td, textAlign: 'center' }

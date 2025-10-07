@@ -20,6 +20,9 @@ export default function NewTeeSetPage() {
   )
 
   const [coursePar, setCoursePar] = useState<number>(72)
+  const [rating, setRating] = useState<string>('') // string for input control
+  const [slope, setSlope]   = useState<string>('')
+
   const [loading, setLoading] = useState(true)
   const [submitting, setSubmitting] = useState(false)
   const [existingTeeSetId, setExistingTeeSetId] = useState<string | null>(null)
@@ -59,14 +62,14 @@ export default function NewTeeSetPage() {
     return () => { alive = false }
   }, [courseId, supabase])
 
-  // When course or name changes, check if tee set already exists and, if so, load its yardages
+  // When course or name changes, check if tee set exists; load par/rating/slope + yardages
   useEffect(() => {
     if (!courseId || !name.trim()) return
     let alive = true
     ;(async () => {
       const { data: tee, error: tErr } = await supabase
         .from('tee_sets')
-        .select('id, par')
+        .select('id, par, rating, slope')
         .eq('course_id', courseId)
         .eq('name', name.trim())
         .maybeSingle()
@@ -76,7 +79,9 @@ export default function NewTeeSetPage() {
       if (tee?.id) {
         setExistingTeeSetId(tee.id)
         if (tee.par) setCoursePar(tee.par)
-        // load existing yardages
+        setRating(tee.rating == null ? '' : String(tee.rating))
+        setSlope( tee.slope  == null ? '' : String(tee.slope))
+
         const { data: ys, error: yErr } = await supabase
           .from('tee_set_holes')
           .select('hole_number, yardage')
@@ -95,7 +100,8 @@ export default function NewTeeSetPage() {
         }
       } else {
         setExistingTeeSetId(null)
-        // reset yardages when switching to a new (non-existing) name
+        setRating('')
+        setSlope('')
         setYards(Array.from({ length: 18 }, (_, i) => ({ hole_number: i + 1, yardage: '' })))
       }
     })()
@@ -116,6 +122,12 @@ export default function NewTeeSetPage() {
     if (!courseId) { alert('Select a course.'); return }
     if (!name.trim()) { alert('Tee set name is required.'); return }
 
+    // Validate rating/slope softly (DB has constraints if you added them)
+    const ratingNum = rating === '' ? null : Number(rating)
+    const slopeNum  = slope  === '' ? null : Number(slope)
+    if (ratingNum != null && (ratingNum < 55 || ratingNum > 80)) { alert('Rating should be between 55.0 and 80.0'); return }
+    if (slopeNum  != null && (slopeNum  < 55 || slopeNum  > 155)) { alert('Slope should be between 55 and 155'); return }
+
     const missing = yards.some(y => y.yardage === '')
     if (missing && !confirm('Some yardages are blank. Continue?')) return
 
@@ -124,14 +136,12 @@ export default function NewTeeSetPage() {
       // Create or reuse existing tee set
       let teeSetId = existingTeeSetId
       if (!teeSetId) {
-        // try insert; if unique exists (course_id,name), catch and fetch id
         const { data: tee, error: tErr } = await supabase
           .from('tee_sets')
-          .insert({ course_id: courseId, name: name.trim(), par: coursePar })
+          .insert({ course_id: courseId, name: name.trim(), par: coursePar, rating: ratingNum, slope: slopeNum })
           .select('id')
           .single()
         if (tErr) {
-          // if it's the unique violation, fetch existing id & continue
           if ((tErr as any).code === '23505') {
             const { data: found } = await supabase
               .from('tee_sets')
@@ -147,13 +157,15 @@ export default function NewTeeSetPage() {
           teeSetId = tee?.id ?? null
         }
       } else {
-        // update par if changed
-        await supabase.from('tee_sets').update({ par: coursePar }).eq('id', teeSetId)
+        await supabase
+          .from('tee_sets')
+          .update({ par: coursePar, rating: ratingNum, slope: slopeNum })
+          .eq('id', teeSetId)
       }
 
       if (!teeSetId) throw new Error('Could not determine tee set ID.')
 
-      // Upsert 18 yardages (requires unique (tee_set_id,hole_number))
+      // Upsert 18 yardages
       const rows = yards.map(y => ({
         tee_set_id: teeSetId!,
         hole_number: y.hole_number,
@@ -188,20 +200,31 @@ export default function NewTeeSetPage() {
       <h1 className="text-2xl font-semibold">New Tee Set</h1>
 
       <form onSubmit={handleSubmit} className="space-y-5">
-        <div className="grid md:grid-cols-3 gap-3">
-          <div>
+        <div className="grid md:grid-cols-5 gap-3">
+          <div className="md:col-span-2">
             <label className="block text-sm font-medium mb-1">Course</label>
             <select className="w-full rounded-xl border p-2" value={courseId} onChange={e=>setCourseId(e.target.value)}>
               {courses.map(c => <option key={c.id} value={c.id}>{c.name}</option>)}
             </select>
           </div>
-          <div>
+          <div className="md:col-span-1">
             <label className="block text-sm font-medium mb-1">Tee Name</label>
             <input className="w-full rounded-xl border p-2" value={name} onChange={e=>setName(e.target.value)} placeholder="Gold, Blue, White…" />
           </div>
-          <div>
-            <label className="block text-sm font-medium mb-1">Par</label>
+          <div className="md:col-span-1">
+            <label className="block text-sm font-medium mb-1">Par (auto)</label>
             <input className="w-full rounded-xl border p-2 bg-gray-50" value={coursePar} readOnly />
+          </div>
+          <div className="md:col-span-1">
+            <label className="block text-sm font-medium mb-1">Rating</label>
+            <input className="w-full rounded-xl border p-2" type="number" step="0.1" min="55" max="80" value={rating} onChange={e=>setRating(e.target.value)} />
+          </div>
+        </div>
+
+        <div className="grid md:grid-cols-5 gap-3">
+          <div className="md:col-span-1 md:col-start-5">
+            <label className="block text-sm font-medium mb-1">Slope</label>
+            <input className="w-full rounded-xl border p-2" type="number" step="1" min="55" max="155" value={slope} onChange={e=>setSlope(e.target.value)} />
           </div>
         </div>
 

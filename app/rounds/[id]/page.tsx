@@ -44,11 +44,16 @@ type Hole = {
   penalty_strokes: number
 }
 
-// handle relation typed as array OR object
+// helpers: handle relation typed as array OR object
 function getName(rel: any): string {
   if (!rel) return ''
   if (Array.isArray(rel)) return rel[0]?.name ?? ''
   return rel.name ?? ''
+}
+function getProp<T = any>(rel: any, key: string): T | undefined {
+  if (!rel) return undefined
+  if (Array.isArray(rel)) return rel[0]?.[key]
+  return rel[key]
 }
 
 export default function RoundDetailPage() {
@@ -61,7 +66,11 @@ export default function RoundDetailPage() {
   const [totals, setTotals] = useState<Totals | null>(null)
   const [holes, setHoles] = useState<Hole[]>([])
   const [courseName, setCourseName] = useState<string>('')
+
+  // tee info
   const [teeName, setTeeName] = useState<string>('')
+  const [teeRating, setTeeRating] = useState<number | null>(null)
+  const [teeSlope, setTeeSlope] = useState<number | null>(null)
 
   useEffect(() => {
     let alive = true
@@ -73,17 +82,27 @@ export default function RoundDetailPage() {
       const [{ data: t, error: tErr }, { data: hs, error: hErr }, { data: r, error: rErr }] = await Promise.all([
         supabase.from('v_round_percentages').select('*').eq('round_id', roundId).single(),
         supabase.from('round_holes').select('*').eq('round_id', roundId).order('hole_number', { ascending: true }),
-        supabase.from('rounds').select('course:courses(name), tee:tee_sets(name)').eq('id', roundId).single(),
+        supabase
+          .from('rounds')
+          .select('course:courses(name), tee:tee_sets(name, rating, slope)')
+          .eq('id', roundId)
+          .single(),
       ])
       if (tErr) { alert(`Totals error: ${tErr.message}`); return }
       if (hErr) { alert(`Holes error: ${hErr.message}`); return }
-      if (rErr) { /* ok */ }
+      if (rErr) { /* ok if null */ }
 
       if (!alive) return
       setTotals(t as any)
       setHoles((hs ?? []) as any)
+
       setCourseName(getName(r?.course))
       setTeeName(getName(r?.tee))
+      const rating = getProp<number>(r?.tee, 'rating')
+      const slope = getProp<number>(r?.tee, 'slope')
+      setTeeRating(rating == null ? null : Number(rating))
+      setTeeSlope(slope == null ? null : Number(slope))
+
       setLoading(false)
     })()
     return () => { alive = false }
@@ -110,12 +129,19 @@ export default function RoundDetailPage() {
     )
   }
 
+  const teeLabel =
+    teeName
+      ? `${teeName}${teeRating != null ? ` • ${teeRating.toFixed(1)}` : ''}${teeSlope != null ? `/${teeSlope}` : ''}`
+      : ''
+
   return (
     <div className="mx-auto max-w-5xl p-6 space-y-6">
       <div className="flex items-center justify-between">
         <h1 className="text-2xl font-semibold">Round • {totals.round_date}</h1>
         <div className="text-sm opacity-75">
-          {totals.round_type}{courseName ? ` • ${courseName}` : ''}{teeName ? ` • ${teeName}` : ''}
+          {totals.round_type}
+          {courseName ? ` • ${courseName}` : ''}
+          {teeLabel ? ` • ${teeLabel}` : ''}
         </div>
       </div>
 

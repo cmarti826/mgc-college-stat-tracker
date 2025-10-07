@@ -19,7 +19,6 @@ type HoleRow = {
   penalty_strokes: number
 }
 
-// handle relation typed as array OR object
 function getName(rel: any): string {
   if (!rel) return ''
   if (Array.isArray(rel)) return rel[0]?.name ?? ''
@@ -61,7 +60,7 @@ export default function EditRoundPage() {
       const { data: { user } } = await supabase.auth.getUser()
       if (!user) { router.push('/auth/login'); return }
 
-      // Load round + relation names + ids we need to seed par/yardage
+      // Load round context (need course_id & tee_set_id)
       const { data: round, error: rErr } = await supabase
         .from('rounds')
         .select('id, course_id, tee_set_id, course:courses(name), tee:tee_sets(name)')
@@ -74,7 +73,7 @@ export default function EditRoundPage() {
       setCourseName(getName(round?.course))
       setTeeName(getName(round?.tee))
 
-      // Try to load existing hole stats for this round
+      // Existing per-hole stats?
       const { data: existing, error: hErr } = await supabase
         .from('round_holes')
         .select('*')
@@ -85,7 +84,6 @@ export default function EditRoundPage() {
       if (!alive) return
 
       if (existing && existing.length > 0) {
-        // Merge existing stats into our 1..18 skeleton
         const merged = holes.map(h => {
           const found = (existing as any[]).find(e => e.hole_number === h.hole_number)
           if (!found) return h
@@ -106,12 +104,13 @@ export default function EditRoundPage() {
         })
         setHoles(merged)
       } else {
-        // No round_holes yet — prefill from course/tee
+        // No rows yet — seed from course holes + tee yardages
+        // NOTE: holes table uses `number` (not hole_number)
         const [parRes, yardRes] = await Promise.all([
           supabase.from('holes')
-            .select('hole_number, par')
+            .select('number, par')                         // <-- fixed
             .eq('course_id', round!.course_id)
-            .order('hole_number', { ascending: true }),
+            .order('number', { ascending: true }),        // <-- fixed
           supabase.from('tee_set_holes')
             .select('hole_number, yardage')
             .eq('tee_set_id', round!.tee_set_id)
@@ -122,7 +121,7 @@ export default function EditRoundPage() {
         if (yardRes.error) { alert(`Could not load tee yardages: ${yardRes.error.message}`); return }
 
         const parByHole = new Map<number, number>()
-        ;(parRes.data ?? []).forEach(row => parByHole.set(row.hole_number, row.par))
+        ;(parRes.data ?? []).forEach(row => parByHole.set(row.number, row.par))      // <-- fixed
 
         const yardByHole = new Map<number, number>()
         ;(yardRes.data ?? []).forEach(row => yardByHole.set(row.hole_number, row.yardage))
@@ -131,9 +130,30 @@ export default function EditRoundPage() {
           ...h,
           par: parByHole.get(h.hole_number) ?? h.par,
           yardage: yardByHole.get(h.hole_number) ?? h.yardage,
-          // keep the rest null/false for user entry
         }))
+
         setHoles(seeded)
+
+        // (Nice UX) persist the seed immediately so it's available on refresh/other devices
+        const seedRows = seeded.map(h => ({
+          round_id: roundId,
+          hole_number: h.hole_number,
+          par: h.par,
+          yardage: h.yardage,
+          strokes: null,
+          putts: null,
+          fairway_hit: h.par === 3 ? null : false,
+          gir: false,
+          up_down_attempt: false,
+          up_down_made: false,
+          sand_save_attempt: false,
+          sand_save_made: false,
+          penalty_strokes: 0,
+        }))
+        const { error: seedErr } = await supabase
+          .from('round_holes')
+          .upsert(seedRows, { onConflict: 'round_id,hole_number' })
+        if (seedErr) { console.warn('Seed upsert warning:', seedErr.message) }
       }
 
       setLoading(false)

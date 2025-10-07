@@ -44,7 +44,7 @@ type Hole = {
   penalty_strokes: number
 }
 
-// helpers: handle relation typed as array OR object
+// helpers for relations that can be array/object
 function getName(rel: any): string {
   if (!rel) return ''
   if (Array.isArray(rel)) return rel[0]?.name ?? ''
@@ -63,11 +63,12 @@ export default function RoundDetailPage() {
   const supabase = useMemo(() => supabaseBrowser(), [])
 
   const [loading, setLoading] = useState(true)
+  const [deleting, setDeleting] = useState(false)
+
   const [totals, setTotals] = useState<Totals | null>(null)
   const [holes, setHoles] = useState<Hole[]>([])
   const [courseName, setCourseName] = useState<string>('')
 
-  // tee info
   const [teeName, setTeeName] = useState<string>('')
   const [teeRating, setTeeRating] = useState<number | null>(null)
   const [teeSlope, setTeeSlope] = useState<number | null>(null)
@@ -108,6 +109,24 @@ export default function RoundDetailPage() {
     return () => { alive = false }
   }, [roundId, router, supabase])
 
+  async function handleDelete() {
+    if (deleting) return
+    const label = `${courseName || 'Course'} • ${totals?.round_date || ''}`
+    if (!confirm(`Delete this round?\n\n${label}\n\nThis cannot be undone.`)) return
+    setDeleting(true)
+    try {
+      // Single call; ON DELETE CASCADE will remove round_holes
+      const { error } = await supabase.from('rounds').delete().eq('id', roundId)
+      if (error) throw error
+      router.replace('/') // back to home (course list)
+    } catch (err: any) {
+      console.error(err)
+      alert(err.message ?? 'Failed to delete round.')
+    } finally {
+      setDeleting(false)
+    }
+  }
+
   if (loading) {
     return (
       <div className="mx-auto max-w-4xl p-6">
@@ -122,9 +141,14 @@ export default function RoundDetailPage() {
       <div className="mx-auto max-w-3xl p-6">
         <h1 className="text-2xl font-semibold mb-3">Round</h1>
         <p className="text-sm">No data yet. Add holes:</p>
-        <button onClick={() => router.push(`/rounds/${roundId}/edit`)} className="mt-2 rounded-2xl px-4 py-2 border">
-          Edit Round
-        </button>
+        <div className="mt-3 flex gap-2">
+          <button onClick={() => router.push(`/rounds/${roundId}/edit`)} className="rounded-2xl px-4 py-2 border">
+            Edit Round
+          </button>
+          <button onClick={handleDelete} disabled={deleting} className="rounded-2xl px-4 py-2 border text-red-600 border-red-300">
+            {deleting ? 'Deleting…' : 'Delete Round'}
+          </button>
+        </div>
       </div>
     )
   }
@@ -138,11 +162,25 @@ export default function RoundDetailPage() {
     <div className="mx-auto max-w-5xl p-6 space-y-6">
       <div className="flex items-center justify-between">
         <h1 className="text-2xl font-semibold">Round • {totals.round_date}</h1>
-        <div className="text-sm opacity-75">
-          {totals.round_type}
-          {courseName ? ` • ${courseName}` : ''}
-          {teeLabel ? ` • ${teeLabel}` : ''}
+        <div className="flex items-center gap-2">
+          <button onClick={() => router.push(`/rounds/${roundId}/edit`)} className="rounded-2xl px-3 py-1.5 border">
+            Edit
+          </button>
+          <button
+            onClick={handleDelete}
+            disabled={deleting}
+            className="rounded-2xl px-3 py-1.5 border text-red-600 border-red-300 disabled:opacity-60"
+            title="Delete this round"
+          >
+            {deleting ? 'Deleting…' : 'Delete'}
+          </button>
         </div>
+      </div>
+
+      <div className="text-sm opacity-75">
+        {totals.round_type}
+        {courseName ? ` • ${courseName}` : ''}
+        {teeLabel ? ` • ${teeLabel}` : ''}
       </div>
 
       <div className="grid md:grid-cols-2 gap-4">

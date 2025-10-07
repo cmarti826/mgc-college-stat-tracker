@@ -61,10 +61,10 @@ export default function EditRoundPage() {
       const { data: { user } } = await supabase.auth.getUser()
       if (!user) { router.push('/auth/login'); return }
 
-      // Load round context (course/tee)
+      // Load round + relation names + ids we need to seed par/yardage
       const { data: round, error: rErr } = await supabase
         .from('rounds')
-        .select('id, course:courses(name), tee:tee_sets(name)')
+        .select('id, course_id, tee_set_id, course:courses(name), tee:tee_sets(name)')
         .eq('id', roundId)
         .single()
 
@@ -74,7 +74,7 @@ export default function EditRoundPage() {
       setCourseName(getName(round?.course))
       setTeeName(getName(round?.tee))
 
-      // Load existing hole rows
+      // Try to load existing hole stats for this round
       const { data: existing, error: hErr } = await supabase
         .from('round_holes')
         .select('*')
@@ -85,6 +85,7 @@ export default function EditRoundPage() {
       if (!alive) return
 
       if (existing && existing.length > 0) {
+        // Merge existing stats into our 1..18 skeleton
         const merged = holes.map(h => {
           const found = (existing as any[]).find(e => e.hole_number === h.hole_number)
           if (!found) return h
@@ -104,7 +105,37 @@ export default function EditRoundPage() {
           } as HoleRow
         })
         setHoles(merged)
+      } else {
+        // No round_holes yet — prefill from course/tee
+        const [parRes, yardRes] = await Promise.all([
+          supabase.from('holes')
+            .select('hole_number, par')
+            .eq('course_id', round!.course_id)
+            .order('hole_number', { ascending: true }),
+          supabase.from('tee_set_holes')
+            .select('hole_number, yardage')
+            .eq('tee_set_id', round!.tee_set_id)
+            .order('hole_number', { ascending: true }),
+        ])
+
+        if (parRes.error) { alert(`Could not load course holes: ${parRes.error.message}`); return }
+        if (yardRes.error) { alert(`Could not load tee yardages: ${yardRes.error.message}`); return }
+
+        const parByHole = new Map<number, number>()
+        ;(parRes.data ?? []).forEach(row => parByHole.set(row.hole_number, row.par))
+
+        const yardByHole = new Map<number, number>()
+        ;(yardRes.data ?? []).forEach(row => yardByHole.set(row.hole_number, row.yardage))
+
+        const seeded = holes.map(h => ({
+          ...h,
+          par: parByHole.get(h.hole_number) ?? h.par,
+          yardage: yardByHole.get(h.hole_number) ?? h.yardage,
+          // keep the rest null/false for user entry
+        }))
+        setHoles(seeded)
       }
+
       setLoading(false)
     })()
     return () => { alive = false }

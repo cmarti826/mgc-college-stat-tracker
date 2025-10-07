@@ -46,6 +46,8 @@ export default function EditRoundPage() {
 
   const [loading, setLoading] = useState(true)
   const [saving, setSaving] = useState(false)
+const [userId, setUserId] = useState<string | null>(null);
+
 
   const [courseName, setCourseName] = useState('')
   const [teeName, setTeeName] = useState('')
@@ -73,8 +75,10 @@ export default function EditRoundPage() {
     let alive = true
     ;(async () => {
       setLoading(true)
-      const { data: { user } } = await supabase.auth.getUser()
-      if (!user) { router.push('/auth/login'); return }
+     const { data: { user } } = await supabase.auth.getUser()
+if (!user) { router.push('/auth/login'); return }
+setUserId(user.id);
+
 
       const { data: round, error: rErr } = await supabase
         .from('rounds')
@@ -229,15 +233,17 @@ export default function EditRoundPage() {
         const hn = Number(key)
         await supabase.from('shots').delete().eq('round_id', roundId).eq('hole_number', hn)
         const rows = (shotsByHole[hn] ?? []).map((s, idx) => ({
-          round_id: roundId,
-          hole_number: hn,
-          shot_number: idx + 1,
-          start_lie: s.start_lie,
-          start_dist_yards: Number(s.start_dist_yards) || 0,
-          end_lie: s.end_lie,
-          end_dist_yards: Number(s.end_dist_yards) || 0,
-          penalty: !!s.penalty,
-        }))
+  round_id: roundId,
+  hole_number: hn,
+  shot_number: idx + 1,
+  start_lie: s.start_lie,
+  start_dist_yards: Number(s.start_dist_yards) || 0,
+  end_lie: s.end_lie,
+  end_dist_yards: Number(s.end_dist_yards) || 0,
+  penalty: !!s.penalty,
+  user_id: userId,          // <-- add this line
+}));
+
         if (rows.length) {
           const { error } = await supabase.from('shots').insert(rows)
           if (error) throw error

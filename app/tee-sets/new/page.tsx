@@ -13,21 +13,25 @@ export default function NewTeeSetPage() {
 
   const [courses, setCourses] = useState<Course[]>([])
   const [courseId, setCourseId] = useState<string>('')
-  const [name, setName] = useState('Gold')
+  const [name, setName] = useState('Blue')
 
   const [yards, setYards] = useState<HoleYard[]>(
     Array.from({ length: 18 }, (_, i) => ({ hole_number: i + 1, yardage: '' }))
   )
+
+  const [coursePar, setCoursePar] = useState<number>(72) // computed from holes
   const [loading, setLoading] = useState(true)
   const [submitting, setSubmitting] = useState(false)
 
+  // Load courses
   useEffect(() => {
     let alive = true
     ;(async () => {
       setLoading(true)
-      const [{ data, error }] = await Promise.all([
-        supabase.from('courses').select('id,name').order('name', { ascending: true }),
-      ])
+      const { data, error } = await supabase
+        .from('courses')
+        .select('id,name')
+        .order('name', { ascending: true })
       if (error) { alert(error.message); return }
       if (!alive) return
       setCourses(data ?? [])
@@ -36,6 +40,27 @@ export default function NewTeeSetPage() {
     })()
     return () => { alive = false }
   }, [supabase])
+
+  // Compute course par whenever courseId changes
+  useEffect(() => {
+    if (!courseId) return
+    let alive = true
+    ;(async () => {
+      const { data, error } = await supabase
+        .from('holes')
+        .select('par')
+        .eq('course_id', courseId)
+      if (error) { alert(`Could not load course holes: ${error.message}`); return }
+      if (!alive) return
+      const totalPar = (data ?? []).reduce((sum, r) => sum + Number(r.par || 0), 0)
+      if (totalPar === 0) {
+        // Most likely the course has no holes yet
+        alert('This course has no holes set up. Please create the course with 18 pars first.')
+      }
+      setCoursePar(totalPar || 72)
+    })()
+    return () => { alive = false }
+  }, [courseId, supabase])
 
   function setYard(i: number, v: string) {
     setYards(prev => {
@@ -56,15 +81,15 @@ export default function NewTeeSetPage() {
 
     setSubmitting(true)
     try {
-      // 1) create tee set
+      // 1) create tee set INCLUDING par (required by DB)
       const { data: tee, error: tErr } = await supabase
         .from('tee_sets')
-        .insert({ course_id: courseId, name: name.trim() })
+        .insert({ course_id: courseId, name: name.trim(), par: coursePar })
         .select('id')
         .single()
       if (tErr) throw tErr
 
-      // 2) insert 18 tee_set_holes
+      // 2) insert per-hole yardages
       const rows = yards.map(y => ({
         tee_set_id: tee!.id,
         hole_number: y.hole_number,
@@ -97,16 +122,20 @@ export default function NewTeeSetPage() {
       <h1 className="text-2xl font-semibold">New Tee Set</h1>
 
       <form onSubmit={handleSubmit} className="space-y-5">
-        <div className="grid md:grid-cols-2 gap-3">
-          <div>
+        <div className="grid md:grid-cols-3 gap-3">
+          <div className="md:col-span-1">
             <label className="block text-sm font-medium mb-1">Course</label>
             <select className="w-full rounded-xl border p-2" value={courseId} onChange={e=>setCourseId(e.target.value)}>
               {courses.map(c => <option key={c.id} value={c.id}>{c.name}</option>)}
             </select>
           </div>
-          <div>
+          <div className="md:col-span-1">
             <label className="block text-sm font-medium mb-1">Tee Name</label>
             <input className="w-full rounded-xl border p-2" value={name} onChange={e=>setName(e.target.value)} placeholder="Gold, Blue, White…" />
+          </div>
+          <div className="md:col-span-1">
+            <label className="block text-sm font-medium mb-1">Par (auto)</label>
+            <input className="w-full rounded-xl border p-2 bg-gray-50" value={coursePar} readOnly />
           </div>
         </div>
 

@@ -4,7 +4,6 @@ import { useEffect, useMemo, useState } from 'react'
 import { useParams, useRouter } from 'next/navigation'
 import { supabaseBrowser } from '@/lib/supabase-browser'
 
-/** --- Types --- */
 type Lie = 'TEE' | 'FAIRWAY' | 'ROUGH' | 'SAND' | 'RECOVERY' | 'GREEN'
 const LIES: Lie[] = ['TEE', 'FAIRWAY', 'ROUGH', 'SAND', 'RECOVERY', 'GREEN']
 
@@ -33,7 +32,6 @@ type Shot = {
   sg?: number
 }
 
-/** --- Helpers --- */
 function relName(rel: any): string {
   if (!rel) return ''
   if (Array.isArray(rel)) return rel[0]?.name ?? ''
@@ -71,7 +69,6 @@ export default function EditRoundPage() {
   const [activeHole, setActiveHole] = useState(1)
   const [shotsByHole, setShotsByHole] = useState<Record<number, Shot[]>>({})
 
-  /** Load round meta, seed par/yardages, load round_holes + shots */
   useEffect(() => {
     let alive = true
     ;(async () => {
@@ -79,7 +76,6 @@ export default function EditRoundPage() {
       const { data: { user } } = await supabase.auth.getUser()
       if (!user) { router.push('/auth/login'); return }
 
-      // Round with relations
       const { data: round, error: rErr } = await supabase
         .from('rounds')
         .select('id, course_id, tee_set_id, course:courses(name), tee:tee_sets(name)')
@@ -90,7 +86,6 @@ export default function EditRoundPage() {
       setCourseName(relName(round?.course))
       setTeeName(relName(round?.tee))
 
-      // Existing hole rows
       const { data: existing, error: hErr } = await supabase
         .from('round_holes')
         .select('*')
@@ -119,7 +114,6 @@ export default function EditRoundPage() {
         })
         setHoles(merged)
       } else {
-        // Seed from course + tee set
         const [parRes, yardRes] = await Promise.all([
           supabase
             .from('holes')
@@ -149,7 +143,6 @@ export default function EditRoundPage() {
         }))
         setHoles(seeded)
 
-        // persist seed
         const seedRows = seeded.map(h => ({
           round_id: roundId,
           hole_number: h.hole_number,
@@ -168,7 +161,6 @@ export default function EditRoundPage() {
         await supabase.from('round_holes').upsert(seedRows, { onConflict: 'round_id,hole_number' })
       }
 
-      // Load existing shots
       const { data: shots, error: sErr } = await supabase
         .from('shots')
         .select('hole_number, shot_number, start_lie, start_dist_yards, end_lie, end_dist_yards, penalty')
@@ -198,7 +190,6 @@ export default function EditRoundPage() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [roundId])
 
-  /** --- Hole stat helpers --- */
   function setField(index: number, key: keyof HoleRow, value: any) {
     setHoles(prev => {
       const copy = [...prev]
@@ -212,18 +203,17 @@ export default function EditRoundPage() {
     })
   }
 
-  /** --- Save holes + shots --- */
   async function saveAll() {
     setSaving(true)
     try {
-      // 1) round_holes upsert
+      // ✅ only check for null (state never stores '')
       const rhRows = holes.map(h => ({
         round_id: roundId,
         hole_number: h.hole_number,
         par: Number(h.par) || 3,
-        yardage: h.yardage == null || h.yardage === '' ? null : Number(h.yardage),
-        strokes: h.strokes == null || h.strokes === '' ? null : Number(h.strokes),
-        putts: h.putts == null || h.putts === '' ? null : Number(h.putts),
+        yardage: h.yardage == null ? null : Number(h.yardage),
+        strokes: h.strokes == null ? null : Number(h.strokes),
+        putts: h.putts == null ? null : Number(h.putts),
         fairway_hit: h.par === 3 ? null : !!h.fairway_hit,
         gir: !!h.gir,
         up_down_attempt: !!h.up_down_attempt,
@@ -235,7 +225,6 @@ export default function EditRoundPage() {
       const { error: rhErr } = await supabase.from('round_holes').upsert(rhRows, { onConflict: 'round_id,hole_number' })
       if (rhErr) throw rhErr
 
-      // 2) shots: replace per hole (simplest & reliable with RLS)
       for (const key of Object.keys(shotsByHole)) {
         const hn = Number(key)
         await supabase.from('shots').delete().eq('round_id', roundId).eq('hole_number', hn)
@@ -264,7 +253,6 @@ export default function EditRoundPage() {
     }
   }
 
-  /** --- Shots editor helpers --- */
   function addShot(holeNo: number) {
     const list = shotsByHole[holeNo] ?? []
     const last = list[list.length - 1]
@@ -342,7 +330,6 @@ export default function EditRoundPage() {
         </div>
       </div>
 
-      {/* Hole picker */}
       <div className="flex flex-wrap gap-2">
         {holes.map(h => (
           <button
@@ -355,7 +342,6 @@ export default function EditRoundPage() {
         ))}
       </div>
 
-      {/* Per-hole stat row */}
       <div className="rounded-2xl border p-4">
         <div className="grid grid-cols-2 md:grid-cols-6 gap-3 items-end">
           <div>
@@ -419,7 +405,6 @@ export default function EditRoundPage() {
         </div>
       </div>
 
-      {/* Shots editor */}
       <div className="rounded-2xl border p-4">
         <div className="flex items-center justify-between mb-3">
           <h2 className="font-semibold">Shots – Hole {activeHole}</h2>

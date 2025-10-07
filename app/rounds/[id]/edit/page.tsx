@@ -4,6 +4,7 @@ import { useEffect, useMemo, useState } from 'react'
 import { useParams, useRouter } from 'next/navigation'
 import { supabaseBrowser } from '@/lib/supabase-browser'
 
+/** --- Types --- */
 type Lie = 'TEE' | 'FAIRWAY' | 'ROUGH' | 'SAND' | 'RECOVERY' | 'GREEN'
 const LIES: Lie[] = ['TEE', 'FAIRWAY', 'ROUGH', 'SAND', 'RECOVERY', 'GREEN']
 
@@ -32,6 +33,11 @@ type Shot = {
   sg?: number
 }
 
+/** --- Unit helpers (SG baseline expects yards; putts feel better in feet) --- */
+const ftToYd = (ft: number) => ft / 3
+const ydToFt = (yd: number) => yd * 3
+
+/** --- Small helpers --- */
 function relName(rel: any): string {
   if (!rel) return ''
   if (Array.isArray(rel)) return rel[0]?.name ?? ''
@@ -46,8 +52,7 @@ export default function EditRoundPage() {
 
   const [loading, setLoading] = useState(true)
   const [saving, setSaving] = useState(false)
-const [userId, setUserId] = useState<string | null>(null);
-
+  const [userId, setUserId] = useState<string | null>(null)
 
   const [courseName, setCourseName] = useState('')
   const [teeName, setTeeName] = useState('')
@@ -71,15 +76,16 @@ const [userId, setUserId] = useState<string | null>(null);
   const [activeHole, setActiveHole] = useState(1)
   const [shotsByHole, setShotsByHole] = useState<Record<number, Shot[]>>({})
 
+  /** Load round meta, seed par/yardages, load round_holes + shots */
   useEffect(() => {
     let alive = true
     ;(async () => {
       setLoading(true)
-     const { data: { user } } = await supabase.auth.getUser()
-if (!user) { router.push('/auth/login'); return }
-setUserId(user.id);
+      const { data: { user } } = await supabase.auth.getUser()
+      if (!user) { router.push('/auth/login'); return }
+      setUserId(user.id)
 
-
+      // Round with relations
       const { data: round, error: rErr } = await supabase
         .from('rounds')
         .select('id, course_id, tee_set_id, course:courses(name), tee:tee_sets(name)')
@@ -90,6 +96,7 @@ setUserId(user.id);
       setCourseName(relName(round?.course))
       setTeeName(relName(round?.tee))
 
+      // Existing hole rows
       const { data: existing, error: hErr } = await supabase
         .from('round_holes')
         .select('*')
@@ -118,6 +125,7 @@ setUserId(user.id);
         })
         setHoles(merged)
       } else {
+        // Seed from course + tee set
         const [parRes, yardRes] = await Promise.all([
           supabase
             .from('holes')
@@ -147,6 +155,7 @@ setUserId(user.id);
         }))
         setHoles(seeded)
 
+        // persist seed
         const seedRows = seeded.map(h => ({
           round_id: roundId,
           hole_number: h.hole_number,
@@ -165,6 +174,7 @@ setUserId(user.id);
         await supabase.from('round_holes').upsert(seedRows, { onConflict: 'round_id,hole_number' })
       }
 
+      // Load existing shots
       const { data: shots, error: sErr } = await supabase
         .from('shots')
         .select('hole_number, shot_number, start_lie, start_dist_yards, end_lie, end_dist_yards, penalty')
@@ -194,6 +204,7 @@ setUserId(user.id);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [roundId])
 
+  /** --- Hole stat helpers --- */
   function setField(index: number, key: keyof HoleRow, value: any) {
     setHoles(prev => {
       const copy = [...prev]
@@ -207,10 +218,11 @@ setUserId(user.id);
     })
   }
 
+  /** --- Save holes + shots --- */
   async function saveAll() {
     setSaving(true)
     try {
-      // ✅ only check for null (state never stores '')
+      // 1) round_holes upsert
       const rhRows = holes.map(h => ({
         round_id: roundId,
         hole_number: h.hole_number,
@@ -229,21 +241,21 @@ setUserId(user.id);
       const { error: rhErr } = await supabase.from('round_holes').upsert(rhRows, { onConflict: 'round_id,hole_number' })
       if (rhErr) throw rhErr
 
+      // 2) shots: replace per hole (simplest & reliable with RLS)
       for (const key of Object.keys(shotsByHole)) {
         const hn = Number(key)
         await supabase.from('shots').delete().eq('round_id', roundId).eq('hole_number', hn)
         const rows = (shotsByHole[hn] ?? []).map((s, idx) => ({
-  round_id: roundId,
-  hole_number: hn,
-  shot_number: idx + 1,
-  start_lie: s.start_lie,
-  start_dist_yards: Number(s.start_dist_yards) || 0,
-  end_lie: s.end_lie,
-  end_dist_yards: Number(s.end_dist_yards) || 0,
-  penalty: !!s.penalty,
-  user_id: userId,          // <-- add this line
-}));
-
+          round_id: roundId,
+          hole_number: hn,
+          shot_number: idx + 1,
+          start_lie: s.start_lie,
+          start_dist_yards: Number(s.start_dist_yards) || 0,
+          end_lie: s.end_lie,
+          end_dist_yards: Number(s.end_dist_yards) || 0,
+          penalty: !!s.penalty,
+          user_id: userId, // belt & suspenders for RLS
+        }))
         if (rows.length) {
           const { error } = await supabase.from('shots').insert(rows)
           if (error) throw error
@@ -259,6 +271,7 @@ setUserId(user.id);
     }
   }
 
+  /** --- Shots editor helpers --- */
   function addShot(holeNo: number) {
     const list = shotsByHole[holeNo] ?? []
     const last = list[list.length - 1]
@@ -325,6 +338,7 @@ setUserId(user.id);
   }
 
   const hole = holes.find(h => h.hole_number === activeHole)!
+  const shots = shotsByHole[activeHole] ?? []
 
   return (
     <div className="mx-auto max-w-5xl p-6 space-y-6">
@@ -336,6 +350,7 @@ setUserId(user.id);
         </div>
       </div>
 
+      {/* Hole picker */}
       <div className="flex flex-wrap gap-2">
         {holes.map(h => (
           <button
@@ -348,6 +363,7 @@ setUserId(user.id);
         ))}
       </div>
 
+      {/* Per-hole stat row */}
       <div className="rounded-2xl border p-4">
         <div className="grid grid-cols-2 md:grid-cols-6 gap-3 items-end">
           <div>
@@ -411,6 +427,7 @@ setUserId(user.id);
         </div>
       </div>
 
+      {/* Shots editor */}
       <div className="rounded-2xl border p-4">
         <div className="flex items-center justify-between mb-3">
           <h2 className="font-semibold">Shots – Hole {activeHole}</h2>
@@ -426,68 +443,87 @@ setUserId(user.id);
               <tr>
                 <th className="p-2 text-left">#</th>
                 <th className="p-2">Start Lie</th>
-                <th className="p-2">Start Dist (yd)</th>
+                <th className="p-2">{/* Dynamic label */}Start Dist ({shots[0]?.start_lie === 'GREEN' ? 'ft' : 'yd'})</th>
                 <th className="p-2">End Lie</th>
-                <th className="p-2">End Dist (yd)</th>
+                <th className="p-2">{/* Dynamic label */}End Dist ({shots[0]?.end_lie === 'GREEN' ? 'ft' : 'yd'})</th>
                 <th className="p-2">Penalty</th>
                 <th className="p-2">SG</th>
                 <th className="p-2"></th>
               </tr>
             </thead>
             <tbody>
-              {(shotsByHole[activeHole] ?? []).map((s, i) => (
-                <tr key={i} className="odd:bg-white even:bg-gray-50">
-                  <td className="p-2">{i + 1}</td>
-                  <td className="p-2">
-                    <select
-                      className="rounded border p-1"
-                      value={s.start_lie}
-                      onChange={e => updateShot(activeHole, i, { start_lie: e.target.value as Lie })}
-                    >
-                      {LIES.map(l => <option key={l} value={l}>{l}</option>)}
-                    </select>
-                  </td>
-                  <td className="p-2">
-                    <input
-                      type="number"
-                      min={0}
-                      className="w-24 rounded border p-1 text-center"
-                      value={s.start_dist_yards}
-                      onChange={e => updateShot(activeHole, i, { start_dist_yards: Math.max(0, Number(e.target.value) || 0) })}
-                    />
-                  </td>
-                  <td className="p-2">
-                    <select
-                      className="rounded border p-1"
-                      value={s.end_lie}
-                      onChange={e => updateShot(activeHole, i, { end_lie: e.target.value as Lie })}
-                    >
-                      {LIES.map(l => <option key={l} value={l}>{l}</option>)}
-                    </select>
-                  </td>
-                  <td className="p-2">
-                    <input
-                      type="number"
-                      min={0}
-                      className="w-24 rounded border p-1 text-center"
-                      value={s.end_dist_yards}
-                      onChange={e => updateShot(activeHole, i, { end_dist_yards: Math.max(0, Number(e.target.value) || 0) })}
-                    />
-                  </td>
-                  <td className="p-2 text-center">
-                    <input
-                      type="checkbox"
-                      checked={!!s.penalty}
-                      onChange={e => updateShot(activeHole, i, { penalty: e.target.checked })}
-                    />
-                  </td>
-                  <td className="p-2 text-center">{s.sg == null ? '—' : s.sg.toFixed(2)}</td>
-                  <td className="p-2">
-                    <button onClick={() => removeShot(activeHole, i)} className="rounded border px-2 py-1">Remove</button>
-                  </td>
-                </tr>
-              ))}
-              {(shotsByHole[activeHole] ?? []).length === 0 && (
+              {shots.map((s, i) => {
+                const startIsGreen = s.start_lie === 'GREEN'
+                const endIsGreen = s.end_lie === 'GREEN'
+                const startDisplay = startIsGreen ? Math.round(ydToFt(s.start_dist_yards)) : s.start_dist_yards
+                const endDisplay = endIsGreen ? Math.round(ydToFt(s.end_dist_yards)) : s.end_dist_yards
+
+                return (
+                  <tr key={i} className="odd:bg-white even:bg-gray-50">
+                    <td className="p-2">{i + 1}</td>
+                    <td className="p-2">
+                      <select
+                        className="rounded border p-1"
+                        value={s.start_lie}
+                        onChange={e => updateShot(activeHole, i, { start_lie: e.target.value as Lie })}
+                      >
+                        {LIES.map(l => <option key={l} value={l}>{l}</option>)}
+                      </select>
+                    </td>
+                    <td className="p-2">
+                      <input
+                        type="number"
+                        min={0}
+                        step={1}
+                        className="w-28 rounded border p-1 text-center"
+                        value={startDisplay}
+                        onChange={e => {
+                          const v = Math.max(0, Number(e.target.value) || 0)
+                          updateShot(activeHole, i, {
+                            start_dist_yards: startIsGreen ? ftToYd(v) : v,
+                          })
+                        }}
+                      />
+                    </td>
+                    <td className="p-2">
+                      <select
+                        className="rounded border p-1"
+                        value={s.end_lie}
+                        onChange={e => updateShot(activeHole, i, { end_lie: e.target.value as Lie })}
+                      >
+                        {LIES.map(l => <option key={l} value={l}>{l}</option>)}
+                      </select>
+                    </td>
+                    <td className="p-2">
+                      <input
+                        type="number"
+                        min={0}
+                        step={1}
+                        className="w-28 rounded border p-1 text-center"
+                        value={endDisplay}
+                        onChange={e => {
+                          const v = Math.max(0, Number(e.target.value) || 0)
+                          updateShot(activeHole, i, {
+                            end_dist_yards: endIsGreen ? ftToYd(v) : v,
+                          })
+                        }}
+                      />
+                    </td>
+                    <td className="p-2 text-center">
+                      <input
+                        type="checkbox"
+                        checked={!!s.penalty}
+                        onChange={e => updateShot(activeHole, i, { penalty: e.target.checked })}
+                      />
+                    </td>
+                    <td className="p-2 text-center">{s.sg == null ? '—' : s.sg.toFixed(2)}</td>
+                    <td className="p-2">
+                      <button onClick={() => removeShot(activeHole, i)} className="rounded border px-2 py-1">Remove</button>
+                    </td>
+                  </tr>
+                )
+              })}
+              {shots.length === 0 && (
                 <tr>
                   <td colSpan={8} className="p-3 text-center text-gray-500">No shots yet.</td>
                 </tr>

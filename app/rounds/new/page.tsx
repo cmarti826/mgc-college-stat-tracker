@@ -10,8 +10,15 @@ type Course = { id: string; name: string }
 type TeeSet = { id: string; name: string; course_id: string }
 type CourseHole = { hole_number: number; par: number | null; yardage: number | null }
 type RoundType = 'PRACTICE' | 'QUALIFYING' | 'TOURNAMENT'
-
 const ROUND_TYPE_OPTIONS: RoundType[] = ['PRACTICE', 'QUALIFYING', 'TOURNAMENT']
+
+function todayYMD() {
+  const d = new Date()
+  const yyyy = d.getFullYear()
+  const mm = String(d.getMonth() + 1).padStart(2, '0')
+  const dd = String(d.getDate()).padStart(2, '0')
+  return `${yyyy}-${mm}-${dd}`
+}
 
 export default function NewRoundPage() {
   const router = useRouter()
@@ -23,7 +30,6 @@ export default function NewRoundPage() {
 
   const [courses, setCourses] = useState<Course[]>([])
   const [teeSets, setTeeSets] = useState<TeeSet[]>([])
-
   const [courseId, setCourseId] = useState<string>('')
   const [teeSetId, setTeeSetId] = useState<string>('')
 
@@ -31,11 +37,15 @@ export default function NewRoundPage() {
   const [teamId, setTeamId] = useState<string | null>(null)
   const [authed, setAuthed] = useState(false)
 
-  // round_type support
+  // Feature detection
   const [hasRoundType, setHasRoundType] = useState(false)
-  const [roundType, setRoundType] = useState<RoundType>('PRACTICE')
+  const [hasRoundDate, setHasRoundDate] = useState(false)
 
-  // Load auth, mapping, courses, tee sets, and detect round_type column
+  // Form fields
+  const [roundType, setRoundType] = useState<RoundType>('PRACTICE')
+  const [roundDate, setRoundDate] = useState<string>(todayYMD())
+
+  // Load auth, mapping, courses/tee sets, and detect columns
   useEffect(() => {
     (async () => {
       setLoading(true)
@@ -53,16 +63,10 @@ export default function NewRoundPage() {
       // resolve player
       let resolvedPlayer: string | null = null
       if (user?.id) {
-        const { data: up, error: upErr } = await supabase
-          .from('user_players')
-          .select('player_id')
-          .eq('user_id', user.id)
-          .maybeSingle()
-        if (upErr) {
-          setError(upErr.message)
-        } else {
-          resolvedPlayer = up?.player_id ?? null
-        }
+        const { data: up } = await supabase
+          .from('user_players').select('player_id')
+          .eq('user_id', user.id).maybeSingle()
+        resolvedPlayer = up?.player_id ?? null
       }
       setPlayerId(resolvedPlayer)
 
@@ -70,46 +74,41 @@ export default function NewRoundPage() {
       let resolvedTeam: string | null = null
       if (resolvedPlayer) {
         const { data: mem } = await supabase
-          .from('team_members')
-          .select('team_id')
-          .eq('player_id', resolvedPlayer)
-          .limit(1)
-          .maybeSingle()
+          .from('team_members').select('team_id')
+          .eq('player_id', resolvedPlayer).limit(1).maybeSingle()
         resolvedTeam = mem?.team_id ?? null
       }
       setTeamId(resolvedTeam)
 
-      // detect if rounds.round_type exists (if not, we hide the control)
+      // detect columns by doing a harmless select
       {
-        const { error: rtErr } = await supabase
-          .from('rounds')
-          .select('round_type')
-          .limit(1)
+        const { error: rtErr } = await supabase.from('rounds').select('round_type').limit(1)
         setHasRoundType(!rtErr)
+      }
+      {
+        const { error: rdErr } = await supabase.from('rounds').select('round_date').limit(1)
+        setHasRoundDate(!rdErr)
+        // keep default to today; if you want blank, comment next line
+        setRoundDate(todayYMD())
       }
 
       // load courses
       const { data: cs, error: cErr } = await supabase
-        .from('courses')
-        .select('id, name')
-        .order('name', { ascending: true })
+        .from('courses').select('id, name').order('name', { ascending: true })
       if (cErr) {
         setError(cErr.message)
         setLoading(false)
         return
       }
       setCourses((cs ?? []) as Course[])
-      const firstCourse = (cs?.[0]?.id as string) ?? ''
-      const selectedCourse = courseId || firstCourse
+      const selectedCourse = courseId || (cs?.[0]?.id ?? '')
       setCourseId(selectedCourse)
 
-      // load tee sets for selected course (if any)
+      // tee sets for selected course
       if (selectedCourse) {
         const { data: ts } = await supabase
-          .from('tee_sets')
-          .select('id, name, course_id')
-          .eq('course_id', selectedCourse)
-          .order('name', { ascending: true })
+          .from('tee_sets').select('id, name, course_id')
+          .eq('course_id', selectedCourse).order('name', { ascending: true })
         setTeeSets((ts ?? []) as TeeSet[])
         setTeeSetId(ts?.[0]?.id ?? '')
       }
@@ -123,15 +122,11 @@ export default function NewRoundPage() {
   useEffect(() => {
     (async () => {
       if (!courseId) {
-        setTeeSets([])
-        setTeeSetId('')
-        return
+        setTeeSets([]); setTeeSetId(''); return
       }
       const { data: ts } = await supabase
-        .from('tee_sets')
-        .select('id, name, course_id')
-        .eq('course_id', courseId)
-        .order('name', { ascending: true })
+        .from('tee_sets').select('id, name, course_id')
+        .eq('course_id', courseId).order('name', { ascending: true })
       setTeeSets((ts ?? []) as TeeSet[])
       setTeeSetId(ts?.[0]?.id ?? '')
     })()
@@ -147,29 +142,24 @@ export default function NewRoundPage() {
       if (!playerId) throw new Error('Link your login to a player on the Players page.')
       if (!courseId) throw new Error('Choose a course.')
       if (!teeSetId) throw new Error('Choose a tee set.')
+      if (hasRoundDate && !roundDate) throw new Error('Pick a round date.')
 
-      // Build payload
+      // 1) Create round (include date/type if present)
       const payload: Record<string, any> = {
         course_id: courseId,
         tee_set_id: teeSetId,
         player_id: playerId,
-        team_id: teamId, // can be null
+        team_id: teamId,
       }
-      if (hasRoundType && roundType) {
-        payload.round_type = roundType
-      }
+      if (hasRoundType && roundType) payload.round_type = roundType
+      if (hasRoundDate && roundDate) payload.round_date = roundDate
 
-      // 1) Create round
       const { data: roundInsert, error: roundErr } = await supabase
-        .from('rounds')
-        .insert(payload)
-        .select('id')
-        .single()
-
+        .from('rounds').insert(payload).select('id').single()
       if (roundErr) throw roundErr
       const roundId = (roundInsert as any).id as string
 
-      // 2) Seed round_holes
+      // 2) Seed round_holes from course_holes if available; fallback to 18x par 4
       let template: CourseHole[] = []
       const { data: ch } = await supabase
         .from('course_holes')
@@ -203,14 +193,8 @@ export default function NewRoundPage() {
         penalty_strokes: 0,
       }))
 
-      const { error: rhErr } = await supabase
-        .from('round_holes')
-        .insert(roundHoleRows)
-
-      if (rhErr) {
-        // Non-fatal; navigate anyway but surface a console warning
-        console.warn('round_holes insert failed:', rhErr)
-      }
+      const { error: rhErr } = await supabase.from('round_holes').insert(roundHoleRows)
+      if (rhErr) console.warn('round_holes insert failed:', rhErr)
 
       // 3) Navigate to the round
       router.push(`/rounds/${roundId}`)
@@ -298,7 +282,7 @@ export default function NewRoundPage() {
             <div className="help">Only tee sets for the selected course are shown.</div>
           </div>
 
-          {/* Round Type (only if the column exists) */}
+          {/* Round Type (if column exists) */}
           {hasRoundType && (
             <div>
               <label className="label">Round Type</label>
@@ -313,6 +297,21 @@ export default function NewRoundPage() {
                 ))}
               </select>
               <div className="help">PRACTICE / QUALIFYING / TOURNAMENT</div>
+            </div>
+          )}
+
+          {/* Round Date (if column exists) */}
+          {hasRoundDate && (
+            <div>
+              <label className="label">Round Date</label>
+              <input
+                type="date"
+                className="input"
+                value={roundDate}
+                onChange={(e) => setRoundDate(e.target.value)}
+                disabled={loading || saving}
+              />
+              <div className="help">Required by your schema. Defaults to today.</div>
             </div>
           )}
         </div>
@@ -336,7 +335,7 @@ export default function NewRoundPage() {
             <button
               type="submit"
               className="btn-on-light"
-              disabled={saving || !authed || !playerId || !courseId || !teeSetId}
+              disabled={saving || !authed || !playerId || !courseId || !teeSetId || (hasRoundDate && !roundDate)}
             >
               {saving ? 'Creating…' : 'Create Round'}
             </button>

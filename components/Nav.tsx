@@ -26,10 +26,8 @@ export default function Nav() {
 
   return (
     <header className="sticky top-0 z-40 shadow-sm">
-      {/* Main bar */}
       <div className="bg-[#3C3B6E] text-white">
         <nav className="mx-auto max-w-7xl px-4 sm:px-6 lg:px-8 py-3 flex items-center justify-between">
-          {/* Brand + primary nav */}
           <div className="flex items-center gap-3">
             <Link
               href="/"
@@ -42,19 +40,18 @@ export default function Nav() {
 
             <div className="hidden md:flex items-center gap-1 sm:gap-2 ml-2 sm:ml-4">
               {NAV_ITEMS.map((item) => {
-                const isActive =
-                  item.href === '/' ? pathname === '/' : pathname?.startsWith(item.href)
+                const isActive = item.href === '/' ? pathname === '/' : pathname?.startsWith(item.href)
                 return (
                   <Link
                     key={item.href}
                     href={item.href}
-                    className={[
-                      'px-3 py-1.5 rounded-xl transition-colors text-sm',
-                      isActive
-                        ? 'bg-white/10 underline underline-offset-4 decoration-2'
-                        : 'hover:bg-white/10',
-                    ].join(' ')}
                     aria-current={isActive ? 'page' : undefined}
+                    className={[
+                      'px-3 py-1.5 rounded-xl text-sm transition-colors border',
+                      isActive
+                        ? 'bg-white text-[#3C3B6E] border-white shadow-sm'
+                        : 'border-transparent hover:bg-white/10'
+                    ].join(' ')}
                   >
                     {item.label}
                   </Link>
@@ -63,13 +60,11 @@ export default function Nav() {
             </div>
           </div>
 
-          {/* Auth */}
           <div className="flex items-center gap-3 text-sm">
             {email ? (
               <>
                 <span className="opacity-90 hidden sm:inline">{email}</span>
-                {/* High-contrast on dark header */}
-                <button onClick={handleSignOut} className="btn-on-dark">
+                <button className="btn-on-dark" onClick={handleSignOut}>
                   Sign out
                 </button>
               </>
@@ -82,7 +77,6 @@ export default function Nav() {
         </nav>
       </div>
 
-      {/* Accent stripe */}
       <div className="h-1 w-full bg-gradient-to-r from-[#B22234] via-white to-[#3C3B6E]" />
     </header>
   )

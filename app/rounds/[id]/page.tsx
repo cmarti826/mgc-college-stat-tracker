@@ -39,13 +39,11 @@ export default function RoundSummaryPage() {
       const { data: { user } } = await supabase.auth.getUser()
       if (!user) { router.push('/auth/login'); return }
 
-      // NOTE: ask for several possible date fields so it works with your schema
+      // Select ONLY columns guaranteed to exist
       const { data: r, error: rErr } = await supabase
         .from('rounds')
         .select(`
           id,
-          round_date,
-          date,
           created_at,
           round_type,
           course_id,
@@ -112,9 +110,8 @@ export default function RoundSummaryPage() {
   const courseName = Array.isArray(round?.course) ? round.course[0]?.name : round?.course?.name
   const teeName = Array.isArray(round?.tee) ? round.tee[0]?.name : round?.tee?.name
 
-  // Pick the first available date-like field
-  const rawDate = round?.round_date ?? round?.date ?? round?.created_at ?? null
-  const prettyDate = rawDate ? new Date(rawDate).toLocaleDateString() : ''
+  // Use created_at for the date display (safe column)
+  const prettyDate = round?.created_at ? new Date(round.created_at).toLocaleDateString() : ''
 
   const totalPar = holes.reduce((s, h) => s + (Number(h.par) || 0), 0)
   const totalStrokes = holes.reduce((s, h) => s + (Number(h.strokes) || 0), 0)

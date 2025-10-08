@@ -39,11 +39,17 @@ export default function RoundSummaryPage() {
       const { data: { user } } = await supabase.auth.getUser()
       if (!user) { router.push('/auth/login'); return }
 
-      // Round + labels
+      // NOTE: ask for several possible date fields so it works with your schema
       const { data: r, error: rErr } = await supabase
         .from('rounds')
         .select(`
-          id, played_on, round_type, course_id, tee_set_id,
+          id,
+          round_date,
+          date,
+          created_at,
+          round_type,
+          course_id,
+          tee_set_id,
           course:courses ( name ),
           tee:tee_sets ( name )
         `)
@@ -53,7 +59,6 @@ export default function RoundSummaryPage() {
       if (!alive) return
       setRound(r)
 
-      // Hole stats
       const { data: rh, error: hErr } = await supabase
         .from('round_holes')
         .select('*')
@@ -71,7 +76,6 @@ export default function RoundSummaryPage() {
         penalty_strokes: row.penalty_strokes ?? 0,
       })))
 
-      // SG totals by bucket
       const { data: sgRows, error: sgErr } = await supabase
         .from('v_shots_with_sg')
         .select('hole_number, sg_bucket, sg_value')
@@ -93,7 +97,6 @@ export default function RoundSummaryPage() {
         PUTT: round1(agg.PUTT),
       })
       setSgTotal(round1(agg.OTT + agg.APP + agg.ARG + agg.PUTT))
-      // round per-hole to 2dp for display, but keep raw-ish
       Object.keys(byHole).forEach(k => { byHole[Number(k)] = round2(byHole[Number(k)]) })
       setSgByHole(byHole)
 
@@ -108,6 +111,10 @@ export default function RoundSummaryPage() {
 
   const courseName = Array.isArray(round?.course) ? round.course[0]?.name : round?.course?.name
   const teeName = Array.isArray(round?.tee) ? round.tee[0]?.name : round?.tee?.name
+
+  // Pick the first available date-like field
+  const rawDate = round?.round_date ?? round?.date ?? round?.created_at ?? null
+  const prettyDate = rawDate ? new Date(rawDate).toLocaleDateString() : ''
 
   const totalPar = holes.reduce((s, h) => s + (Number(h.par) || 0), 0)
   const totalStrokes = holes.reduce((s, h) => s + (Number(h.strokes) || 0), 0)
@@ -128,7 +135,6 @@ export default function RoundSummaryPage() {
     if (!confirm('Delete this round? This cannot be undone.')) return
     try {
       setDeleting(true)
-      // remove children first (RLS-friendly and clean)
       await supabase.from('shots').delete().eq('round_id', roundId)
       await supabase.from('round_holes').delete().eq('round_id', roundId)
       const { error } = await supabase.from('rounds').delete().eq('id', roundId)
@@ -160,7 +166,7 @@ export default function RoundSummaryPage() {
             {courseName || 'Round'} {teeName ? <span className="text-gray-500">• {teeName}</span> : null}
           </h1>
           <div className="text-sm text-gray-600">
-            {round?.played_on ? new Date(round.played_on).toLocaleDateString() : ''} {round?.round_type ? `• ${round.round_type}` : ''}
+            {prettyDate} {round?.round_type ? `• ${round.round_type}` : ''}
           </div>
         </div>
         <div className="flex gap-2">

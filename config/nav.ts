@@ -6,11 +6,7 @@ export const NAV_ITEMS: NavItem[] = [
   { href: '/rounds', label: 'Rounds' },
   { href: '/rounds/new', label: 'New Round' },
   { href: '/players', label: 'Players' },
+  { href: '/teams', label: 'Teams' },
   { href: '/courses', label: 'Courses' },
-  // Add more when you create pages:
-  // { href: '/teams', label: 'Teams' },
-  // { href: '/schedule', label: 'Schedule' },
-  // { href: '/leaderboard', label: 'Leaderboard' },
-  // { href: '/analytics', label: 'Analytics' },
-  // { href: '/settings', label: 'Settings' },
+  { href: '/leaderboard', label: 'Leaderboard' },
 ]

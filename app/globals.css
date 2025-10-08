@@ -38,8 +38,8 @@
   h3 { @apply text-lg sm:text-xl font-semibold; }
   h4 { @apply text-base sm:text-lg font-semibold; }
 
-  p   { @apply leading-relaxed; }
-  small { @apply text-sm text-gray-600; }
+  p    { @apply leading-relaxed; }
+  small{ @apply text-sm text-gray-600; }
 
   a {
     @apply text-[#3C3B6E] hover:underline underline-offset-4;
@@ -66,9 +66,36 @@
   }
 }
 
-/* ---------- Reusable Components ---------- */
-/* --- High-contrast buttons for different backgrounds --- */
+/* ---------- Components ---------- */
 @layer components {
+  /* Buttons (default set) */
+  .btn {
+    @apply inline-flex items-center justify-center px-4 py-2 rounded-xl font-semibold transition-colors duration-200 shadow-sm;
+  }
+  .btn-primary {
+    background: var(--mgc-red);
+    color: var(--mgc-white);
+  }
+  .btn-primary:hover { background: #8f1b2a; }
+
+  .btn-secondary {
+    background: var(--mgc-blue);
+    color: var(--mgc-white);
+  }
+  .btn-secondary:hover { background: #2f2e5a; }
+
+  .btn-outline {
+    @apply border;
+    border-color: rgba(0,0,0,0.15);
+    color: var(--mgc-blue);
+    background: white;
+  }
+  .btn-outline:hover {
+    background: rgba(60,59,110,0.06);
+    border-color: rgba(0,0,0,0.25);
+  }
+
+  /* --- High-contrast buttons for different backgrounds --- */
   /* For dark/navy backgrounds (e.g., header) */
   .btn-on-dark {
     @apply inline-flex items-center justify-center px-4 py-2 rounded-xl font-semibold transition-colors duration-200;
@@ -112,8 +139,6 @@
     background: rgba(60,59,110,0.06);
     border-color: rgba(0,0,0,0.3);
   }
-}
-
 
   /* Cards */
   .card {
@@ -191,7 +216,7 @@
   .stat-delta-pos { color: #1f7a1f; } /* positive */
   .stat-delta-neg { color: #b02a2a; } /* negative */
 
-  /* Nav accent helper (if you want a stripe under sections) */
+  /* Nav/section accent helper */
   .flag-accent {
     background: linear-gradient(to right, var(--mgc-red), var(--mgc-white), var(--mgc-blue));
     height: 3px;

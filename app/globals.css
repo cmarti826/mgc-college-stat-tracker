@@ -1,12 +1,204 @@
+/* app/globals.css */
+
+/* Tailwind layers */
 @tailwind base;
 @tailwind components;
 @tailwind utilities;
 
-:root { color-scheme: light; }
-body { @apply bg-gray-50 text-gray-900; }
-.container { @apply max-w-5xl mx-auto p-4; }
-.card { @apply bg-white shadow rounded-xl p-4; }
-.btn { @apply px-4 py-2 rounded-lg border border-gray-300 hover:bg-gray-100; }
-.btn-primary { @apply bg-blue-600 text-white hover:bg-blue-700 border-0; }
-.input { @apply border rounded-lg px-3 py-2 w-full; }
-.label { @apply text-sm font-medium text-gray-700; }
+/* ---------- CSS Variables (MGC palette) ---------- */
+:root {
+  --mgc-red:  #B22234; /* American red */
+  --mgc-blue: #3C3B6E; /* Flag navy */
+  --mgc-white:#FFFFFF;
+  --mgc-gray: #E1E1E1;
+  --ring:     2px solid rgba(60, 59, 110, 0.65); /* blue-ish focus */
+  --shadow-soft: 0 6px 24px rgba(0,0,0,0.06);
+}
+
+/* Optional: dark mode palette (kept subtle) */
+@media (prefers-color-scheme: dark) {
+  :root {
+    --mgc-white:#F7F7FA;
+    --mgc-gray: #2C2C39;
+  }
+}
+
+/* ---------- Base Resets & Typography ---------- */
+@layer base {
+  html, body {
+    @apply antialiased;
+  }
+
+  body {
+    @apply text-gray-900 bg-white;
+  }
+
+  h1 { @apply text-2xl sm:text-3xl font-extrabold tracking-tight; }
+  h2 { @apply text-xl sm:text-2xl font-bold tracking-tight; }
+  h3 { @apply text-lg sm:text-xl font-semibold; }
+  h4 { @apply text-base sm:text-lg font-semibold; }
+
+  p   { @apply leading-relaxed; }
+  small { @apply text-sm text-gray-600; }
+
+  a {
+    @apply text-[#3C3B6E] hover:underline underline-offset-4;
+  }
+
+  /* Focus ring – accessible and consistent */
+  :focus-visible {
+    outline: var(--ring);
+    outline-offset: 2px;
+    border-radius: 0.5rem;
+  }
+
+  /* Selection matches theme */
+  ::selection {
+    background: rgba(60, 59, 110, 0.2);
+  }
+
+  /* Subtle hr */
+  hr {
+    border: 0;
+    height: 1px;
+    background: linear-gradient(to right, var(--mgc-red), var(--mgc-white), var(--mgc-blue));
+    @apply my-6;
+  }
+}
+
+/* ---------- Reusable Components ---------- */
+@layer components {
+  /* Buttons */
+  .btn {
+    @apply inline-flex items-center justify-center px-4 py-2 rounded-xl font-semibold transition-colors duration-200 shadow-sm;
+  }
+  .btn-primary {
+    background: var(--mgc-red);
+    color: var(--mgc-white);
+  }
+  .btn-primary:hover { background: #8f1b2a; }
+
+  .btn-secondary {
+    background: var(--mgc-blue);
+    color: var(--mgc-white);
+  }
+  .btn-secondary:hover { background: #2f2e5a; }
+
+  .btn-outline {
+    @apply border;
+    border-color: rgba(0,0,0,0.15);
+    color: var(--mgc-blue);
+    background: white;
+  }
+  .btn-outline:hover {
+    background: rgba(60,59,110,0.06);
+    border-color: rgba(0,0,0,0.25);
+  }
+
+  /* Cards */
+  .card {
+    @apply rounded-2xl bg-white border border-gray-200 p-4 sm:p-6;
+    box-shadow: var(--shadow-soft);
+  }
+  .card-header {
+    @apply mb-3 flex items-center justify-between;
+  }
+  .card-title {
+    @apply text-lg font-bold;
+  }
+  .card-subtle {
+    @apply text-sm text-gray-600;
+  }
+
+  /* Pills / Chips */
+  .chip {
+    @apply inline-flex items-center px-2.5 py-1 rounded-full text-xs font-semibold bg-gray-100 text-gray-800;
+  }
+  .chip-blue {
+    background: rgba(60,59,110,0.08);
+    color: var(--mgc-blue);
+  }
+  .chip-red {
+    background: rgba(178,34,52,0.08);
+    color: var(--mgc-red);
+  }
+
+  /* Inputs */
+  .input, input[type="text"], input[type="number"], input[type="email"], input[type="date"], input[type="time"], textarea {
+    @apply w-full rounded-xl border bg-white px-3 py-2 text-sm outline-none transition-colors;
+    border-color: rgba(0,0,0,0.15);
+  }
+  .input:focus, input:focus, textarea:focus {
+    @apply border-transparent;
+    box-shadow: 0 0 0 3px rgba(60,59,110,0.20);
+  }
+  .label {
+    @apply block text-sm font-medium text-gray-700 mb-1.5;
+  }
+  .help {
+    @apply mt-1 text-xs text-gray-500;
+  }
+
+  /* Select */
+  select, .select {
+    @apply w-full rounded-xl border bg-white px-3 py-2 text-sm outline-none transition-colors;
+    border-color: rgba(0,0,0,0.15);
+  }
+  select:focus, .select:focus {
+    @apply border-transparent;
+    box-shadow: 0 0 0 3px rgba(60,59,110,0.20);
+  }
+
+  /* Tables (for leaderboards/rounds) */
+  .table {
+    @apply w-full border-collapse text-sm;
+  }
+  .table thead th {
+    @apply text-left font-semibold text-gray-700 bg-gray-50;
+  }
+  .table th, .table td {
+    @apply border-b border-gray-200 px-3 py-2;
+  }
+  .table tr:hover td {
+    @apply bg-gray-50;
+  }
+
+  /* Stats / KPI number */
+  .stat-number {
+    @apply text-3xl font-extrabold tracking-tight;
+    color: var(--mgc-blue);
+  }
+  .stat-delta-pos { color: #1f7a1f; } /* positive */
+  .stat-delta-neg { color: #b02a2a; } /* negative */
+
+  /* Nav accent helper (if you want a stripe under sections) */
+  .flag-accent {
+    background: linear-gradient(to right, var(--mgc-red), var(--mgc-white), var(--mgc-blue));
+    height: 3px;
+    width: 100%;
+    @apply rounded-full;
+  }
+}
+
+/* ---------- Handy Utilities ---------- */
+@layer utilities {
+  /* Border and background helpers with flag vibe */
+  .border-flag { border-image: linear-gradient(to right, var(--mgc-red), var(--mgc-blue)) 1; border-width: 2px; border-style: solid; }
+  .bg-flag-stripe { background: linear-gradient(90deg, var(--mgc-red) 0%, var(--mgc-white) 50%, var(--mgc-blue) 100%); }
+  .text-flag { background: linear-gradient(90deg, var(--mgc-blue), var(--mgc-red)); -webkit-background-clip: text; background-clip: text; color: transparent; }
+  .shadow-soft { box-shadow: var(--shadow-soft); }
+}
+
+/* ---------- Optional: Scrollbar polish (WebKit) ---------- */
+*::-webkit-scrollbar {
+  width: 10px;
+  height: 10px;
+}
+*::-webkit-scrollbar-thumb {
+  background: linear-gradient(180deg, var(--mgc-blue), var(--mgc-red));
+  border-radius: 999px;
+}
+*::-webkit-scrollbar-track {
+  background: #f4f4f7;
+  border-radius: 999px;
+}

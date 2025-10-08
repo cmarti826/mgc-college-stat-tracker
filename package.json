@@ -1,4 +1,5 @@
 {
+  "type": "module",
   "name": "mgc-golf-stat-starter",
   "private": true,
   "version": "0.1.0",

@@ -1,24 +1,21 @@
 // app/layout.tsx
 import './globals.css'
-import type { Metadata, Viewport } from 'next'
-import Nav from '@/components/Nav'
+import { Inter } from 'next/font/google'
 
-export const metadata: Metadata = {
-  title: 'MGC Stats',
-  description: 'College golf stat tracker',
-}
+const inter = Inter({ subsets: ['latin'] })
 
-export const viewport: Viewport = {
-  themeColor: '#ffffff',
-  colorScheme: 'light',
+export const metadata = {
+  title: 'MGC Golf Stat Tracker',
+  description: 'Track your golf performance – the American way 🇺🇸',
 }
 
 export default function RootLayout({ children }: { children: React.ReactNode }) {
   return (
     <html lang="en">
-      <body className="min-h-screen bg-[#fcfcfc] text-gray-900">
-        <Nav />
-        <main className="mx-auto max-w-[1100px] p-4">{children}</main>
+      <body
+        className={`${inter.className} min-h-screen bg-gradient-to-b from-mgc-blue via-mgc-white to-mgc-red text-gray-900`}
+      >
+        {children}
       </body>
     </html>
   )

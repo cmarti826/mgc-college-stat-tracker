@@ -16,14 +16,23 @@ type EventHeader = {
   team_name: string|null
 }
 
-type ERoundBase = {
+type PlayerRound = {
+  event_id: string
   round_id: string
-  created_at: string | null
+  round_number: number | null
+  day: string | null
   player_id: string | null
   player_name: string | null
+  team_id: string | null
   team_name: string | null
+  created_at: string | null
   to_par: number | null
   sg_total: number | null
+  sg_ott: number | null
+  sg_app: number | null
+  sg_arg: number | null
+  sg_putt: number | null
+  round_index: number | null
 }
 
 type LbRow = {
@@ -45,16 +54,35 @@ type LbRow = {
   position: number
 }
 
+type ERoundBase = {
+  round_id: string
+  created_at: string | null
+  player_id: string | null
+  player_name: string | null
+  team_name: string | null
+  to_par: number | null
+  sg_total: number | null
+}
+
+type ViewMode = 'individuals' | 'teams'
+type TeamMode = 'sum_all' | 'best_n'
+
 export default function EventDetailPage() {
   const { id } = useParams<{ id: string }>()
   const supabase = useMemo(() => supabaseBrowser(), [])
 
   const [hdr, setHdr] = useState<EventHeader | null>(null)
   const [leader, setLeader] = useState<LbRow[]>([])
+  const [playerRounds, setPlayerRounds] = useState<PlayerRound[]>([])
   const [attached, setAttached] = useState<ERoundBase[]>([])
   const [recent, setRecent] = useState<ERoundBase[]>([])
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
+
+  // toggles
+  const [viewMode, setViewMode] = useState<ViewMode>('individuals')
+  const [teamMode, setTeamMode] = useState<TeamMode>('best_n')
+  const [bestN, setBestN] = useState<number>(4)
 
   async function loadAll() {
     setLoading(true); setError(null)
@@ -67,7 +95,7 @@ export default function EventDetailPage() {
       .maybeSingle()
     setHdr(e1 as any)
 
-    // leaderboard for event
+    // leaderboard by player (totals/averages)
     const { data: lb } = await supabase
       .from('v_event_leaderboard_by_player')
       .select('*')
@@ -75,7 +103,14 @@ export default function EventDetailPage() {
     const sorted = (lb ?? []).sort((a: any, b: any) => a.position - b.position) as LbRow[]
     setLeader(sorted)
 
-    // attached rounds (show small list)
+    // all player-round rows (for per-round columns + team scoring)
+    const { data: pr } = await supabase
+      .from('v_event_player_rounds')
+      .select('*')
+      .eq('event_id', id)
+    setPlayerRounds((pr ?? []) as PlayerRound[])
+
+    // attached rounds (for the table below)
     const { data: er } = await supabase
       .from('event_rounds')
       .select('round_id')
@@ -94,8 +129,8 @@ export default function EventDetailPage() {
     }
 
     // quick-pick: recent rounds in date window, not attached yet
-    const start = hdr?.start_date ?? e1?.start_date ?? null
-    const end = hdr?.end_date ?? e1?.end_date ?? null
+    const start = (e1 as any)?.start_date ?? null
+    const end = (e1 as any)?.end_date ?? null
     let q = supabase
       .from('v_round_leaderboard_base')
       .select('round_id, created_at, player_id, player_name, team_name, to_par, sg_total')
@@ -128,6 +163,192 @@ export default function EventDetailPage() {
     if (delErr) { setError(delErr.message); return }
     await loadAll()
   }
+
+  // ---------- Derived helpers ----------
+  // distinct round indices present in this event, sorted asc
+  const roundIndices = Array.from(new Set(
+    playerRounds
+      .map(r => r.round_index ?? 0)
+      .filter(n => n && Number.isFinite(n))
+  )).sort((a, b) => Number(a) - Number(b)) as number[]
+
+  // Per-player pivot of to_par by round_index
+  type PivotRow = LbRow & { roundsByIndex: Record<number, number | null> }
+  const pivotIndividuals: PivotRow[] = (() => {
+    const byPlayer = new Map<string, PivotRow>()
+    // seed with leaderboard totals for ordering/averages
+    for (const l of leader) {
+      byPlayer.set(l.player_id, {
+        ...l,
+        roundsByIndex: {},
+      })
+    }
+    // fill per-round cells
+    for (const r of playerRounds) {
+      const pid = r.player_id ?? 'unknown'
+      if (!byPlayer.has(pid)) {
+        // if a round exists for a player not in totals (edge), add a shell
+        byPlayer.set(pid, {
+          player_id: pid,
+          player_name: r.player_name ?? '—',
+          team_id: r.team_id ?? null,
+          team_name: r.team_name ?? null,
+          event_id: id,
+          rounds: 0,
+          total_to_par: 0,
+          avg_to_par: 0,
+          avg_sg_total: null,
+          avg_sg_ott: null,
+          avg_sg_app: null,
+          avg_sg_arg: null,
+          avg_sg_putt: null,
+          best_round_to_par: null,
+          last_played: null,
+          position: 9999,
+          roundsByIndex: {},
+        } as any)
+      }
+      const row = byPlayer.get(pid)!
+      const idx = Number(r.round_index ?? 0)
+      if (idx) row.roundsByIndex[idx] = r.to_par ?? null
+    }
+    // output ordered by existing leaderboard position
+    return Array.from(byPlayer.values()).sort((a, b) => a.position - b.position)
+  })()
+
+  // Team tables
+  type TeamAgg = {
+    team_id: string
+    team_name: string | null
+    totalsByIndex: Record<number, number> // per round index
+    grandTotal: number
+    includedCount: number // number of player-rounds used (for SG avg if desired)
+    avg_sg_total: number | null
+  }
+
+  const teamTable: TeamAgg[] = (() => {
+    const byTeam: Map<string, TeamAgg> = new Map()
+    const ensureTeam = (tid: string | null, tname: string | null) => {
+      const key = tid ?? 'unknown'
+      if (!byTeam.has(key)) {
+        byTeam.set(key, {
+          team_id: key,
+          team_name: tname ?? '—',
+          totalsByIndex: {},
+          grandTotal: 0,
+          includedCount: 0,
+          avg_sg_total: null,
+        })
+      }
+      return byTeam.get(key)!
+    }
+
+    if (teamMode === 'sum_all') {
+      // sum every player's to_par for each round_index
+      const byTeamRound: Record<string, number> = {}
+      const sgTotals: Record<string, { sum: number; cnt: number }> = {}
+
+      for (const r of playerRounds) {
+        const tid = r.team_id ?? 'unknown'
+        const tname = r.team_name ?? '—'
+        const idx = Number(r.round_index ?? 0)
+        if (!idx || r.to_par === null || r.to_par === undefined) continue
+        const key = `${tid}:${idx}`
+        byTeamRound[key] = (byTeamRound[key] ?? 0) + Number(r.to_par)
+
+        // track SG total average across all player-rounds
+        if (r.sg_total !== null && r.sg_total !== undefined && Number.isFinite(Number(r.sg_total))) {
+          sgTotals[tid] = sgTotals[tid] || { sum: 0, cnt: 0 }
+          sgTotals[tid].sum += Number(r.sg_total)
+          sgTotals[tid].cnt += 1
+        }
+
+        // make sure team exists
+        ensureTeam(tid, tname)
+      }
+
+      // roll into per-team rows
+      for (const [key, total] of Object.entries(byTeamRound)) {
+        const [tid, idxStr] = key.split(':')
+        const idx = Number(idxStr)
+        const row = ensureTeam(tid, null)
+        row.totalsByIndex[idx] = (row.totalsByIndex[idx] ?? 0) + total
+      }
+
+      // compute grand totals and SG averages
+      for (const row of byTeam.values()) {
+        row.grandTotal = roundIndices.reduce((s, i) => s + (row.totalsByIndex[i] ?? 0), 0)
+        const sg = (sgTotals[row.team_id] ?? null)
+        row.avg_sg_total = sg && sg.cnt ? sg.sum / sg.cnt : null
+        row.includedCount = sg?.cnt ?? 0
+      }
+
+    } else {
+      // best N per round: pick lowest N player to_par per team per round_index
+      // group player scores per team+round_index
+      const buckets: Record<string, number[]> = {}
+      const sgBuckets: Record<string, number[]> = {} // SG totals only for the counted scores
+      for (const r of playerRounds) {
+        const tid = r.team_id ?? 'unknown'
+        const tname = r.team_name ?? '—'
+        const idx = Number(r.round_index ?? 0)
+        if (!idx || r.to_par === null || r.to_par === undefined) continue
+        const key = `${tid}:${idx}`
+        buckets[key] = buckets[key] || []
+        buckets[key].push(Number(r.to_par))
+
+        // we'll only average SG over the counted (best N) later
+        ensureTeam(tid, tname)
+      }
+
+      // For SG, we need the pairing of to_par and sg_total; build combined arrays
+      type PR = { to_par: number; sg_total: number | null }
+      const bucketsPR: Record<string, PR[]> = {}
+      for (const r of playerRounds) {
+        const tid = r.team_id ?? 'unknown'
+        const idx = Number(r.round_index ?? 0)
+        if (!idx || r.to_par === null || r.to_par === undefined) continue
+        const key = `${tid}:${idx}`
+        bucketsPR[key] = bucketsPR[key] || []
+        bucketsPR[key].push({
+          to_par: Number(r.to_par),
+          sg_total: (r.sg_total === null || r.sg_total === undefined || !Number.isFinite(Number(r.sg_total))) ? null : Number(r.sg_total)
+        })
+      }
+
+      // compute per round
+      const sgTotalsPerTeam: Record<string, { sum: number; cnt: number }> = {}
+      for (const [key, arr] of Object.entries(bucketsPR)) {
+        const [tid, idxStr] = key.split(':')
+        const idx = Number(idxStr)
+        // sort by to_par ASC (lower is better)
+        arr.sort((a, b) => a.to_par - b.to_par)
+        const picked = arr.slice(0, Math.max(1, bestN))
+        const sumRound = picked.reduce((s, x) => s + x.to_par, 0)
+        const row = ensureTeam(tid, null)
+        row.totalsByIndex[idx] = (row.totalsByIndex[idx] ?? 0) + sumRound
+
+        // SG average from counted scores only
+        for (const p of picked) {
+          if (p.sg_total !== null) {
+            sgTotalsPerTeam[tid] = sgTotalsPerTeam[tid] || { sum: 0, cnt: 0 }
+            sgTotalsPerTeam[tid].sum += p.sg_total
+            sgTotalsPerTeam[tid].cnt += 1
+          }
+        }
+      }
+
+      for (const row of byTeam.values()) {
+        row.grandTotal = roundIndices.reduce((s, i) => s + (row.totalsByIndex[i] ?? 0), 0)
+        const sg = (sgTotalsPerTeam[row.team_id] ?? null)
+        row.avg_sg_total = sg && sg.cnt ? sg.sum / sg.cnt : null
+        row.includedCount = sg?.cnt ?? 0
+      }
+    }
+
+    // to-par lower is better
+    return Array.from(byTeam.values()).sort((a, b) => a.grandTotal - b.grandTotal)
+  })()
 
   return (
     <div className="space-y-6">
@@ -171,7 +392,7 @@ export default function EventDetailPage() {
             <table className="table">
               <thead>
                 <tr>
-                  <th>Date</th><th>Player</th><th>Team</th><th>To Par</th><th>SG Total</th><th></th>
+                  <th>Date</</th><th>Player</th><th>Team</th><th>To Par</th><th>SG Total</th><th></th>
                 </tr>
               </thead>
               <tbody>
@@ -227,45 +448,128 @@ export default function EventDetailPage() {
         )}
       </div>
 
-      {/* Leaderboard */}
+      {/* Leaderboard with toggles */}
       <div className="card">
         <div className="card-header">
           <div className="card-title">Leaderboard</div>
-          <div className="card-subtle">Totals to par; SG averages across attached rounds.</div>
+          <div className="flex items-center gap-2">
+            <button
+              className={['px-3 py-1.5 rounded-full text-sm border', viewMode === 'individuals' ? 'bg-[#3C3B6E] text-white border-[#3C3B6E]' : 'bg-white text-[#3C3B6E] border-gray-300 hover:bg-gray-50'].join(' ')}
+              onClick={() => setViewMode('individuals')}
+            >
+              Individuals
+            </button>
+            <button
+              className={['px-3 py-1.5 rounded-full text-sm border', viewMode === 'teams' ? 'bg-[#3C3B6E] text-white border-[#3C3B6E]' : 'bg-white text-[#3C3B6E] border-gray-300 hover:bg-gray-50'].join(' ')}
+              onClick={() => setViewMode('teams')}
+            >
+              Teams
+            </button>
+
+            {viewMode === 'teams' && (
+              <div className="ml-4 flex items-center gap-2">
+                <span className="text-sm text-gray-700">Scoring:</span>
+                <button
+                  className={['px-3 py-1.5 rounded-full text-sm border', teamMode === 'sum_all' ? 'bg-[#B22234] text-white border-[#B22234]' : 'bg-white text-[#3C3B6E] border-gray-300 hover:bg-gray-50'].join(' ')}
+                  onClick={() => setTeamMode('sum_all')}
+                >
+                  Sum All
+                </button>
+                <button
+                  className={['px-3 py-1.5 rounded-full text-sm border', teamMode === 'best_n' ? 'bg-[#B22234] text-white border-[#B22234]' : 'bg-white text-[#3C3B6E] border-gray-300 hover:bg-gray-50'].join(' ')}
+                  onClick={() => setTeamMode('best_n')}
+                >
+                  Best N
+                </button>
+                {teamMode === 'best_n' && (
+                  <div className="flex items-center gap-2">
+                    <span className="text-sm text-gray-700">N</span>
+                    <input
+                      type="number"
+                      min={1}
+                      max={10}
+                      value={bestN}
+                      onChange={e => setBestN(Math.max(1, Math.min(10, Number(e.target.value || 1))))}
+                      className="input w-20"
+                    />
+                  </div>
+                )}
+              </div>
+            )}
+          </div>
         </div>
-        {leader.length === 0 ? (
-          <div className="text-sm text-gray-600">No leaderboard yet.</div>
-        ) : (
+
+        {/* INDIVIDUALS TABLE */}
+        {viewMode === 'individuals' && (
           <div className="overflow-x-auto">
-            <table className="table">
-              <thead>
-                <tr>
-                  <th>Pos</th><th>Player</th><th>Team</th>
-                  <th>Rounds</th><th>Total To Par</th><th>Avg To Par</th>
-                  <th>Avg SG Total</th><th>OTT</th><th>APP</th><th>ARG</th><th>PUTT</th>
-                  <th>Best Round</th><th>Last Played</th>
-                </tr>
-              </thead>
-              <tbody>
-                {leader.map(r => (
-                  <tr key={r.player_id}>
-                    <td>{r.position}</td>
-                    <td>{r.player_name}</td>
-                    <td>{r.team_name ?? '—'}</td>
-                    <td>{r.rounds}</td>
-                    <td>{r.total_to_par}</td>
-                    <td>{r.avg_to_par.toFixed(2)}</td>
-                    <td>{r.avg_sg_total === null ? '—' : r.avg_sg_total.toFixed(2)}</td>
-                    <td>{r.avg_sg_ott   === null ? '—' : r.avg_sg_ott.toFixed(2)}</td>
-                    <td>{r.avg_sg_app   === null ? '—' : r.avg_sg_app.toFixed(2)}</td>
-                    <td>{r.avg_sg_arg   === null ? '—' : r.avg_sg_arg.toFixed(2)}</td>
-                    <td>{r.avg_sg_putt  === null ? '—' : r.avg_sg_putt.toFixed(2)}</td>
-                    <td>{r.best_round_to_par === null ? '—' : r.best_round_to_par}</td>
-                    <td>{r.last_played ? new Date(r.last_played).toLocaleDateString() : '—'}</td>
+            {leader.length === 0 ? (
+              <div className="text-sm text-gray-600 p-2">No leaderboard yet.</div>
+            ) : (
+              <table className="table">
+                <thead>
+                  <tr>
+                    <th>Pos</th>
+                    <th>Player</th>
+                    <th>Team</th>
+                    {/* dynamic round columns */}
+                    {roundIndices.map(i => (<th key={`ri-${i}`}>R{i}</th>))}
+                    <th>Total To Par</th>
+                    <th>Avg To Par</th>
+                    <th>Avg SG Total</th>
                   </tr>
-                ))}
-              </tbody>
-            </table>
+                </thead>
+                <tbody>
+                  {pivotIndividuals.map((r) => (
+                    <tr key={r.player_id}>
+                      <td>{r.position}</td>
+                      <td>{r.player_name}</td>
+                      <td>{r.team_name ?? '—'}</td>
+                      {roundIndices.map(i => (
+                        <td key={`cell-${r.player_id}-${i}`}>{r.roundsByIndex[i] ?? '—'}</td>
+                      ))}
+                      <td>{r.total_to_par}</td>
+                      <td>{r.avg_to_par.toFixed(2)}</td>
+                      <td>{r.avg_sg_total === null ? '—' : r.avg_sg_total.toFixed(2)}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            )}
+          </div>
+        )}
+
+        {/* TEAMS TABLE */}
+        {viewMode === 'teams' && (
+          <div className="overflow-x-auto">
+            {teamTable.length === 0 ? (
+              <div className="text-sm text-gray-600 p-2">No team scoring yet.</div>
+            ) : (
+              <table className="table">
+                <thead>
+                  <tr>
+                    <th>Pos</th>
+                    <th>Team</th>
+                    {/* dynamic round columns */}
+                    {roundIndices.map(i => (<th key={`tri-${i}`}>R{i}</th>))}
+                    <th>Total To Par</th>
+                    <th>Avg SG Total</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {teamTable.map((t, idx) => (
+                    <tr key={t.team_id}>
+                      <td>{idx + 1}</td>
+                      <td>{t.team_name ?? '—'}</td>
+                      {roundIndices.map(i => (
+                        <td key={`tcell-${t.team_id}-${i}`}>{(t.totalsByIndex[i] ?? null) === null ? '—' : (t.totalsByIndex[i]).toFixed(0)}</td>
+                      ))}
+                      <td>{t.grandTotal.toFixed(0)}</td>
+                      <td>{t.avg_sg_total === null ? '—' : t.avg_sg_total.toFixed(2)}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            )}
           </div>
         )}
       </div>

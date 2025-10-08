@@ -39,7 +39,7 @@ export default function RoundSummaryPage() {
       const { data: { user } } = await supabase.auth.getUser()
       if (!user) { router.push('/auth/login'); return }
 
-      // Select ONLY columns guaranteed to exist
+      // Round header
       const { data: r, error: rErr } = await supabase
         .from('rounds')
         .select(`
@@ -57,6 +57,7 @@ export default function RoundSummaryPage() {
       if (!alive) return
       setRound(r)
 
+      // Hole stats
       const { data: rh, error: hErr } = await supabase
         .from('round_holes')
         .select('*')
@@ -74,20 +75,55 @@ export default function RoundSummaryPage() {
         penalty_strokes: row.penalty_strokes ?? 0,
       })))
 
+      // ---- NEW SG FETCH (v2) ----
+      // Pull per-shot SG and aggregate to buckets + per-hole
       const { data: sgRows, error: sgErr } = await supabase
-        .from('v_shots_with_sg')
-        .select('hole_number, sg_bucket, sg_value')
+        .from('v_shots_sg_v2')
+        .select('hole:hole, phase, sg_shot')
         .eq('round_id', roundId)
-      if (sgErr) { console.warn('SG view error:', sgErr.message) }
+
+      if (sgErr) {
+        console.warn('v_shots_sg_v2 error:', sgErr.message)
+      }
 
       const agg: SGAgg = { OTT: 0, APP: 0, ARG: 0, PUTT: 0 }
       const byHole: Record<number, number> = {}
-      ;(sgRows ?? []).forEach((row: any) => {
-        const b = row.sg_bucket as SGBucket
-        const v = Number(row.sg_value ?? 0)
-        if (b in agg) agg[b] += v
-        byHole[row.hole_number] = (byHole[row.hole_number] ?? 0) + v
-      })
+
+      if (sgRows && sgRows.length > 0) {
+        sgRows.forEach((row: any) => {
+          const bucket = (row.phase as SGBucket) ?? null
+          const val = Number(row.sg_shot ?? 0)
+          const holeNo = Number(row.hole ?? 0)
+
+          if (bucket && bucket in agg) agg[bucket] += val
+          if (holeNo) byHole[holeNo] = (byHole[holeNo] ?? 0) + val
+        })
+      } else {
+        // If no rows (e.g. empty round or dependency timing), fall back to MV/fallback totals for the tiles
+        const { data: mvTotals } = await supabase
+          .from('mv_round_sg_totals_v2')
+          .select('*')
+          .eq('round_id', roundId)
+          .maybeSingle()
+
+        let totals = mvTotals
+        if (!totals) {
+          const { data: fbTotals } = await supabase
+            .from('v_round_sg_totals_fallback_v2')
+            .select('*')
+            .eq('round_id', roundId)
+            .maybeSingle()
+          totals = fbTotals
+        }
+
+        if (totals) {
+          agg.OTT = Number(totals.sg_ott ?? 0)
+          agg.APP = Number(totals.sg_app ?? 0)
+          agg.ARG = Number(totals.sg_arg ?? 0)
+          agg.PUTT = Number(totals.sg_putt ?? 0)
+        }
+      }
+
       setSgByBucket({
         OTT: round1(agg.OTT),
         APP: round1(agg.APP),
@@ -95,8 +131,10 @@ export default function RoundSummaryPage() {
         PUTT: round1(agg.PUTT),
       })
       setSgTotal(round1(agg.OTT + agg.APP + agg.ARG + agg.PUTT))
+
       Object.keys(byHole).forEach(k => { byHole[Number(k)] = round2(byHole[Number(k)]) })
       setSgByHole(byHole)
+      // ---- END SG FETCH (v2) ----
 
       setLoading(false)
     })()
@@ -110,7 +148,6 @@ export default function RoundSummaryPage() {
   const courseName = Array.isArray(round?.course) ? round.course[0]?.name : round?.course?.name
   const teeName = Array.isArray(round?.tee) ? round.tee[0]?.name : round?.tee?.name
 
-  // Use created_at for the date display (safe column)
   const prettyDate = round?.created_at ? new Date(round.created_at).toLocaleDateString() : ''
 
   const totalPar = holes.reduce((s, h) => s + (Number(h.par) || 0), 0)

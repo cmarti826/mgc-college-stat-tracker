@@ -2,10 +2,6 @@
 import { cookies } from "next/headers";
 import { createServerComponentClient } from "@supabase/auth-helpers-nextjs";
 
-// Make sure we don't serve cached data (SG totals should reflect DB right away)
-export const dynamic = "force-dynamic";
-export const revalidate = 0;
-
 type Params = { params: { id: string } };
 
 export default async function RoundSummaryPage({ params }: Params) {
@@ -58,20 +54,12 @@ export default async function RoundSummaryPage({ params }: Params) {
     .eq("round_id", roundId)
     .order("hole", { ascending: true });
 
+  if (mvErr) console.error("MV totals error", mvErr);
+  if (shotsErr) console.error("Shots error", shotsErr);
+
   return (
     <main className="p-6 space-y-6">
-      <div className="flex items-center justify-between">
-        <h1 className="text-2xl font-semibold">Round Summary</h1>
-        {/* Optional: refresh MV after you edit shots */}
-        <form action={refreshRoundTotalsAction.bind(null, roundId)}>
-          <button
-            type="submit"
-            className="rounded-xl border px-3 py-2 text-sm hover:bg-gray-50"
-          >
-            Refresh SG
-          </button>
-        </form>
-      </div>
+      <h1 className="text-2xl font-semibold">Round Summary</h1>
 
       {/* Top tiles */}
       <section className="grid grid-cols-2 md:grid-cols-5 gap-4">
@@ -117,30 +105,11 @@ export default async function RoundSummaryPage({ params }: Params) {
             </tbody>
           </table>
         </div>
-
-        {/* Optional debug messages */}
-        {(mvErr || shotsErr) && (
-          <pre className="mt-3 text-xs text-red-600">
-            {mvErr ? `MV error: ${JSON.stringify(mvErr, null, 2)}\n` : ""}
-            {shotsErr ? `Shots error: ${JSON.stringify(shotsErr, null, 2)}` : ""}
-          </pre>
-        )}
       </section>
     </main>
   );
 }
 
-// ----- Server Action (Next 13.4+): refresh the MV then re-render -----
-async function refreshRoundTotalsAction(roundId: string) {
-  "use server";
-  const cookieStore = cookies();
-  const supabase = createServerComponentClient({ cookies: () => cookieStore });
-  // Optional: you can scope refresh by round in future; for now it refreshes whole MV.
-  await supabase.rpc("refresh_mv_round_sg_totals_v2");
-  // Nothing else needed; returning from a server action causes a re-render.
-}
-
-// ----- UI bits -----
 function Tile({ label, value }: { label: string; value: number | null | undefined }) {
   return (
     <div className="rounded-2xl border p-4">

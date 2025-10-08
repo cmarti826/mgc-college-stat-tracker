@@ -39,7 +39,7 @@ export default function FooterNav() {
 
           <div className="mt-6 h-1 w-full bg-gradient-to-r from-[#B22234] via-white to-[#3C3B6E]" />
           <div className="mt-4 text-xs text-gray-500">
-            © {new Date().getFullYear()} MGC Stats — Built for college golf 🇺🇸
+            © {new Date().getFullYear()} MGC Stats Tracker — Built for College Golf 🇺🇸
           </div>
         </div>
       </div>

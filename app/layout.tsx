@@ -1,21 +1,22 @@
 // app/layout.tsx
 import './globals.css'
-import { Inter } from 'next/font/google'
-
-const inter = Inter({ subsets: ['latin'] })
+import Nav from '@/components/Nav'
+import FooterNav from '@/components/FooterNav'
 
 export const metadata = {
   title: 'MGC Golf Stat Tracker',
-  description: 'Track your golf performance – the American way 🇺🇸',
+  description: 'Track collegiate golf performance with MGC Stats.',
 }
 
 export default function RootLayout({ children }: { children: React.ReactNode }) {
   return (
     <html lang="en">
-      <body
-        className={`${inter.className} min-h-screen bg-gradient-to-b from-mgc-blue via-mgc-white to-mgc-red text-gray-900`}
-      >
-        {children}
+      <body className="min-h-screen bg-white text-gray-900">
+        <Nav />
+        <main className="mx-auto max-w-7xl px-4 sm:px-6 lg:px-8 py-6">
+          {children}
+        </main>
+        <FooterNav />
       </body>
     </html>
   )

@@ -67,33 +67,53 @@
 }
 
 /* ---------- Reusable Components ---------- */
+/* --- High-contrast buttons for different backgrounds --- */
 @layer components {
-  /* Buttons */
-  .btn {
-    @apply inline-flex items-center justify-center px-4 py-2 rounded-xl font-semibold transition-colors duration-200 shadow-sm;
+  /* For dark/navy backgrounds (e.g., header) */
+  .btn-on-dark {
+    @apply inline-flex items-center justify-center px-4 py-2 rounded-xl font-semibold transition-colors duration-200;
+    background: var(--mgc-white);
+    color: var(--mgc-blue);
+    border: 1px solid rgba(255,255,255,0.0);
   }
-  .btn-primary {
+  .btn-on-dark:hover {
+    background: #f3f4f6; /* light gray for hover */
+    border-color: rgba(255,255,255,0.2);
+  }
+  .btn-on-dark:focus-visible {
+    box-shadow: 0 0 0 4px rgba(255,255,255,0.35);
+  }
+
+  /* Strong CTA that still contrasts on dark */
+  .btn-on-dark-primary {
+    @apply inline-flex items-center justify-center px-4 py-2 rounded-xl font-semibold transition-colors duration-200;
     background: var(--mgc-red);
     color: var(--mgc-white);
+    border: 1px solid rgba(255,255,255,0.2);
   }
-  .btn-primary:hover { background: #8f1b2a; }
+  .btn-on-dark-primary:hover { background: #8f1b2a; }
 
-  .btn-secondary {
+  /* For light/white page content areas */
+  .btn-on-light {
+    @apply inline-flex items-center justify-center px-4 py-2 rounded-xl font-semibold transition-colors duration-200 border;
     background: var(--mgc-blue);
     color: var(--mgc-white);
-  }
-  .btn-secondary:hover { background: #2f2e5a; }
-
-  .btn-outline {
-    @apply border;
     border-color: rgba(0,0,0,0.15);
-    color: var(--mgc-blue);
+  }
+  .btn-on-light:hover { background: #2f2e5a; }
+
+  .btn-on-light-outline {
+    @apply inline-flex items-center justify-center px-4 py-2 rounded-xl font-semibold transition-colors duration-200 border;
     background: white;
+    color: var(--mgc-blue);
+    border-color: rgba(0,0,0,0.2);
   }
-  .btn-outline:hover {
+  .btn-on-light-outline:hover {
     background: rgba(60,59,110,0.06);
-    border-color: rgba(0,0,0,0.25);
+    border-color: rgba(0,0,0,0.3);
   }
+}
+
 
   /* Cards */
   .card {

@@ -75,31 +75,27 @@ export default function RoundSummaryPage() {
         penalty_strokes: row.penalty_strokes ?? 0,
       })))
 
-      // ---- NEW SG FETCH (v2) ----
-      // Pull per-shot SG and aggregate to buckets + per-hole
+      // ---- SG v2: read per-shot and aggregate ----
       const { data: sgRows, error: sgErr } = await supabase
         .from('v_shots_sg_v2')
         .select('hole:hole, phase, sg_shot')
         .eq('round_id', roundId)
 
-      if (sgErr) {
-        console.warn('v_shots_sg_v2 error:', sgErr.message)
-      }
-
       const agg: SGAgg = { OTT: 0, APP: 0, ARG: 0, PUTT: 0 }
       const byHole: Record<number, number> = {}
 
-      if (sgRows && sgRows.length > 0) {
+      if (sgErr) {
+        console.warn('v_shots_sg_v2 error:', sgErr.message)
+      } else if (sgRows && sgRows.length > 0) {
         sgRows.forEach((row: any) => {
           const bucket = (row.phase as SGBucket) ?? null
           const val = Number(row.sg_shot ?? 0)
           const holeNo = Number(row.hole ?? 0)
-
           if (bucket && bucket in agg) agg[bucket] += val
           if (holeNo) byHole[holeNo] = (byHole[holeNo] ?? 0) + val
         })
       } else {
-        // If no rows (e.g. empty round or dependency timing), fall back to MV/fallback totals for the tiles
+        // Fallback to MV → fallback view for tiles if no per-shot rows
         const { data: mvTotals } = await supabase
           .from('mv_round_sg_totals_v2')
           .select('*')
@@ -115,7 +111,6 @@ export default function RoundSummaryPage() {
             .maybeSingle()
           totals = fbTotals
         }
-
         if (totals) {
           agg.OTT = Number(totals.sg_ott ?? 0)
           agg.APP = Number(totals.sg_app ?? 0)
@@ -134,7 +129,7 @@ export default function RoundSummaryPage() {
 
       Object.keys(byHole).forEach(k => { byHole[Number(k)] = round2(byHole[Number(k)]) })
       setSgByHole(byHole)
-      // ---- END SG FETCH (v2) ----
+      // ---- end SG ----
 
       setLoading(false)
     })()
@@ -147,7 +142,6 @@ export default function RoundSummaryPage() {
 
   const courseName = Array.isArray(round?.course) ? round.course[0]?.name : round?.course?.name
   const teeName = Array.isArray(round?.tee) ? round.tee[0]?.name : round?.tee?.name
-
   const prettyDate = round?.created_at ? new Date(round.created_at).toLocaleDateString() : ''
 
   const totalPar = holes.reduce((s, h) => s + (Number(h.par) || 0), 0)

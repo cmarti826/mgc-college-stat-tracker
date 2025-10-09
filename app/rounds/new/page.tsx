@@ -61,9 +61,9 @@ export default function NewRoundPage() {
   const [createFor, setCreateFor] = useState<'me' | 'other'>('me')
   const [selectedPlayerId, setSelectedPlayerId] = useState<string>('')
 
-  // Coach convenience toggles
-  const [rememberDefaultLocal, setRememberDefaultLocal] = useState(true) // localStorage
-  const [alsoLinkMe, setAlsoLinkMe] = useState(false) // optional: flip my mapping via RPC
+  // Coach conveniences
+  const [rememberDefaultLocal, setRememberDefaultLocal] = useState(true)
+  const [alsoLinkMe, setAlsoLinkMe] = useState(false)
 
   // Feature detection
   const [hasRoundType, setHasRoundType] = useState(false)
@@ -73,7 +73,7 @@ export default function NewRoundPage() {
   const [roundType, setRoundType] = useState<RoundType>('PRACTICE')
   const [roundDate, setRoundDate] = useState<string>(todayYMD())
 
-  // Initial load: auth, mapping, coach context, columns, courses/tees
+  // Initial load
   useEffect(() => {
     (async () => {
       setLoading(true)
@@ -84,23 +84,19 @@ export default function NewRoundPage() {
         if (authErr) throw authErr
         setAuthed(!!user)
 
-        // Resolve "me" player from user_players
+        // Resolve "me" player
         let mePlayer: string | null = null
         if (user?.id) {
-          const { data: up, error: upErr } = await supabase
+          const { data: up } = await supabase
             .from('user_players')
             .select('player_id')
             .eq('user_id', user.id)
             .maybeSingle()
-          if (upErr) {
-            // not fatal; just means no mapping or no table access
-          } else {
-            mePlayer = up?.player_id ?? null
-          }
+          mePlayer = up?.player_id ?? null
         }
         setPlayerId(mePlayer)
 
-        // Resolve team for "me" (first one if multiple)
+        // Resolve team for "me"
         let meTeam: string | null = null
         if (mePlayer) {
           const { data: mem } = await supabase
@@ -113,18 +109,12 @@ export default function NewRoundPage() {
         }
         setTeamId(meTeam)
 
-        // Detect columns on rounds
-        {
-          const { error: rtErr } = await supabase.from('rounds').select('round_type').limit(1)
-          setHasRoundType(!rtErr)
-        }
-        {
-          const { error: rdErr } = await supabase.from('rounds').select('round_date').limit(1)
-          setHasRoundDate(!rdErr)
-          setRoundDate(todayYMD())
-        }
+        // Detect columns
+        setHasRoundType(!(await supabase.from('rounds').select('round_type').limit(1)).error)
+        setHasRoundDate(!(await supabase.from('rounds').select('round_date').limit(1)).error)
+        setRoundDate(todayYMD())
 
-        // Detect if current user is a coach (any team_members row with role='coach' and user_id = me)
+        // Detect coach & load team players
         let coach = false
         if (user?.id) {
           const { data: tm } = await supabase
@@ -137,17 +127,14 @@ export default function NewRoundPage() {
         }
         setIsCoach(coach)
 
-        // If coach, load players on my teams via RPC and preselect previous choice from localStorage
         if (coach) {
           const { data: plr } = await supabase.rpc('my_team_players')
           const list = (plr ?? []) as CoachPlayer[]
-          // de-dupe by player_id
           const map = new Map<string, CoachPlayer>()
           list.forEach(p => { if (!map.has(p.player_id)) map.set(p.player_id, p) })
           const final = Array.from(map.values()).sort((a, b) => (a.full_name || '').localeCompare(b.full_name || ''))
           setCoachPlayers(final)
 
-          // Restore remembered player (local)
           try {
             const stored = typeof window !== 'undefined' ? localStorage.getItem('mgc.coachDefaultPlayerId') : null
             if (stored && final.find(p => p.player_id === stored)) {
@@ -157,11 +144,9 @@ export default function NewRoundPage() {
           } catch { /* ignore */ }
         }
 
-        // Load courses and initial tee sets
+        // Load courses & tee sets
         const { data: cs, error: cErr } = await supabase
-          .from('courses')
-          .select('id, name')
-          .order('name')
+          .from('courses').select('id, name').order('name')
         if (cErr) throw cErr
         setCourses((cs ?? []) as Course[])
         const firstCourse = cs?.[0]?.id ?? ''
@@ -170,10 +155,8 @@ export default function NewRoundPage() {
 
         if (selectedCourse) {
           const { data: ts } = await supabase
-            .from('tee_sets')
-            .select('id, name, course_id')
-            .eq('course_id', selectedCourse)
-            .order('name')
+            .from('tee_sets').select('id, name, course_id')
+            .eq('course_id', selectedCourse).order('name')
           setTeeSets((ts ?? []) as TeeSet[])
           setTeeSetId(ts?.[0]?.id ?? '')
         }
@@ -204,6 +187,33 @@ export default function NewRoundPage() {
     })()
   }, [courseId, supabase])
 
+  // --- PRE-FLIGHT: ensure we have a valid player_id ---
+  async function ensureValidPlayerId(mode: 'me' | 'other', pid: string | null): Promise<string> {
+    if (!pid) {
+      if (mode === 'other') throw new Error('Choose a player to create a round for.')
+      // mode === 'me', we’ll auto-create
+    }
+
+    // If we have a pid, make sure it exists in players
+    if (pid) {
+      const { data: exists } = await supabase
+        .from('players')
+        .select('id')
+        .eq('id', pid)
+        .maybeSingle()
+      if (exists?.id) return pid
+      if (mode === 'other') throw new Error('Selected player no longer exists. Pick another player.')
+    }
+
+    // Auto-create & link "me" if missing
+    const { data: auth } = await supabase.auth.getUser()
+    const fallbackName = auth?.user?.email?.split('@')[0] || 'New Player'
+    const { data: newPid, error: rpcErr } = await supabase.rpc('create_player_and_link_me', { p_full_name: fallbackName })
+    if (rpcErr || !newPid) throw new Error('Your player link is stale and auto-fix failed. Go to Players → “Create & link me”.')
+    setPlayerId(newPid as string) // keep state in sync for next time
+    return newPid as string
+  }
+
   async function createRound(e: React.FormEvent) {
     e.preventDefault()
     setSaving(true)
@@ -215,29 +225,21 @@ export default function NewRoundPage() {
       if (!teeSetId) throw new Error('Choose a tee set.')
       if (hasRoundDate && !roundDate) throw new Error('Pick a round date.')
 
-      // Determine who the round is for
-      const finalPlayerId =
-        createFor === 'me'
-          ? playerId
-          : (selectedPlayerId || null)
+      // Who is this for?
+      const desiredPid = createFor === 'me' ? playerId : (selectedPlayerId || null)
+      const finalPlayerId = await ensureValidPlayerId(createFor, desiredPid)
 
-      if (!finalPlayerId) {
-        if (isCoach) throw new Error('Choose a player to create a round for.')
-        throw new Error('Link your login to a player on the Players page.')
-      }
-
-      // Determine team: for "other", derive from that player's membership
-      const finalTeamId =
-        createFor === 'other'
-          ? await resolveTeamForPlayer(supabase, finalPlayerId)
-          : teamId
+      // Team: derive from chosen player for "other"; otherwise keep my team
+      const finalTeamId = createFor === 'other'
+        ? await resolveTeamForPlayer(supabase, finalPlayerId)
+        : teamId
 
       // Build insert payload
       const payload: Record<string, any> = {
         course_id: courseId,
         tee_set_id: teeSetId,
         player_id: finalPlayerId,
-        team_id: finalTeamId, // can be null; optional
+        team_id: finalTeamId ?? null,
       }
       if (hasRoundType && roundType) payload.round_type = roundType
       if (hasRoundDate && roundDate) payload.round_date = roundDate
@@ -251,7 +253,7 @@ export default function NewRoundPage() {
       if (roundErr) throw roundErr
       const roundId = (roundInsert as any).id as string
 
-      // Seed round_holes from course_holes or fallback to 18×par4
+      // Seed round_holes
       let template: CourseHole[] = []
       const { data: ch } = await supabase
         .from('course_holes')
@@ -286,10 +288,7 @@ export default function NewRoundPage() {
       }))
 
       const { error: rhErr } = await supabase.from('round_holes').insert(roundHoleRows)
-      if (rhErr) {
-        // non-fatal; the round exists, holes can be added later
-        console.warn('round_holes insert failed:', rhErr)
-      }
+      if (rhErr) console.warn('round_holes insert failed:', rhErr) // non-fatal
 
       // Coach conveniences
       if (isCoach && createFor === 'other') {
@@ -298,9 +297,7 @@ export default function NewRoundPage() {
             localStorage.setItem('mgc.coachDefaultPlayerId', selectedPlayerId)
           }
         } catch { /* ignore */ }
-
         if (alsoLinkMe && selectedPlayerId) {
-          // Flip your default mapping (optional)
           await supabase.rpc('link_me_to_player', { p_player_id: selectedPlayerId })
         }
       }
@@ -340,7 +337,7 @@ export default function NewRoundPage() {
           <div className="card-subtle">Choose course and tee set. We’ll prefill 18 holes.</div>
         </div>
 
-        {/* Who is this round for? (Coach Mode) */}
+        {/* Coach "who for" selector */}
         {authed && (
           <div className="grid gap-4 sm:grid-cols-2">
             {isCoach && (
@@ -450,7 +447,7 @@ export default function NewRoundPage() {
               <div className="help">Only tee sets for the selected course are shown.</div>
             </div>
 
-            {/* Round Type (if column exists) */}
+            {/* Round Type */}
             {hasRoundType && (
               <div>
                 <label className="label">Round Type</label>
@@ -468,7 +465,7 @@ export default function NewRoundPage() {
               </div>
             )}
 
-            {/* Round Date (if column exists) */}
+            {/* Round Date */}
             {hasRoundDate && (
               <div>
                 <label className="label">Round Date</label>

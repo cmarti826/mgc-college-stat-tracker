@@ -45,6 +45,7 @@ export default function NewRoundPage() {
   const [loading, setLoading] = useState(true)
   const [saving, setSaving] = useState(false)
   const [error, setError] = useState<string | null>(null)
+  const [fixing, setFixing] = useState(false) // for “Relink me now”
 
   const [courses, setCourses] = useState<Course[]>([])
   const [teeSets, setTeeSets] = useState<TeeSet[]>([])
@@ -73,7 +74,7 @@ export default function NewRoundPage() {
   const [roundType, setRoundType] = useState<RoundType>('PRACTICE')
   const [roundDate, setRoundDate] = useState<string>(todayYMD())
 
-  // Initial load
+  // ------- Initial load -------
   useEffect(() => {
     (async () => {
       setLoading(true)
@@ -135,6 +136,7 @@ export default function NewRoundPage() {
           const final = Array.from(map.values()).sort((a, b) => (a.full_name || '').localeCompare(b.full_name || ''))
           setCoachPlayers(final)
 
+          // Restore remembered player (local)
           try {
             const stored = typeof window !== 'undefined' ? localStorage.getItem('mgc.coachDefaultPlayerId') : null
             if (stored && final.find(p => p.player_id === stored)) {
@@ -187,6 +189,46 @@ export default function NewRoundPage() {
     })()
   }, [courseId, supabase])
 
+  // ------- Preflight: ensure valid player id (prevents FK) -------
+  async function ensureValidPlayerId(mode: 'me' | 'other', pid: string | null): Promise<string> {
+    // If we have a pid, verify it exists
+    if (pid) {
+      const { data: exists } = await supabase
+        .from('players')
+        .select('id')
+        .eq('id', pid)
+        .maybeSingle()
+      if (exists?.id) return pid
+      if (mode === 'other') {
+        throw new Error('Selected player no longer exists. Pick another player.')
+      }
+      // else fall through to auto-create
+    }
+
+    // Auto-create & link "me"
+    setFixing(true)
+    const { data: auth } = await supabase.auth.getUser()
+    const fallbackName = auth?.user?.email?.split('@')[0] || 'New Player'
+    const { data: newPid, error: rpcErr } = await supabase.rpc('create_player_and_link_me', { p_full_name: fallbackName })
+    setFixing(false)
+    if (rpcErr || !newPid) {
+      throw new Error('Your player link is stale and auto-fix failed. Go to Players → “Create & link me”.')
+    }
+    setPlayerId(newPid as string)
+    return newPid as string
+  }
+
+  // Optional: inline “Relink me now” action for the error card
+  async function relinkMeNow() {
+    setError(null)
+    try {
+      await ensureValidPlayerId('me', playerId)
+    } catch (e: any) {
+      setError(e.message ?? 'Relink failed.')
+    }
+  }
+
+  // ------- Submit -------
   async function createRound(e: React.FormEvent) {
     e.preventDefault()
     setSaving(true)
@@ -198,74 +240,32 @@ export default function NewRoundPage() {
       if (!teeSetId) throw new Error('Choose a tee set.')
       if (hasRoundDate && !roundDate) throw new Error('Pick a round date.')
 
-      // Determine target player
-      const desiredPlayerId =
-        createFor === 'me' ? playerId : (selectedPlayerId || null)
+      // Who is this for?
+      const desiredPid = createFor === 'me' ? playerId : (selectedPlayerId || null)
+      const finalPlayerId = await ensureValidPlayerId(createFor, desiredPid)
 
-      if (!desiredPlayerId) {
-        if (createFor === 'other') throw new Error('Choose a player to create a round for.')
-        // For "me", we may auto-create after FK failure — proceed to try insert
-      }
+      // Team: derive from chosen player for "other"; otherwise keep my team
+      const finalTeamId = createFor === 'other'
+        ? await resolveTeamForPlayer(supabase, finalPlayerId)
+        : teamId
 
-      // Determine team: for "other", derive from that player; for "me", keep my team
-      const finalTeamId =
-        createFor === 'other' && desiredPlayerId
-          ? await resolveTeamForPlayer(supabase, desiredPlayerId)
-          : teamId
-
-      // Build insert payload
+      // Build payload
       const payload: Record<string, any> = {
         course_id: courseId,
         tee_set_id: teeSetId,
-        player_id: desiredPlayerId,      // might be null in "me" mode; FK retry below will auto-create/link
+        player_id: finalPlayerId,
         team_id: finalTeamId ?? null,
       }
       if (hasRoundType && roundType) payload.round_type = roundType
       if (hasRoundDate && roundDate) payload.round_date = roundDate
 
-      // Helper to attempt insert
-      async function tryInsert(body: any) {
-        const { data, error } = await supabase
-          .from('rounds')
-          .insert(body)
-          .select('id')
-          .single()
-        return { data, error }
-      }
-
-      // 1st attempt
-      let { data: roundInsert, error: roundErr } = await tryInsert(payload)
-
-      // If FK violation, handle:
-      // - In "me" mode: auto-create & link a player for current user, update payload.player_id, retry once.
-      // - In "other" mode: do NOT auto-create (not safe) -> show a clear error.
-      if (roundErr && (roundErr as any).code === '23503') {
-        if (createFor === 'other') {
-          throw new Error('Selected player no longer exists. Pick another player and try again.')
-        } else {
-          // Auto-create & link me, then retry once
-          const { data: auth } = await supabase.auth.getUser()
-          const fallbackName = auth?.user?.email?.split('@')[0] || 'New Player'
-          const { data: newPid, error: rpcErr } = await supabase.rpc('create_player_and_link_me', { p_full_name: fallbackName })
-          if (rpcErr || !newPid) {
-            throw new Error('Your player link is stale and auto-fix failed. Go to Players → “Create & link me”.')
-          }
-          payload.player_id = newPid
-          // Optional: refresh my cached state so next time it’s good
-          setPlayerId(newPid as string)
-
-          // Retry
-          const retry = await tryInsert(payload)
-          roundInsert = retry.data
-          roundErr = retry.error
-        }
-      }
-
-      if (roundErr) {
-        // Surface Postgres message if available
-        throw new Error((roundErr as any).message ?? 'Failed to create round.')
-      }
-
+      // Insert round
+      const { data: roundInsert, error: roundErr } = await supabase
+        .from('rounds')
+        .insert(payload)
+        .select('id')
+        .single()
+      if (roundErr) throw roundErr
       const roundId = (roundInsert as any).id as string
 
       // Seed round_holes (best-effort)
@@ -498,8 +498,19 @@ export default function NewRoundPage() {
         )}
 
         {error && (
-          <div className="mt-4 rounded-xl border border-red-200 bg-red-50 p-3 text-sm text-red-800">
-            {error}
+          <div className="mt-4 rounded-xl border border-red-200 bg-red-50 p-3 text-sm text-red-800 flex items-center justify-between">
+            <span>{error}</span>
+            {error.includes('Create & link me') && (
+              <button
+                type="button"
+                className="ml-3 px-3 py-1.5 rounded-full border text-sm bg-white hover:bg-gray-50"
+                onClick={relinkMeNow}
+                disabled={fixing}
+                title="Try to create & link your player automatically"
+              >
+                {fixing ? 'Linking…' : 'Relink me now'}
+              </button>
+            )}
           </div>
         )}
 

@@ -187,7 +187,6 @@ export default function EventDetailPage() {
     for (const r of playerRounds) {
       const pid = r.player_id ?? 'unknown'
       if (!byPlayer.has(pid)) {
-        // if a round exists for a player not in totals (edge), add a shell
         byPlayer.set(pid, {
           player_id: pid,
           player_name: r.player_name ?? '—',
@@ -212,7 +211,6 @@ export default function EventDetailPage() {
       const idx = Number(r.round_index ?? 0)
       if (idx) row.roundsByIndex[idx] = r.to_par ?? null
     }
-    // output ordered by existing leaderboard position
     return Array.from(byPlayer.values()).sort((a, b) => a.position - b.position)
   })()
 
@@ -220,9 +218,9 @@ export default function EventDetailPage() {
   type TeamAgg = {
     team_id: string
     team_name: string | null
-    totalsByIndex: Record<number, number> // per round index
+    totalsByIndex: Record<number, number>
     grandTotal: number
-    includedCount: number // number of player-rounds used (for SG avg if desired)
+    includedCount: number
     avg_sg_total: number | null
   }
 
@@ -244,7 +242,6 @@ export default function EventDetailPage() {
     }
 
     if (teamMode === 'sum_all') {
-      // sum every player's to_par for each round_index
       const byTeamRound: Record<string, number> = {}
       const sgTotals: Record<string, { sum: number; cnt: number }> = {}
 
@@ -256,18 +253,15 @@ export default function EventDetailPage() {
         const key = `${tid}:${idx}`
         byTeamRound[key] = (byTeamRound[key] ?? 0) + Number(r.to_par)
 
-        // track SG total average across all player-rounds
         if (r.sg_total !== null && r.sg_total !== undefined && Number.isFinite(Number(r.sg_total))) {
           sgTotals[tid] = sgTotals[tid] || { sum: 0, cnt: 0 }
           sgTotals[tid].sum += Number(r.sg_total)
           sgTotals[tid].cnt += 1
         }
 
-        // make sure team exists
         ensureTeam(tid, tname)
       }
 
-      // roll into per-team rows
       for (const [key, total] of Object.entries(byTeamRound)) {
         const [tid, idxStr] = key.split(':')
         const idx = Number(idxStr)
@@ -275,7 +269,6 @@ export default function EventDetailPage() {
         row.totalsByIndex[idx] = (row.totalsByIndex[idx] ?? 0) + total
       }
 
-      // compute grand totals and SG averages
       for (const row of byTeam.values()) {
         row.grandTotal = roundIndices.reduce((s, i) => s + (row.totalsByIndex[i] ?? 0), 0)
         const sg = (sgTotals[row.team_id] ?? null)
@@ -284,24 +277,7 @@ export default function EventDetailPage() {
       }
 
     } else {
-      // best N per round: pick lowest N player to_par per team per round_index
-      // group player scores per team+round_index
-      const buckets: Record<string, number[]> = {}
-      const sgBuckets: Record<string, number[]> = {} // SG totals only for the counted scores
-      for (const r of playerRounds) {
-        const tid = r.team_id ?? 'unknown'
-        const tname = r.team_name ?? '—'
-        const idx = Number(r.round_index ?? 0)
-        if (!idx || r.to_par === null || r.to_par === undefined) continue
-        const key = `${tid}:${idx}`
-        buckets[key] = buckets[key] || []
-        buckets[key].push(Number(r.to_par))
-
-        // we'll only average SG over the counted (best N) later
-        ensureTeam(tid, tname)
-      }
-
-      // For SG, we need the pairing of to_par and sg_total; build combined arrays
+      // best N per round
       type PR = { to_par: number; sg_total: number | null }
       const bucketsPR: Record<string, PR[]> = {}
       for (const r of playerRounds) {
@@ -314,21 +290,19 @@ export default function EventDetailPage() {
           to_par: Number(r.to_par),
           sg_total: (r.sg_total === null || r.sg_total === undefined || !Number.isFinite(Number(r.sg_total))) ? null : Number(r.sg_total)
         })
+        ensureTeam(tid, r.team_name ?? '—')
       }
 
-      // compute per round
       const sgTotalsPerTeam: Record<string, { sum: number; cnt: number }> = {}
       for (const [key, arr] of Object.entries(bucketsPR)) {
         const [tid, idxStr] = key.split(':')
         const idx = Number(idxStr)
-        // sort by to_par ASC (lower is better)
         arr.sort((a, b) => a.to_par - b.to_par)
         const picked = arr.slice(0, Math.max(1, bestN))
         const sumRound = picked.reduce((s, x) => s + x.to_par, 0)
         const row = ensureTeam(tid, null)
         row.totalsByIndex[idx] = (row.totalsByIndex[idx] ?? 0) + sumRound
 
-        // SG average from counted scores only
         for (const p of picked) {
           if (p.sg_total !== null) {
             sgTotalsPerTeam[tid] = sgTotalsPerTeam[tid] || { sum: 0, cnt: 0 }
@@ -346,7 +320,6 @@ export default function EventDetailPage() {
       }
     }
 
-    // to-par lower is better
     return Array.from(byTeam.values()).sort((a, b) => a.grandTotal - b.grandTotal)
   })()
 
@@ -392,7 +365,12 @@ export default function EventDetailPage() {
             <table className="table">
               <thead>
                 <tr>
-                  <th>Date</</th><th>Player</th><th>Team</th><th>To Par</th><th>SG Total</th><th></th>
+                  <th>Date</th>
+                  <th>Player</th>
+                  <th>Team</th>
+                  <th>To Par</th>
+                  <th>SG Total</th>
+                  <th></th>
                 </tr>
               </thead>
               <tbody>
@@ -511,7 +489,6 @@ export default function EventDetailPage() {
                     <th>Pos</th>
                     <th>Player</th>
                     <th>Team</th>
-                    {/* dynamic round columns */}
                     {roundIndices.map(i => (<th key={`ri-${i}`}>R{i}</th>))}
                     <th>Total To Par</th>
                     <th>Avg To Par</th>
@@ -549,7 +526,6 @@ export default function EventDetailPage() {
                   <tr>
                     <th>Pos</th>
                     <th>Team</th>
-                    {/* dynamic round columns */}
                     {roundIndices.map(i => (<th key={`tri-${i}`}>R{i}</th>))}
                     <th>Total To Par</th>
                     <th>Avg SG Total</th>

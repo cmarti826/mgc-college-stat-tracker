@@ -417,7 +417,7 @@ export default function RoundEntry({
         <section className="space-y-4">
           <div className="overflow-x-auto rounded-2xl border">
             <table className="min-w-[900px] w-full text-sm">
-              <thead className="bg-gray-50 sticky top-[84px]">
+              <thead className="bg-gray-50 sticky top-0 z-10">
                 <tr>
                   <th className="p-3 text-left">#</th>
                   <th className="p-3 text-left">Par</th>

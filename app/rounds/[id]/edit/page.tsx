@@ -2,552 +2,293 @@
 
 import { useEffect, useMemo, useState } from 'react'
 import { useParams, useRouter } from 'next/navigation'
+import Link from 'next/link'
 import { supabaseBrowser } from '@/lib/supabase-browser'
 
-/** --- Types --- */
-type Lie = 'TEE' | 'FAIRWAY' | 'ROUGH' | 'SAND' | 'RECOVERY' | 'GREEN'
-const LIES: Lie[] = ['TEE', 'FAIRWAY', 'ROUGH', 'SAND', 'RECOVERY', 'GREEN']
-
-type HoleRow = {
-  hole_number: number
-  par: number
-  yardage: number | null
-  strokes: number | null
-  putts: number | null
-  fairway_hit: boolean | null
-  gir: boolean | null
-  up_down_attempt: boolean
-  up_down_made: boolean
-  sand_save_attempt: boolean
-  sand_save_made: boolean
-  penalty_strokes: number
+type RoundRow = {
+  id: string
+  created_at: string
+  course_id: string | null
+  tee_set_id: string | null
+  event_id: string | null
+  course?: { name: string }[] | { name: string } | null
+  tee?: { name: string }[] | { name: string } | null
 }
 
-type Shot = {
-  shot_number: number
-  start_lie: Lie
-  start_dist_yards: number
-  end_lie: Lie
-  end_dist_yards: number
-  penalty: boolean
-  sg?: number
-}
-
-/** --- Unit helpers (SG baseline expects yards; putts feel better in feet) --- */
-const ftToYd = (ft: number) => ft / 3
-const ydToFt = (yd: number) => yd * 3
-
-/** --- Small helpers --- */
-function relName(rel: any): string {
-  if (!rel) return ''
-  if (Array.isArray(rel)) return rel[0]?.name ?? ''
-  return rel.name ?? ''
+type EventRow = {
+  id: string
+  name: string
+  starts_at: string | null
+  ends_at: string | null
 }
 
 export default function EditRoundPage() {
   const params = useParams<{ id: string }>()
-  const roundId = params.id
   const router = useRouter()
   const supabase = useMemo(() => supabaseBrowser(), [])
 
+  const roundId = params.id
   const [loading, setLoading] = useState(true)
   const [saving, setSaving] = useState(false)
-  const [userId, setUserId] = useState<string | null>(null)
+  const [linking, setLinking] = useState(false)
+  const [refreshing, setRefreshing] = useState(false)
+  const [err, setErr] = useState<string | null>(null)
 
-  const [courseName, setCourseName] = useState('')
-  const [teeName, setTeeName] = useState('')
+  const [round, setRound] = useState<RoundRow | null>(null)
+  const [courseId, setCourseId] = useState<string>('')
+  const [teeSetId, setTeeSetId] = useState<string>('')
+  const [eventId, setEventId] = useState<string>('')
 
-  const [holes, setHoles] = useState<HoleRow[]>(
-    Array.from({ length: 18 }, (_, i) => ({
-      hole_number: i + 1,
-      par: 4,
-      yardage: null,
-      strokes: null,
-      putts: null,
-      fairway_hit: null,
-      gir: null,
-      up_down_attempt: false,
-      up_down_made: false,
-      sand_save_attempt: false,
-      sand_save_made: false,
-      penalty_strokes: 0,
-    }))
-  )
-  const [activeHole, setActiveHole] = useState(1)
-  const [shotsByHole, setShotsByHole] = useState<Record<number, Shot[]>>({})
+  const [events, setEvents] = useState<EventRow[]>([])
 
-  /** Load round meta, seed par/yardages, load round_holes + shots */
   useEffect(() => {
     let alive = true
     ;(async () => {
       setLoading(true)
+      setErr(null)
+      // must be signed in
       const { data: { user } } = await supabase.auth.getUser()
       if (!user) { router.push('/auth/login'); return }
-      setUserId(user.id)
 
-      // Round with relations
-      const { data: round, error: rErr } = await supabase
+      // load round
+      const { data: r, error: rErr } = await supabase
         .from('rounds')
-        .select('id, course_id, tee_set_id, course:courses(name), tee:tee_sets(name)')
+        .select(`
+          id, created_at, course_id, tee_set_id, event_id,
+          course:courses ( name ),
+          tee:tee_sets ( name )
+        `)
         .eq('id', roundId)
         .single()
-      if (rErr) { alert(`Could not load round: ${rErr.message}`); return }
+
+      if (rErr) { setErr(rErr.message); setLoading(false); return }
       if (!alive) return
-      setCourseName(relName(round?.course))
-      setTeeName(relName(round?.tee))
 
-      // Existing hole rows
-      const { data: existing, error: hErr } = await supabase
-        .from('round_holes')
-        .select('*')
-        .eq('round_id', roundId)
-        .order('hole_number', { ascending: true })
-      if (hErr) { alert(`Could not load holes: ${hErr.message}`); return }
+      setRound(r as any)
+      setCourseId((r as any)?.course_id ?? '')
+      setTeeSetId((r as any)?.tee_set_id ?? '')
+      setEventId((r as any)?.event_id ?? '')
 
-      if (existing && existing.length > 0) {
-        const merged = holes.map(h => {
-          const f = (existing as any[]).find(e => e.hole_number === h.hole_number)
-          if (!f) return h
-          return {
-            hole_number: f.hole_number,
-            par: f.par,
-            yardage: f.yardage,
-            strokes: f.strokes,
-            putts: f.putts,
-            fairway_hit: f.par === 3 ? null : f.fairway_hit,
-            gir: f.gir,
-            up_down_attempt: !!f.up_down_attempt,
-            up_down_made: !!f.up_down_made,
-            sand_save_attempt: !!f.sand_save_attempt,
-            sand_save_made: !!f.sand_save_made,
-            penalty_strokes: f.penalty_strokes ?? 0,
-          } as HoleRow
-        })
-        setHoles(merged)
-      } else {
-        // Seed from course + tee set
-        const [parRes, yardRes] = await Promise.all([
-          supabase
-            .from('holes')
-            .select('number, par')
-            .eq('course_id', round!.course_id)
-            .order('number', { ascending: true }),
-          supabase
-            .from('tee_set_holes')
-            .select('hole_number, yardage')
-            .eq('tee_set_id', round!.tee_set_id)
-            .order('hole_number', { ascending: true }),
-        ])
-        if (parRes.error) { alert(`Could not load course holes: ${parRes.error.message}`); return }
-        if (yardRes.error) { alert(`Could not load tee yardages: ${yardRes.error.message}`); return }
+      // load some events (optional, adjust query as needed)
+      const { data: evts } = await supabase
+        .from('events')
+        .select('id, name, starts_at, ends_at')
+        .order('starts_at', { ascending: false })
+        .limit(100)
 
-        const parBy = new Map<number, number>()
-        ;(parRes.data ?? []).forEach((row: any) => parBy.set(row.number, row.par))
-        const yBy = new Map<number, number>()
-        ;(yardRes.data ?? []).forEach((row: any) => yBy.set(row.hole_number, row.yardage))
-
-        const seeded = holes.map(h => ({
-          ...h,
-          par: parBy.get(h.hole_number) ?? h.par,
-          yardage: yBy.get(h.hole_number) ?? h.yardage,
-          fairway_hit: (parBy.get(h.hole_number) ?? h.par) === 3 ? null : false,
-          gir: false,
-        }))
-        setHoles(seeded)
-
-        // persist seed
-        const seedRows = seeded.map(h => ({
-          round_id: roundId,
-          hole_number: h.hole_number,
-          par: h.par,
-          yardage: h.yardage,
-          strokes: null,
-          putts: null,
-          fairway_hit: h.par === 3 ? null : false,
-          gir: false,
-          up_down_attempt: false,
-          up_down_made: false,
-          sand_save_attempt: false,
-          sand_save_made: false,
-          penalty_strokes: 0,
-        }))
-        await supabase.from('round_holes').upsert(seedRows, { onConflict: 'round_id,hole_number' })
-      }
-
-      // Load existing shots
-      const { data: shots, error: sErr } = await supabase
-        .from('shots')
-        .select('hole_number, shot_number, start_lie, start_dist_yards, end_lie, end_dist_yards, penalty')
-        .eq('round_id', roundId)
-        .order('hole_number', { ascending: true })
-        .order('shot_number', { ascending: true })
-      if (sErr) { console.warn('shots:', sErr.message) }
-
-      const grouped: Record<number, Shot[]> = {}
-      ;(shots ?? []).forEach((row: any) => {
-        const list = grouped[row.hole_number] ?? []
-        list.push({
-          shot_number: row.shot_number,
-          start_lie: row.start_lie,
-          start_dist_yards: Number(row.start_dist_yards ?? 0),
-          end_lie: row.end_lie ?? row.start_lie,
-          end_dist_yards: Number(row.end_dist_yards ?? 0),
-          penalty: !!row.penalty,
-        })
-        grouped[row.hole_number] = list
-      })
-      setShotsByHole(grouped)
-
+      setEvents((evts as EventRow[]) ?? [])
       setLoading(false)
     })()
     return () => { alive = false }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [roundId])
 
-  /** --- Hole stat helpers --- */
-  function setField(index: number, key: keyof HoleRow, value: any) {
-    setHoles(prev => {
-      const copy = [...prev]
-      if (key === 'par') {
-        const p = Number(value) || 3
-        copy[index] = { ...copy[index], par: p, fairway_hit: p === 3 ? null : copy[index].fairway_hit }
-        return copy
-      }
-      copy[index] = { ...copy[index], [key]: value }
-      return copy
-    })
-  }
-
-  /** --- Save holes + shots --- */
-  async function saveAll() {
+  async function saveBasics(e: React.FormEvent) {
+    e.preventDefault()
     setSaving(true)
+    setErr(null)
     try {
-      // 1) round_holes upsert
-      const rhRows = holes.map(h => ({
-        round_id: roundId,
-        hole_number: h.hole_number,
-        par: Number(h.par) || 3,
-        yardage: h.yardage == null ? null : Number(h.yardage),
-        strokes: h.strokes == null ? null : Number(h.strokes),
-        putts: h.putts == null ? null : Number(h.putts),
-        fairway_hit: h.par === 3 ? null : !!h.fairway_hit,
-        gir: !!h.gir,
-        up_down_attempt: !!h.up_down_attempt,
-        up_down_made: !!h.up_down_made,
-        sand_save_attempt: !!h.sand_save_attempt,
-        sand_save_made: !!h.sand_save_made,
-        penalty_strokes: Number(h.penalty_strokes) || 0,
-      }))
-      const { error: rhErr } = await supabase.from('round_holes').upsert(rhRows, { onConflict: 'round_id,hole_number' })
-      if (rhErr) throw rhErr
+      const { error } = await supabase
+        .from('rounds')
+        .update({
+          course_id: courseId || null,
+          tee_set_id: teeSetId || null,
+        })
+        .eq('id', roundId)
 
-      // 2) shots: replace per hole (simplest & reliable with RLS)
-      for (const key of Object.keys(shotsByHole)) {
-        const hn = Number(key)
-        await supabase.from('shots').delete().eq('round_id', roundId).eq('hole_number', hn)
-        const rows = (shotsByHole[hn] ?? []).map((s, idx) => ({
-          round_id: roundId,
-          hole_number: hn,
-          shot_number: idx + 1,
-          start_lie: s.start_lie,
-          start_dist_yards: Number(s.start_dist_yards) || 0,
-          end_lie: s.end_lie,
-          end_dist_yards: Number(s.end_dist_yards) || 0,
-          penalty: !!s.penalty,
-          user_id: userId, // belt & suspenders for RLS
-        }))
-        if (rows.length) {
-          const { error } = await supabase.from('shots').insert(rows)
-          if (error) throw error
-        }
-      }
-
+      if (error) throw error
       router.replace(`/rounds/${roundId}`)
-    } catch (err: any) {
-      console.error(err)
-      alert(err.message ?? 'Failed to save.')
+    } catch (e: any) {
+      setErr(e?.message ?? 'Failed to save')
     } finally {
       setSaving(false)
     }
   }
 
-  /** --- Shots editor helpers --- */
-  function addShot(holeNo: number) {
-    const list = shotsByHole[holeNo] ?? []
-    const last = list[list.length - 1]
-    const baseYards = holes.find(h => h.hole_number === holeNo)?.yardage ?? 400
-    const next: Shot = last
-      ? {
-          shot_number: list.length + 1,
-          start_lie: last.end_lie,
-          start_dist_yards: Math.max(0, last.end_dist_yards),
-          end_lie: last.end_lie,
-          end_dist_yards: Math.max(0, last.end_dist_yards - 30),
-          penalty: false,
-        }
-      : {
-          shot_number: 1,
-          start_lie: 'TEE',
-          start_dist_yards: Math.max(1, Number(baseYards)),
-          end_lie: 'FAIRWAY',
-          end_dist_yards: 150,
-          penalty: false,
-        }
-    setShotsByHole(prev => ({ ...prev, [holeNo]: [...(prev[holeNo] ?? []), next] }))
-  }
-
-  function updateShot(holeNo: number, idx: number, patch: Partial<Shot>) {
-    setShotsByHole(prev => {
-      const list = [...(prev[holeNo] ?? [])]
-      list[idx] = { ...list[idx], ...patch }
-      return { ...prev, [holeNo]: list }
-    })
-  }
-
-  function removeShot(holeNo: number, idx: number) {
-    setShotsByHole(prev => {
-      const list = [...(prev[holeNo] ?? [])]
-      list.splice(idx, 1)
-      const renum = list.map((s, i) => ({ ...s, shot_number: i + 1 }))
-      return { ...prev, [holeNo]: renum }
-    })
-  }
-
-  async function refreshSGForHole(holeNo: number) {
-    const list = shotsByHole[holeNo] ?? []
-    const updated: Shot[] = []
-    for (const s of list) {
-      const { data, error } = await supabase.rpc('sg_for_shot', {
-        p_start_lie: s.start_lie,
-        p_start_dist: s.start_dist_yards,
-        p_end_lie: s.end_lie,
-        p_end_dist: s.end_dist_yards,
+  async function linkEvent() {
+    setLinking(true)
+    setErr(null)
+    try {
+      // prefer secure RPC if present
+      const { error: rpcErr } = await supabase.rpc('link_round_to_event', {
+        p_round_id: roundId,
+        p_event_id: eventId || null,
       })
-      updated.push({ ...s, sg: error ? undefined : Number(data) })
+      if (rpcErr && !rpcErr.message?.toLowerCase().includes('function') ) {
+        // RPC exists but returned error
+        throw rpcErr
+      }
+      if (rpcErr && rpcErr.message?.toLowerCase().includes('function')) {
+        // RPC not deployed; fall back to direct update
+        const { error } = await supabase
+          .from('rounds')
+          .update({ event_id: eventId || null })
+          .eq('id', roundId)
+        if (error) throw error
+      }
+      router.refresh()
+    } catch (e: any) {
+      setErr(e?.message ?? 'Failed to link event')
+    } finally {
+      setLinking(false)
     }
-    setShotsByHole(prev => ({ ...prev, [holeNo]: updated }))
   }
+
+  async function unlinkEvent() {
+    setEventId('')
+    setLinking(true)
+    setErr(null)
+    try {
+      const { error: rpcErr } = await supabase.rpc('link_round_to_event', {
+        p_round_id: roundId,
+        p_event_id: null,
+      })
+      if (rpcErr && !rpcErr.message?.toLowerCase().includes('function') ) {
+        throw rpcErr
+      }
+      if (rpcErr && rpcErr.message?.toLowerCase().includes('function')) {
+        const { error } = await supabase
+          .from('rounds')
+          .update({ event_id: null })
+          .eq('id', roundId)
+        if (error) throw error
+      }
+      router.refresh()
+    } catch (e: any) {
+      setErr(e?.message ?? 'Failed to unlink event')
+    } finally {
+      setLinking(false)
+    }
+  }
+
+  async function refreshSG() {
+    setRefreshing(true)
+    setErr(null)
+    try {
+      const { error } = await supabase.rpc('refresh_mv_round_sg_totals_v2')
+      if (error) throw error
+      router.refresh()
+    } catch (e: any) {
+      setErr(e?.message ?? 'Failed to refresh SG')
+    } finally {
+      setRefreshing(false)
+    }
+  }
+
+  const courseName = Array.isArray(round?.course) ? round?.course[0]?.name : (round as any)?.course?.name
+  const teeName = Array.isArray(round?.tee) ? round?.tee[0]?.name : (round as any)?.tee?.name
 
   if (loading) {
     return (
-      <div className="mx-auto max-w-4xl p-6">
-        <h1 className="text-2xl font-semibold mb-2">Edit Round</h1>
-        <div className="animate-pulse h-24 rounded-xl bg-gray-200" />
+      <div className="mx-auto max-w-3xl p-6">
+        <div className="animate-pulse h-8 w-64 rounded bg-gray-200 mb-4" />
+        <div className="animate-pulse h-40 rounded-xl bg-gray-200" />
       </div>
     )
   }
 
-  const hole = holes.find(h => h.hole_number === activeHole)!
-  const shots = shotsByHole[activeHole] ?? []
-
   return (
-    <div className="mx-auto max-w-5xl p-6 space-y-6">
+    <div className="mx-auto max-w-3xl p-6 space-y-6">
       <div className="flex items-center justify-between">
         <h1 className="text-2xl font-semibold">Edit Round</h1>
-        <div className="text-sm opacity-75">
-          {courseName}
-          {teeName ? ` • ${teeName}` : ''}
-        </div>
+        <Link href={`/rounds/${roundId}`} className="rounded-xl border px-3 py-1.5 hover:bg-gray-50">
+          Back to Summary
+        </Link>
       </div>
 
-      {/* Hole picker */}
-      <div className="flex flex-wrap gap-2">
-        {holes.map(h => (
+      {/* Basic fields */}
+      <form onSubmit={saveBasics} className="rounded-2xl border p-4 space-y-4">
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+          <div>
+            <label className="block text-sm mb-1">Course ID</label>
+            <input
+              className="w-full rounded-xl border px-3 py-2"
+              value={courseId}
+              onChange={e => setCourseId(e.target.value)}
+              placeholder="uuid"
+            />
+            {courseName && <p className="mt-1 text-xs text-gray-500">Current: {courseName}</p>}
+          </div>
+          <div>
+            <label className="block text-sm mb-1">Tee Set ID</label>
+            <input
+              className="w-full rounded-xl border px-3 py-2"
+              value={teeSetId}
+              onChange={e => setTeeSetId(e.target.value)}
+              placeholder="uuid"
+            />
+            {teeName && <p className="mt-1 text-xs text-gray-500">Current: {teeName}</p>}
+          </div>
+        </div>
+
+        <div className="flex items-center gap-2">
           <button
-            key={h.hole_number}
-            onClick={() => setActiveHole(h.hole_number)}
-            className={`px-3 py-1.5 rounded-xl border ${activeHole === h.hole_number ? 'bg-gray-900 text-white' : 'bg-white'}`}
+            type="submit"
+            className="rounded-xl border px-4 py-2 hover:bg-gray-50"
+            disabled={saving}
           >
-            H{h.hole_number}
+            {saving ? 'Saving…' : 'Save Basics'}
           </button>
-        ))}
-      </div>
 
-      {/* Per-hole stat row */}
-      <div className="rounded-2xl border p-4">
-        <div className="grid grid-cols-2 md:grid-cols-6 gap-3 items-end">
-          <div>
-            <label className="block text-xs mb-1">Par</label>
-            <input
-              type="number"
-              min={3}
-              max={5}
-              className="w-full rounded-lg border p-2 text-center"
-              value={hole.par}
-              onChange={e => setField(activeHole - 1, 'par', Number(e.target.value))}
-            />
-          </div>
-          <div>
-            <label className="block text-xs mb-1">Yards</label>
-            <input
-              type="number"
-              min={0}
-              className="w-full rounded-lg border p-2 text-center"
-              value={hole.yardage ?? ''}
-              onChange={e => setField(activeHole - 1, 'yardage', e.target.value === '' ? null : Number(e.target.value))}
-            />
-          </div>
-          <div>
-            <label className="block text-xs mb-1">Strokes</label>
-            <input
-              type="number"
-              min={1}
-              className="w-full rounded-lg border p-2 text-center"
-              value={hole.strokes ?? ''}
-              onChange={e => setField(activeHole - 1, 'strokes', e.target.value === '' ? null : Number(e.target.value))}
-            />
-          </div>
-          <div>
-            <label className="block text-xs mb-1">Putts</label>
-            <input
-              type="number"
-              min={0}
-              className="w-full rounded-lg border p-2 text-center"
-              value={hole.putts ?? ''}
-              onChange={e => setField(activeHole - 1, 'putts', e.target.value === '' ? null : Number(e.target.value))}
-            />
-          </div>
-          <div>
-            <label className="block text-xs mb-1">FIR</label>
-            <input
-              type="checkbox"
-              disabled={hole.par === 3}
-              checked={!!hole.fairway_hit}
-              onChange={e => setField(activeHole - 1, 'fairway_hit', e.target.checked)}
-            />
-          </div>
-          <div>
-            <label className="block text-xs mb-1">GIR</label>
-            <input
-              type="checkbox"
-              checked={!!hole.gir}
-              onChange={e => setField(activeHole - 1, 'gir', e.target.checked)}
-            />
-          </div>
+          <button
+            type="button"
+            className="rounded-xl border px-4 py-2 hover:bg-gray-50"
+            onClick={refreshSG}
+            disabled={refreshing}
+            title="Rebuild SG totals materialized view"
+          >
+            {refreshing ? 'Refreshing…' : 'Refresh SG'}
+          </button>
         </div>
-      </div>
+      </form>
 
-      {/* Shots editor */}
-      <div className="rounded-2xl border p-4">
-        <div className="flex items-center justify-between mb-3">
-          <h2 className="font-semibold">Shots – Hole {activeHole}</h2>
-          <div className="flex gap-2">
-            <button onClick={() => addShot(activeHole)} className="rounded-xl border px-3 py-1.5">Add Shot</button>
-            <button onClick={() => refreshSGForHole(activeHole)} className="rounded-xl border px-3 py-1.5">Recalc SG</button>
+      {/* Event link */}
+      <div className="rounded-2xl border p-4 space-y-3">
+        <h2 className="font-semibold">Event Link (optional)</h2>
+
+        <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
+          <div className="md:col-span-2">
+            <label className="block text-sm mb-1">Select Event</label>
+            <select
+              className="w-full rounded-xl border px-3 py-2"
+              value={eventId}
+              onChange={e => setEventId(e.target.value)}
+            >
+              <option value="">— No Event —</option>
+              {events.map(ev => (
+                <option key={ev.id} value={ev.id}>
+                  {ev.name}
+                  {ev.starts_at ? ` — ${new Date(ev.starts_at).toLocaleDateString()}` : ''}
+                </option>
+              ))}
+            </select>
+          </div>
+          <div className="flex items-end gap-2">
+            <button
+              type="button"
+              className="rounded-xl border px-4 py-2 hover:bg-gray-50"
+              onClick={linkEvent}
+              disabled={linking}
+            >
+              {linking ? 'Linking…' : 'Link Event'}
+            </button>
+            <button
+              type="button"
+              className="rounded-xl border px-4 py-2 hover:bg-gray-50"
+              onClick={unlinkEvent}
+              disabled={linking || !round?.event_id}
+            >
+              Unlink
+            </button>
           </div>
         </div>
 
-        <div className="overflow-x-auto">
-          <table className="w-full text-sm">
-            <thead className="bg-gray-50">
-              <tr>
-                <th className="p-2 text-left">#</th>
-                <th className="p-2">Start Lie</th>
-                <th className="p-2">{/* Dynamic label */}Start Dist ({shots[0]?.start_lie === 'GREEN' ? 'ft' : 'yd'})</th>
-                <th className="p-2">End Lie</th>
-                <th className="p-2">{/* Dynamic label */}End Dist ({shots[0]?.end_lie === 'GREEN' ? 'ft' : 'yd'})</th>
-                <th className="p-2">Penalty</th>
-                <th className="p-2">SG</th>
-                <th className="p-2"></th>
-              </tr>
-            </thead>
-            <tbody>
-              {shots.map((s, i) => {
-                const startIsGreen = s.start_lie === 'GREEN'
-                const endIsGreen = s.end_lie === 'GREEN'
-                const startDisplay = startIsGreen ? Math.round(ydToFt(s.start_dist_yards)) : s.start_dist_yards
-                const endDisplay = endIsGreen ? Math.round(ydToFt(s.end_dist_yards)) : s.end_dist_yards
-
-                return (
-                  <tr key={i} className="odd:bg-white even:bg-gray-50">
-                    <td className="p-2">{i + 1}</td>
-                    <td className="p-2">
-                      <select
-                        className="rounded border p-1"
-                        value={s.start_lie}
-                        onChange={e => updateShot(activeHole, i, { start_lie: e.target.value as Lie })}
-                      >
-                        {LIES.map(l => <option key={l} value={l}>{l}</option>)}
-                      </select>
-                    </td>
-                    <td className="p-2">
-                      <input
-                        type="number"
-                        min={0}
-                        step={1}
-                        className="w-28 rounded border p-1 text-center"
-                        value={startDisplay}
-                        onChange={e => {
-                          const v = Math.max(0, Number(e.target.value) || 0)
-                          updateShot(activeHole, i, {
-                            start_dist_yards: startIsGreen ? ftToYd(v) : v,
-                          })
-                        }}
-                      />
-                    </td>
-                    <td className="p-2">
-                      <select
-                        className="rounded border p-1"
-                        value={s.end_lie}
-                        onChange={e => updateShot(activeHole, i, { end_lie: e.target.value as Lie })}
-                      >
-                        {LIES.map(l => <option key={l} value={l}>{l}</option>)}
-                      </select>
-                    </td>
-                    <td className="p-2">
-                      <input
-                        type="number"
-                        min={0}
-                        step={1}
-                        className="w-28 rounded border p-1 text-center"
-                        value={endDisplay}
-                        onChange={e => {
-                          const v = Math.max(0, Number(e.target.value) || 0)
-                          updateShot(activeHole, i, {
-                            end_dist_yards: endIsGreen ? ftToYd(v) : v,
-                          })
-                        }}
-                      />
-                    </td>
-                    <td className="p-2 text-center">
-                      <input
-                        type="checkbox"
-                        checked={!!s.penalty}
-                        onChange={e => updateShot(activeHole, i, { penalty: e.target.checked })}
-                      />
-                    </td>
-                    <td className="p-2 text-center">{s.sg == null ? '—' : s.sg.toFixed(2)}</td>
-                    <td className="p-2">
-                      <button onClick={() => removeShot(activeHole, i)} className="rounded border px-2 py-1">Remove</button>
-                    </td>
-                  </tr>
-                )
-              })}
-              {shots.length === 0 && (
-                <tr>
-                  <td colSpan={8} className="p-3 text-center text-gray-500">No shots yet.</td>
-                </tr>
-              )}
-            </tbody>
-          </table>
-        </div>
+        {round?.event_id && (
+          <p className="text-xs text-gray-600">Currently linked to event: <code>{round.event_id}</code></p>
+        )}
       </div>
 
-      <div className="flex gap-3">
-        <button
-          onClick={saveAll}
-          disabled={saving}
-          className="rounded-2xl px-4 py-2 border shadow disabled:opacity-60"
-        >
-          {saving ? 'Saving…' : 'Save & View Round'}
-        </button>
-        <button
-          onClick={() => router.replace(`/rounds/${roundId}`)}
-          className="rounded-2xl px-4 py-2 border"
-        >
-          Cancel
-        </button>
-      </div>
+      {err && <p className="text-sm text-red-600">{err}</p>}
     </div>
   )
 }

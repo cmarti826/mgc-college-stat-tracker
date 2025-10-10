@@ -20,15 +20,13 @@ export default async function RoundSummaryPage({ params }: { params: { id: strin
 
   const { data: round, error: roundErr } = await supabase
     .from("rounds")
-    .select(
-      `
+    .select(`
       id,
-      played_on:date,          -- alias DB "date" as played_on for UI
+      played_on:date,
       player:players(*),
       course:courses(id, name),
       tee:tees(id, name, rating, slope, par)
-    `
-    )
+    `)
     .eq("id", roundId)
     .single();
 
@@ -48,9 +46,8 @@ export default async function RoundSummaryPage({ params }: { params: { id: strin
   const course = one<{ id: string; name: string }>(round.course);
   const tee = one<{ id: string; name: string; rating: number | null; slope: number | null; par: number | null }>(round.tee);
 
-  const playerName = player
-    ? (player.full_name ?? player.name ?? player.display_name ?? "Unknown Player")
-    : "Unknown Player";
+  const playerName =
+    player?.full_name ?? player?.name ?? player?.display_name ?? "Unknown Player";
 
   const { data: holes } = await supabase
     .from("round_holes")
@@ -58,12 +55,28 @@ export default async function RoundSummaryPage({ params }: { params: { id: strin
     .eq("round_id", roundId)
     .order("hole_number");
 
-  const holeList = holes ?? [];
-  const byNine = (start: number, end: number) => holeList.filter((h) => h.hole_number >= start && h.hole_number <= end);
+  const holeList =
+    (holes as Array<{
+      hole_number: number;
+      par: number | null;
+      yards: number | null;
+      strokes: number | null;
+      putts: number | null;
+      fir: boolean | null;
+      gir: boolean | null;
+      up_down: boolean | null;
+      sand_save: boolean | null;
+      penalty: boolean | null;
+    }>) ?? [];
+
+  const byNine = (start: number, end: number) =>
+    holeList.filter((h) => h.hole_number >= start && h.hole_number <= end);
+
   const front = byNine(1, 9);
   const back = byNine(10, 18);
 
-  const sum = (arr: Array<number | null | undefined>) => arr.reduce((t: number, n) => t + (n ?? 0), 0);
+  const sum = (arr: Array<number | null | undefined>) =>
+    arr.reduce((t: number, n) => t + (n ?? 0), 0);
 
   const parFront = sum(front.map((h) => h.par));
   const parBack = sum(back.map((h) => h.par));
@@ -91,13 +104,14 @@ export default async function RoundSummaryPage({ params }: { params: { id: strin
   const frontToPar = anyMissing ? null : strokesFront - parFront;
   const backToPar = anyMissing ? null : strokesBack - parBack;
 
-   const dateStr = round.played_on
+  const dateStr = round.played_on
     ? new Date(round.played_on).toLocaleDateString(undefined, {
         year: "numeric",
         month: "short",
         day: "numeric",
       })
     : "";
+
   return (
     <div className="mx-auto max-w-[1100px] p-6 space-y-8">
       {/* Header */}
@@ -143,7 +157,7 @@ export default async function RoundSummaryPage({ params }: { params: { id: strin
         <Kpi label="Penalties" value={penYes} />
       </div>
 
-      {/* Table: All Holes */}
+      {/* Holes table */}
       <div className="overflow-x-auto rounded-2xl border">
         <table className="min-w-[900px] w-full text-sm">
           <thead className="bg-gray-50">
@@ -209,19 +223,10 @@ function Kpi({ label, value, helper }: { label: string; value: number | string; 
   );
 }
 
-function Th({ children }: { children?: React.ReactNode }) {
+function Th({ children }: { children: React.ReactNode }) {
   return <th className="p-3 text-left font-medium text-gray-700">{children}</th>;
 }
-
-function Td({
-  children,
-  className = "",
-  colSpan,
-}: {
-  children: React.ReactNode;
-  className?: string;
-  colSpan?: number;
-}) {
+function Td({ children, className = "", colSpan }: { children: React.ReactNode; className?: string; colSpan?: number }) {
   return (
     <td className={`p-3 ${className}`} colSpan={colSpan}>
       {children}

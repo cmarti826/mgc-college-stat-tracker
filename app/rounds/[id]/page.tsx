@@ -18,7 +18,6 @@ export default async function RoundSummaryPage({ params }: { params: { id: strin
   const supabase = createClient();
   const roundId = params.id;
 
-  // Use * to avoid breaking if the column name differs
   const { data: round, error: roundErr } = await supabase
     .from("rounds")
     .select(`
@@ -42,8 +41,10 @@ export default async function RoundSummaryPage({ params }: { params: { id: strin
     );
   }
 
-  // Normalize date field: prefer `date`, fallback to `played_on`
-  const roundDateRaw = (round as any).date ?? (round as any).played_on ?? null;
+  // Normalize date from whichever column exists
+  const anyRound = round as any;
+  const roundDateRaw =
+    anyRound.round_date ?? anyRound.date ?? anyRound.played_on ?? anyRound.played_at ?? null;
 
   const player = one<any>(round.player);
   const course = one<{ id: string; name: string }>(round.course);
@@ -116,7 +117,6 @@ export default async function RoundSummaryPage({ params }: { params: { id: strin
 
   return (
     <div className="mx-auto max-w-[1100px] p-6 space-y-8">
-      {/* Header */}
       <div className="rounded-2xl border p-5 shadow-sm bg-white">
         <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-3">
           <div>
@@ -142,14 +142,12 @@ export default async function RoundSummaryPage({ params }: { params: { id: strin
         </div>
       </div>
 
-      {/* Score Overview */}
       <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
         <StatCard label="Total" value={strokesTotal || "—"} sub={fmtScoreToPar(scoreToPar)} />
         <StatCard label="Front 9" value={strokesFront || "—"} sub={fmtScoreToPar(frontToPar)} />
         <StatCard label="Back 9" value={strokesBack || "—"} sub={fmtScoreToPar(backToPar)} />
       </div>
 
-      {/* KPIs */}
       <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-4">
         <Kpi label="Putts" value={puttsTotal} />
         <Kpi label="FIR" value={`${firPct}%`} helper={`${firYes}/${firOpp}`} />
@@ -159,7 +157,6 @@ export default async function RoundSummaryPage({ params }: { params: { id: strin
         <Kpi label="Penalties" value={penYes} />
       </div>
 
-      {/* Holes table */}
       <div className="overflow-x-auto rounded-2xl border">
         <table className="min-w-[900px] w-full text-sm">
           <thead className="bg-gray-50">

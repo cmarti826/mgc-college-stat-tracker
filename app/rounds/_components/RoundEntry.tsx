@@ -1,0 +1,414 @@
+// ==========================
+// File: app/rounds/_components/RoundEntry.tsx
+// ==========================
+"use client";
+
+import { useMemo, useState, useTransition } from "react";
+import { ChevronLeft, ChevronRight, Save, Send } from "lucide-react";
+import HoleRow from "./HoleRow";
+import { z } from "zod";
+import { createRoundAction, updateRoundAction } from "./actions";
+
+// ---- Types -----
+const HoleSchema = z.object({
+  hole_number: z.number(),
+  par: z.number().min(3).max(6),
+  yards: z.number().min(0).optional().nullable(),
+  strokes: z.number().min(1).max(15).optional().nullable(),
+  putts: z.number().min(0).max(6).optional().nullable(),
+  fir: z.boolean().optional().nullable(),
+  gir: z.boolean().optional().nullable(),
+  up_down: z.boolean().optional().nullable(),
+  sand_save: z.boolean().optional().nullable(),
+  penalty: z.boolean().optional().nullable(),
+});
+
+const RoundSchema = z.object({
+  id: z.string().uuid().optional(),
+  player_id: z.string().uuid(),
+  course_id: z.string().uuid(),
+  tee_set_id: z.string().uuid(),
+  event_id: z.string().uuid().nullable().optional(),
+  played_on: z.string(), // ISO date
+  notes: z.string().optional().nullable(),
+  holes: z.array(HoleSchema).length(18),
+});
+
+export type HoleInput = z.infer<typeof HoleSchema>;
+export type RoundInput = z.infer<typeof RoundSchema>;
+
+// ---- Helpers ----
+function empty18(): HoleInput[] {
+  return Array.from({ length: 18 }, (_, i) => ({
+    hole_number: i + 1,
+    par: 4,
+    yards: null,
+    strokes: null,
+    putts: null,
+    fir: null,
+    gir: null,
+    up_down: null,
+    sand_save: null,
+    penalty: null,
+  }));
+}
+
+// ---- Component ----
+export default function RoundEntry({
+  mode,
+  initialRound,
+  players,
+  courses,
+  teeSets,
+}: {
+  mode: "create" | "edit";
+  initialRound: null | { round: any; holes: HoleInput[] };
+  players: any[];
+  courses: any[];
+  teeSets: any[];
+}) {
+  const [step, setStep] = useState(1);
+  const [isPending, startTransition] = useTransition();
+
+  // Base state
+  const [playerId, setPlayerId] = useState<string | undefined>(initialRound?.round?.player_id);
+  const [courseId, setCourseId] = useState<string | undefined>(initialRound?.round?.course_id);
+  const [teeSetId, setTeeSetId] = useState<string | undefined>(initialRound?.round?.tee_set_id);
+  const [playedOn, setPlayedOn] = useState<string>(
+    initialRound?.round?.played_on ?? new Date().toISOString().slice(0, 10)
+  );
+  const [notes, setNotes] = useState<string>(initialRound?.round?.notes ?? "");
+  const [eventId, setEventId] = useState<string | undefined>(initialRound?.round?.event_id ?? undefined);
+
+  const teeOptions = useMemo(() => teeSets.filter((t) => t.course_id === courseId), [teeSets, courseId]);
+
+  // Holes state
+  const [holes, setHoles] = useState<HoleInput[]>(() => {
+    if (initialRound?.holes?.length === 18) return initialRound.holes as HoleInput[];
+    return empty18();
+  });
+
+  // Auto-calc totals
+  const totals = useMemo(() => {
+    const s = holes.reduce(
+      (acc, h) => {
+        acc.strokes += h.strokes ?? 0;
+        acc.putts += h.putts ?? 0;
+        if (h.fir === true && (h.par === 4 || h.par === 5)) acc.firYes += 1;
+        if (h.par === 4 || h.par === 5) acc.firOpp += 1;
+        if (h.gir === true) acc.girYes += 1;
+        acc.girOpp += 1;
+        if (h.up_down === true) acc.udYes += 1;
+        if (h.sand_save === true) acc.ssYes += 1;
+        return acc;
+      },
+      { strokes: 0, putts: 0, firYes: 0, firOpp: 0, girYes: 0, girOpp: 0, udYes: 0, ssYes: 0 }
+    );
+    return {
+      strokes: s.strokes,
+      putts: s.putts,
+      firPct: s.firOpp ? Math.round((s.firYes / s.firOpp) * 100) : 0,
+      girPct: s.girOpp ? Math.round((s.girYes / s.girOpp) * 100) : 0,
+      upDown: s.udYes,
+      sandSave: s.ssYes,
+    };
+  }, [holes]);
+
+  function updateHole(idx: number, patch: Partial<HoleInput>) {
+    setHoles((prev) => {
+      const next = [...prev];
+      next[idx] = { ...next[idx], ...patch };
+      return next;
+    });
+  }
+
+  function setParForAll(par: number) {
+    setHoles((prev) => prev.map((h) => ({ ...h, par })));
+  }
+
+  function pasteScores(text: string) {
+    // Supports quick paste of 18 numbers (e.g., "4 5 3 ...").
+    const nums = text
+      .replace(/\n/g, " ")
+      .split(/[^0-9]+/)
+      .filter(Boolean)
+      .map((n) => Number(n));
+    if (nums.length >= 18) {
+      setHoles((prev) => prev.map((h, i) => ({ ...h, strokes: nums[i] ?? h.strokes })));
+    }
+  }
+
+  async function handleSave(finalize: boolean) {
+    const payload: RoundInput = {
+      id: initialRound?.round?.id,
+      player_id: playerId!,
+      course_id: courseId!,
+      tee_set_id: teeSetId!,
+      event_id: eventId ?? null,
+      played_on: playedOn,
+      notes: notes || null,
+      holes,
+    };
+
+    const parsed = RoundSchema.safeParse(payload);
+    if (!parsed.success) {
+      alert("Please complete required fields (player, course, tee, date) and 18 holes.");
+      return;
+    }
+
+    startTransition(async () => {
+      const res = mode === "create" ? await createRoundAction(payload) : await updateRoundAction(payload);
+      if (res?.error) {
+        alert(res.error);
+        return;
+      }
+      if (finalize) {
+        window.location.href = `/rounds/${res.id}`; // redirect to summary page if you have one
+      } else {
+        alert("Saved");
+      }
+    });
+  }
+
+  return (
+    <div className="space-y-6">
+      {/* Header */}
+      <div className="sticky top-0 z-10 bg-white/80 backdrop-blur border-b p-4 rounded-xl shadow-sm">
+        <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+          <h1 className="text-2xl font-semibold">{mode === "create" ? "New Round" : "Edit Round"}</h1>
+          <div className="flex items-center gap-2">
+            <button
+              onClick={() => handleSave(false)}
+              className="inline-flex items-center gap-2 rounded-2xl px-4 py-2 border hover:shadow disabled:opacity-50"
+              disabled={isPending}
+            >
+              <Save className="h-4 w-4" /> Save Draft
+            </button>
+            <button
+              onClick={() => handleSave(true)}
+              className="inline-flex items-center gap-2 rounded-2xl px-4 py-2 bg-black text-white hover:opacity-90 disabled:opacity-50"
+              disabled={isPending}
+            >
+              <Send className="h-4 w-4" /> Save & Finish
+            </button>
+          </div>
+        </div>
+
+        {/* Stepper */}
+        <div className="mt-3 flex items-center gap-2 text-sm">
+          <button onClick={() => setStep(1)} className={`rounded-full px-3 py-1 border ${step === 1 ? "bg-black text-white" : ""}`}>1. Details</button>
+          <ChevronRight className="h-4 w-4" />
+          <button onClick={() => setStep(2)} className={`rounded-full px-3 py-1 border ${step === 2 ? "bg-black text-white" : ""}`}>2. Holes</button>
+          <ChevronRight className="h-4 w-4" />
+          <button onClick={() => setStep(3)} className={`rounded-full px-3 py-1 border ${step === 3 ? "bg-black text-white" : ""}`}>3. Review</button>
+        </div>
+      </div>
+
+      {/* Step 1: Details */}
+      {step === 1 && (
+        <section className="space-y-4">
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
+            <div className="flex flex-col">
+              <label className="text-sm font-medium">Player</label>
+              <select
+                className="mt-1 rounded-xl border p-2"
+                value={playerId ?? ""}
+                onChange={(e) => setPlayerId(e.target.value || undefined)}
+              >
+                <option value="">Select player…</option>
+                {players.map((p) => (
+                  <option key={p.id} value={p.id}>
+                    {p.last_name}, {p.first_name} {p.grad_year ? `’${String(p.grad_year).slice(2)}` : ""}
+                  </option>
+                ))}
+              </select>
+            </div>
+
+            <div className="flex flex-col">
+              <label className="text-sm font-medium">Date</label>
+              <input
+                type="date"
+                className="mt-1 rounded-xl border p-2"
+                value={playedOn}
+                onChange={(e) => setPlayedOn(e.target.value)}
+              />
+            </div>
+
+            <div className="flex flex-col">
+              <label className="text-sm font-medium">Course</label>
+              <select
+                className="mt-1 rounded-xl border p-2"
+                value={courseId ?? ""}
+                onChange={(e) => {
+                  setCourseId(e.target.value || undefined);
+                  setTeeSetId(undefined);
+                }}
+              >
+                <option value="">Select course…</option>
+                {courses.map((c) => (
+                  <option key={c.id} value={c.id}>{c.name}</option>
+                ))}
+              </select>
+            </div>
+
+            <div className="flex flex-col">
+              <label className="text-sm font-medium">Tee Set</label>
+              <select
+                className="mt-1 rounded-xl border p-2"
+                value={teeSetId ?? ""}
+                onChange={(e) => setTeeSetId(e.target.value || undefined)}
+                disabled={!courseId}
+              >
+                <option value="">Select tee set…</option>
+                {teeOptions.map((t) => (
+                  <option key={t.id} value={t.id}>
+                    {t.name} — {t.rating ?? "-"}/{t.slope ?? "-"} (Par {t.par ?? "-"})
+                  </option>
+                ))}
+              </select>
+            </div>
+
+            <div className="flex flex-col">
+              <label className="text-sm font-medium">Event (optional)</label>
+              <input
+                type="text"
+                placeholder="Paste event UUID if linking"
+                className="mt-1 rounded-xl border p-2"
+                value={eventId ?? ""}
+                onChange={(e) => setEventId(e.target.value || undefined)}
+              />
+            </div>
+
+            <div className="flex flex-col sm:col-span-2 lg:col-span-3">
+              <label className="text-sm font-medium">Notes</label>
+              <textarea
+                rows={3}
+                className="mt-1 rounded-xl border p-2"
+                placeholder="Windy, wet rough, etc."
+                value={notes}
+                onChange={(e) => setNotes(e.target.value)}
+              />
+            </div>
+          </div>
+
+          <div className="flex items-center gap-2">
+            <button className="rounded-2xl border px-4 py-2 inline-flex items-center gap-2" onClick={() => setParForAll(3)}>Set Par 3 for all</button>
+            <button className="rounded-2xl border px-4 py-2 inline-flex items-center gap-2" onClick={() => setParForAll(4)}>Set Par 4 for all</button>
+            <button className="rounded-2xl border px-4 py-2 inline-flex items-center gap-2" onClick={() => setParForAll(5)}>Set Par 5 for all</button>
+          </div>
+
+          <div className="flex items-center gap-2">
+            <textarea
+              className="rounded-xl border p-2 w-full"
+              placeholder="Quick paste 18 scores (e.g. 4 5 3 4 4 5 3 4 4 5 3 4 4 5 3 4 4 5)"
+              onPaste={(e) => {
+                const text = e.clipboardData.getData("text");
+                pasteScores(text);
+              }}
+            />
+          </div>
+
+          <div className="flex justify-end">
+            <button className="inline-flex items-center gap-2 rounded-2xl px-4 py-2 bg-black text-white" onClick={() => setStep(2)}>
+              Next <ChevronRight className="h-4 w-4" />
+            </button>
+          </div>
+        </section>
+      )}
+
+      {/* Step 2: Holes */}
+      {step === 2 && (
+        <section className="space-y-4">
+          <div className="overflow-x-auto rounded-2xl border">
+            <table className="min-w-[900px] w-full text-sm">
+              <thead className="bg-gray-50 sticky top-[84px]">
+                <tr>
+                  <th className="p-3 text-left">#</th>
+                  <th className="p-3 text-left">Par</th>
+                  <th className="p-3 text-left">Yards</th>
+                  <th className="p-3 text-left">Strokes</th>
+                  <th className="p-3 text-left">Putts</th>
+                  <th className="p-3 text-left">FIR</th>
+                  <th className="p-3 text-left">GIR</th>
+                  <th className="p-3 text-left">Up & Down</th>
+                  <th className="p-3 text-left">Sand Save</th>
+                  <th className="p-3 text-left">Penalty</th>
+                </tr>
+              </thead>
+              <tbody>
+                {holes.map((h, i) => (
+                  <HoleRow key={i} value={h} onChange={(patch) => updateHole(i, patch)} />
+                ))}
+              </tbody>
+              <tfoot className="bg-gray-50">
+                <tr>
+                  <td className="p-3 font-medium" colSpan={3}>Totals</td>
+                  <td className="p-3 font-semibold">{totals.strokes}</td>
+                  <td className="p-3 font-semibold">{totals.putts}</td>
+                  <td className="p-3 font-semibold">{totals.firPct}%</td>
+                  <td className="p-3 font-semibold">{totals.girPct}%</td>
+                  <td className="p-3 font-semibold">{totals.upDown}</td>
+                  <td className="p-3 font-semibold">{totals.sandSave}</td>
+                  <td className="p-3"></td>
+                </tr>
+              </tfoot>
+            </table>
+          </div>
+
+          <div className="flex items-center justify-between">
+            <button className="rounded-2xl border px-4 py-2 inline-flex items-center gap-2" onClick={() => setStep(1)}>
+              <ChevronLeft className="h-4 w-4" /> Back
+            </button>
+            <button className="rounded-2xl bg-black text-white px-4 py-2 inline-flex items-center gap-2" onClick={() => setStep(3)}>
+              Review <ChevronRight className="h-4 w-4" />
+            </button>
+          </div>
+        </section>
+      )}
+
+      {/* Step 3: Review */}
+      {step === 3 && (
+        <section className="space-y-4">
+          <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+            <SummaryCard label="Strokes" value={totals.strokes} />
+            <SummaryCard label="Putts" value={totals.putts} />
+            <SummaryCard label="FIR" value={`${totals.firPct}%`} />
+            <SummaryCard label="GIR" value={`${totals.girPct}%`} />
+            <SummaryCard label="Up & Downs" value={totals.upDown} />
+            <SummaryCard label="Sand Saves" value={totals.sandSave} />
+          </div>
+          <div className="flex items-center justify-between">
+            <button className="rounded-2xl border px-4 py-2 inline-flex items-center gap-2" onClick={() => setStep(2)}>
+              <ChevronLeft className="h-4 w-4" /> Back
+            </button>
+            <div className="flex items-center gap-2">
+              <button
+                onClick={() => handleSave(false)}
+                className="inline-flex items-center gap-2 rounded-2xl px-4 py-2 border hover:shadow disabled:opacity-50"
+                disabled={isPending}
+              >
+                <Save className="h-4 w-4" /> Save Draft
+              </button>
+              <button
+                onClick={() => handleSave(true)}
+                className="inline-flex items-center gap-2 rounded-2xl px-4 py-2 bg-black text-white hover:opacity-90 disabled:opacity-50"
+                disabled={isPending}
+              >
+                <Send className="h-4 w-4" /> Save & Finish
+              </button>
+            </div>
+          </div>
+        </section>
+      )}
+    </div>
+  );
+}
+
+function SummaryCard({ label, value }: { label: string; value: number | string }) {
+  return (
+    <div className="rounded-2xl border p-4 shadow-sm">
+      <div className="text-sm text-gray-500">{label}</div>
+      <div className="text-2xl font-semibold">{value}</div>
+    </div>
+  );
+}

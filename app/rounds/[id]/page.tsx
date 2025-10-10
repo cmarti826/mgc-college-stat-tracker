@@ -1,317 +1,278 @@
-'use client'
+// ==========================
+// File: app/rounds/[id]/page.tsx
+// ==========================
+import { createClient } from "@/lib/supabase/server";
+import Link from "next/link";
 
-import { useEffect, useMemo, useState } from 'react'
-import { useParams, useRouter } from 'next/navigation'
-import { supabaseBrowser } from '@/lib/supabase-browser'
-
-type HoleRow = {
-  hole_number: number
-  par: number
-  yardage: number | null
-  strokes: number | null
-  putts: number | null
-  fairway_hit: boolean | null
-  gir: boolean | null
-  penalty_strokes: number
+function fmtScoreToPar(delta: number | null) {
+  if (delta === null) return "—";
+  if (delta === 0) return "E";
+  return delta > 0 ? `+${delta}` : `${delta}`;
 }
 
-type SGBucket = 'OTT' | 'APP' | 'ARG' | 'PUTT'
-type SGAgg = Record<SGBucket, number>
+export default async function RoundSummaryPage({ params }: { params: { id: string } }) {
+  const supabase = createClient();
+  const roundId = params.id;
 
-export default function RoundSummaryPage() {
-  const params = useParams<{ id: string }>()
-  const roundId = params.id
-  const router = useRouter()
-  const supabase = useMemo(() => supabaseBrowser(), [])
-
-  const [loading, setLoading] = useState(true)
-  const [round, setRound] = useState<any>(null)
-  const [holes, setHoles] = useState<HoleRow[]>([])
-  const [sgByBucket, setSgByBucket] = useState<SGAgg>({ OTT: 0, APP: 0, ARG: 0, PUTT: 0 })
-  const [sgTotal, setSgTotal] = useState<number>(0)
-  const [sgByHole, setSgByHole] = useState<Record<number, number>>({})
-  const [deleting, setDeleting] = useState(false)
-
-  useEffect(() => {
-    let alive = true
-    ;(async () => {
-      setLoading(true)
-      const { data: { user } } = await supabase.auth.getUser()
-      if (!user) { router.push('/auth/login'); return }
-
-      // Round header
-      const { data: r, error: rErr } = await supabase
-        .from('rounds')
-        .select(`
-          id,
-          created_at,
-          round_type,
-          course_id,
-          tee_set_id,
-          course:courses ( name ),
-          tee:tee_sets ( name )
-        `)
-        .eq('id', roundId)
-        .single()
-      if (rErr) { alert(`Could not load round: ${rErr.message}`); return }
-      if (!alive) return
-      setRound(r)
-
-      // Hole stats
-      const { data: rh, error: hErr } = await supabase
-        .from('round_holes')
-        .select('*')
-        .eq('round_id', roundId)
-        .order('hole_number', { ascending: true })
-      if (hErr) { alert(`Could not load hole stats: ${hErr.message}`); return }
-      setHoles((rh ?? []).map(row => ({
-        hole_number: row.hole_number,
-        par: row.par,
-        yardage: row.yardage,
-        strokes: row.strokes,
-        putts: row.putts,
-        fairway_hit: row.fairway_hit,
-        gir: row.gir,
-        penalty_strokes: row.penalty_strokes ?? 0,
-      })))
-
-      // ---- SG v2: read per-shot and aggregate ----
-      const { data: sgRows, error: sgErr } = await supabase
-        .from('v_shots_sg_v2')
-        .select('hole:hole, phase, sg_shot')
-        .eq('round_id', roundId)
-
-      const agg: SGAgg = { OTT: 0, APP: 0, ARG: 0, PUTT: 0 }
-      const byHole: Record<number, number> = {}
-
-      if (sgErr) {
-        console.warn('v_shots_sg_v2 error:', sgErr.message)
-      } else if (sgRows && sgRows.length > 0) {
-        sgRows.forEach((row: any) => {
-          const bucket = (row.phase as SGBucket) ?? null
-          const val = Number(row.sg_shot ?? 0)
-          const holeNo = Number(row.hole ?? 0)
-          if (bucket && bucket in agg) agg[bucket] += val
-          if (holeNo) byHole[holeNo] = (byHole[holeNo] ?? 0) + val
-        })
-      } else {
-        // Fallback to MV → fallback view for tiles if no per-shot rows
-        const { data: mvTotals } = await supabase
-          .from('mv_round_sg_totals_v2')
-          .select('*')
-          .eq('round_id', roundId)
-          .maybeSingle()
-
-        let totals = mvTotals
-        if (!totals) {
-          const { data: fbTotals } = await supabase
-            .from('v_round_sg_totals_fallback_v2')
-            .select('*')
-            .eq('round_id', roundId)
-            .maybeSingle()
-          totals = fbTotals
-        }
-        if (totals) {
-          agg.OTT = Number(totals.sg_ott ?? 0)
-          agg.APP = Number(totals.sg_app ?? 0)
-          agg.ARG = Number(totals.sg_arg ?? 0)
-          agg.PUTT = Number(totals.sg_putt ?? 0)
-        }
-      }
-
-      setSgByBucket({
-        OTT: round1(agg.OTT),
-        APP: round1(agg.APP),
-        ARG: round1(agg.ARG),
-        PUTT: round1(agg.PUTT),
-      })
-      setSgTotal(round1(agg.OTT + agg.APP + agg.ARG + agg.PUTT))
-
-      Object.keys(byHole).forEach(k => { byHole[Number(k)] = round2(byHole[Number(k)]) })
-      setSgByHole(byHole)
-      // ---- end SG ----
-
-      setLoading(false)
-    })()
-    return () => { alive = false }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [roundId])
-
-  function round1(n: number) { return Math.round(n * 10) / 10 }
-  function round2(n: number) { return Math.round(n * 100) / 100 }
-
-  const courseName = Array.isArray(round?.course) ? round.course[0]?.name : round?.course?.name
-  const teeName = Array.isArray(round?.tee) ? round.tee[0]?.name : round?.tee?.name
-  const prettyDate = round?.created_at ? new Date(round.created_at).toLocaleDateString() : ''
-
-  const totalPar = holes.reduce((s, h) => s + (Number(h.par) || 0), 0)
-  const totalStrokes = holes.reduce((s, h) => s + (Number(h.strokes) || 0), 0)
-  const totalPutts = holes.reduce((s, h) => s + (Number(h.putts) || 0), 0)
-  const totalPens = holes.reduce((s, h) => s + (Number(h.penalty_strokes) || 0), 0)
-
-  const scoreRel = totalStrokes && totalPar ? totalStrokes - totalPar : 0
-  const scoreBadge = scoreRel === 0 ? 'E' : scoreRel > 0 ? `+${scoreRel}` : `${scoreRel}`
-
-  const firAttempts = holes.filter(h => h.par !== 3).length
-  const firHits = holes.filter(h => h.par !== 3 && h.fairway_hit === true).length
-  const firPct = firAttempts ? Math.round((firHits / firAttempts) * 100) : 0
-
-  const girHits = holes.filter(h => h.gir === true).length
-  const girPct = holes.length ? Math.round((girHits / holes.length) * 100) : 0
-
-  async function deleteRound() {
-    if (!confirm('Delete this round? This cannot be undone.')) return
-    try {
-      setDeleting(true)
-      await supabase.from('shots').delete().eq('round_id', roundId)
-      await supabase.from('round_holes').delete().eq('round_id', roundId)
-      const { error } = await supabase.from('rounds').delete().eq('id', roundId)
-      if (error) throw error
-      router.replace('/rounds')
-    } catch (e: any) {
-      alert(e.message ?? 'Failed to delete round')
-    } finally {
-      setDeleting(false)
-    }
-  }
-
-  if (loading) {
-    return (
-      <div className="mx-auto max-w-5xl p-6">
-        <div className="animate-pulse h-10 w-64 rounded bg-gray-200 mb-4" />
-        <div className="animate-pulse h-24 rounded-2xl bg-gray-200 mb-4" />
-        <div className="animate-pulse h-64 rounded-2xl bg-gray-200" />
-      </div>
+  // Fetch round header info
+  const { data: round, error: roundErr } = await supabase
+    .from("rounds")
+    .select(
+      `id, played_on, notes,
+       player:players(id, first_name, last_name, grad_year),
+       course:courses(id, name),
+       tee:tee_sets(id, name, rating, slope, par)`
     )
+    .eq("id", roundId)
+    .single();
+
+  if (roundErr || !round) {
+    return (
+      <div className="mx-auto max-w-[1100px] p-6">
+        <h1 className="text-2xl font-semibold">Round not found</h1>
+        <p className="text-gray-600 mt-2">{roundErr?.message ?? "We couldn't load that round."}</p>
+        <div className="mt-6">
+          <Link href="/rounds" className="underline">Back to rounds</Link>
+        </div>
+      </div>
+    );
   }
+
+  // Fetch holes
+  const { data: holes, error: holesErr } = await supabase
+    .from("round_holes")
+    .select("hole_number, par, yards, strokes, putts, fir, gir, up_down, sand_save, penalty")
+    .eq("round_id", roundId)
+    .order("hole_number");
+
+  const holeList = holes ?? [];
+
+  // Derive stats
+  const byNine = (start: number, end: number) => holeList.filter(h => h.hole_number >= start && h.hole_number <= end);
+  const front = byNine(1, 9);
+  const back = byNine(10, 18);
+
+  const sum = (arr: (number | null | undefined)[]) => arr.reduce((t, n) => t + (n ?? 0), 0);
+
+  const parFront = sum(front.map(h => h.par));
+  const parBack = sum(back.map(h => h.par));
+  const parTotal = parFront + parBack;
+
+  const strokesFront = sum(front.map(h => h.strokes));
+  const strokesBack = sum(back.map(h => h.strokes));
+  const strokesTotal = strokesFront + strokesBack;
+
+  const puttsTotal = sum(holeList.map(h => h.putts));
+
+  const firOpp = holeList.filter(h => h.par === 4 || h.par === 5).length;
+  const firYes = holeList.filter(h => (h.par === 4 || h.par === 5) && h.fir === true).length;
+  const firPct = firOpp ? Math.round((firYes / firOpp) * 100) : 0;
+
+  const girYes = holeList.filter(h => h.gir === true).length;
+  const girPct = holeList.length ? Math.round((girYes / holeList.length) * 100) : 0;
+
+  const udYes = holeList.filter(h => h.up_down === true).length;
+  const ssYes = holeList.filter(h => h.sand_save === true).length;
+  const penYes = holeList.filter(h => h.penalty === true).length;
+
+  // If any strokes missing, score-to-par is partial; otherwise total
+  const anyMissing = holeList.some(h => h.strokes == null);
+  const scoreToPar = anyMissing ? null : strokesTotal - parTotal;
+  const frontToPar = anyMissing ? null : strokesFront - parFront;
+  const backToPar = anyMissing ? null : strokesBack - parBack;
+
+  const dateStr = round.played_on ? new Date(round.played_on).toLocaleDateString(undefined, { year: 'numeric', month: 'short', day: 'numeric' }) : "";
 
   return (
-    <div className="mx-auto max-w-5xl p-6 space-y-6">
+    <div className="mx-auto max-w-[1100px] p-6 space-y-8">
       {/* Header */}
-      <div className="flex flex-col md:flex-row md:items-end md:justify-between gap-2">
-        <div>
-          <h1 className="text-2xl font-semibold">
-            {courseName || 'Round'} {teeName ? <span className="text-gray-500">• {teeName}</span> : null}
-          </h1>
-          <div className="text-sm text-gray-600">
-            {prettyDate} {round?.round_type ? `• ${round.round_type}` : ''}
+      <div className="rounded-2xl border p-5 shadow-sm bg-white">
+        <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-3">
+          <div>
+            <h1 className="text-2xl font-semibold">{round.player?.first_name} {round.player?.last_name}</h1>
+            <div className="text-gray-600 mt-1">{round.course?.name} — {round.tee?.name}</div>
+            <div className="text-gray-600">{dateStr}</div>
+            <div className="text-gray-500 text-sm mt-1">
+              {round.tee?.rating ? `Rating ${round.tee.rating}` : ""}
+              {round.tee?.slope ? ` • Slope ${round.tee.slope}` : ""}
+              {round.tee?.par ? ` • Par ${round.tee.par}` : ""}
+            </div>
+          </div>
+          <div className="flex items-center gap-2">
+            <Link href={`/rounds/${roundId}/edit`} className="rounded-2xl border px-4 py-2 hover:shadow">Edit</Link>
+            <Link href="/rounds" className="rounded-2xl border px-4 py-2 hover:shadow">All Rounds</Link>
           </div>
         </div>
-        <div className="flex gap-2">
-          <button
-            className="rounded-xl border px-3 py-1.5"
-            onClick={() => router.push(`/rounds/${roundId}/edit`)}
-          >
-            Edit Round
-          </button>
-          <button
-            className="rounded-xl border px-3 py-1.5 text-red-600"
-            onClick={deleteRound}
-            disabled={deleting}
-          >
-            {deleting ? 'Deleting…' : 'Delete'}
-          </button>
-        </div>
+        {round.notes && (
+          <p className="mt-3 text-gray-700 whitespace-pre-wrap">{round.notes}</p>
+        )}
       </div>
 
-      {/* Summary cards */}
-      <div className="grid grid-cols-2 md:grid-cols-6 gap-3">
-        <StatCard label="Score" value={`${totalStrokes || 0} (${scoreBadge})`} />
-        <StatCard label="Par" value={String(totalPar)} />
-        <StatCard label="Putts" value={String(totalPutts || 0)} />
-        <StatCard label="Penalties" value={String(totalPens || 0)} />
-        <StatCard label="FIR" value={`${firHits}/${firAttempts} (${firPct}%)`} />
-        <StatCard label="GIR" value={`${girHits}/18 (${girPct}%)`} />
+      {/* Score Overview */}
+      <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+        <StatCard label="Total" value={strokesTotal || "—"} sub={fmtScoreToPar(scoreToPar)} />
+        <StatCard label="Front 9" value={strokesFront || "—"} sub={fmtScoreToPar(frontToPar)} />
+        <StatCard label="Back 9" value={strokesBack || "—"} sub={fmtScoreToPar(backToPar)} />
       </div>
 
-      {/* SG buckets */}
-      <div className="rounded-2xl border p-4">
-        <div className="mb-3 flex items-center justify-between">
-          <h2 className="font-semibold">Strokes Gained</h2>
-          <div className="text-sm">Total: <b>{sgTotal >= 0 ? `+${sgTotal.toFixed(1)}` : sgTotal.toFixed(1)}</b></div>
-        </div>
-        <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
-          <SGCard label="Off the Tee" value={sgByBucket.OTT} />
-          <SGCard label="Approach" value={sgByBucket.APP} />
-          <SGCard label="Around Green" value={sgByBucket.ARG} />
-          <SGCard label="Putting" value={sgByBucket.PUTT} />
-        </div>
+      {/* Scorecards */}
+      <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+        <Scorecard title="Front 9" holes={front} />
+        <Scorecard title="Back 9" holes={back} />
       </div>
 
-      {/* Per-hole table */}
-      <div className="rounded-2xl border p-4 overflow-x-auto">
-        <table className="w-full text-sm">
+      {/* KPIs */}
+      <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-4">
+        <Kpi label="Putts" value={puttsTotal} />
+        <Kpi label="FIR" value={`${firPct}%`} helper={`${firYes}/${firOpp}`} />
+        <Kpi label="GIR" value={`${girPct}%`} helper={`${girYes}/18`} />
+        <Kpi label="Up & Downs" value={udYes} />
+        <Kpi label="Sand Saves" value={ssYes} />
+        <Kpi label="Penalties" value={penYes} />
+      </div>
+
+      {/* Table: All Holes */}
+      <div className="overflow-x-auto rounded-2xl border">
+        <table className="min-w-[900px] w-full text-sm">
           <thead className="bg-gray-50">
             <tr>
-              <th className="p-2 text-left">Hole</th>
-              <th className="p-2">Par</th>
-              <th className="p-2">Yds</th>
-              <th className="p-2">Strokes</th>
-              <th className="p-2">Putts</th>
-              <th className="p-2">FIR</th>
-              <th className="p-2">GIR</th>
-              <th className="p-2">Pen</th>
-              <th className="p-2">SG (hole)</th>
+              <Th>#</Th>
+              <Th>Par</Th>
+              <Th>Yards</Th>
+              <Th>Strokes</Th>
+              <Th>± Par</Th>
+              <Th>Putts</Th>
+              <Th>FIR</Th>
+              <Th>GIR</Th>
+              <Th>Up&Down</Th>
+              <Th>Sand</Th>
+              <Th>Penalty</Th>
             </tr>
           </thead>
           <tbody>
-            {holes.map(h => (
-              <tr key={h.hole_number} className="odd:bg-white even:bg-gray-50">
-                <td className="p-2 text-left">{h.hole_number}</td>
-                <td className="p-2">{h.par}</td>
-                <td className="p-2">{h.yardage ?? '—'}</td>
-                <td className="p-2">{h.strokes ?? '—'}</td>
-                <td className="p-2">{h.putts ?? '—'}</td>
-                <td className="p-2">{h.par === 3 ? '—' : (h.fairway_hit == null ? '—' : h.fairway_hit ? '✓' : '✗')}</td>
-                <td className="p-2">{h.gir == null ? '—' : h.gir ? '✓' : '✗'}</td>
-                <td className="p-2">{h.penalty_strokes || 0}</td>
-                <td className="p-2">{fmtPlus(sgByHole[h.hole_number] ?? 0)}</td>
-              </tr>
-            ))}
+            {holeList.map((h) => {
+              const delta = h.strokes != null && h.par != null ? (h.strokes - h.par) : null;
+              return (
+                <tr key={h.hole_number} className="border-t">
+                  <Td>{h.hole_number}</Td>
+                  <Td>{h.par ?? "—"}</Td>
+                  <Td>{h.yards ?? "—"}</Td>
+                  <Td>{h.strokes ?? "—"}</Td>
+                  <Td className={delta != null && (delta < 0 ? "text-green-600" : delta > 0 ? "text-red-600" : "")}>{fmtScoreToPar(delta)}</Td>
+                  <Td>{h.putts ?? "—"}</Td>
+                  <Td>{h.par === 4 || h.par === 5 ? (h.fir ? "✓" : "—") : "—"}</Td>
+                  <Td>{h.gir ? "✓" : "—"}</Td>
+                  <Td>{h.up_down ? "✓" : "—"}</Td>
+                  <Td>{h.sand_save ? "✓" : "—"}</Td>
+                  <Td>{h.penalty ? "✓" : "—"}</Td>
+                </tr>
+              );
+            })}
           </tbody>
           <tfoot className="bg-gray-50">
             <tr>
-              <td className="p-2 text-left font-semibold">Totals</td>
-              <td className="p-2 font-semibold">{totalPar}</td>
-              <td className="p-2">—</td>
-              <td className="p-2 font-semibold">{totalStrokes || 0}</td>
-              <td className="p-2 font-semibold">{totalPutts || 0}</td>
-              <td className="p-2 font-semibold">{firHits}/{firAttempts}</td>
-              <td className="p-2 font-semibold">{girHits}/18</td>
-              <td className="p-2 font-semibold">{totalPens || 0}</td>
-              <td className="p-2 font-semibold">{fmtPlus(sgTotal)}</td>
+              <Td colSpan={3} className="font-medium">Totals</Td>
+              <Td className="font-semibold">{strokesTotal || "—"}</Td>
+              <Td className="font-semibold">{fmtScoreToPar(scoreToPar)}</Td>
+              <Td className="font-semibold">{puttsTotal}</Td>
+              <Td className="font-semibold">{`${firYes}/${firOpp}`}</Td>
+              <Td className="font-semibold">{`${girYes}/18`}</Td>
+              <Td className="font-semibold">{udYes}</Td>
+              <Td className="font-semibold">{ssYes}</Td>
+              <Td className="font-semibold">{penYes}</Td>
             </tr>
           </tfoot>
         </table>
       </div>
+
+      {/* Placeholder: Strokes Gained (optional) */}
+      {/* If you already have a view/table for SG totals, we can fetch and render here. */}
     </div>
-  )
+  );
 }
 
-function StatCard({ label, value }: { label: string; value: string }) {
+function StatCard({ label, value, sub }: { label: string; value: number | string; sub?: string }) {
   return (
-    <div className="rounded-2xl border p-4">
-      <div className="text-xs text-gray-500 mb-1">{label}</div>
-      <div className="text-lg font-semibold">{value}</div>
+    <div className="rounded-2xl border p-5 shadow-sm bg-white">
+      <div className="text-sm text-gray-500">{label}</div>
+      <div className="mt-1 text-3xl font-semibold">{value}</div>
+      {sub ? <div className="text-gray-600 mt-1">{sub}</div> : null}
     </div>
-  )
+  );
 }
 
-function SGCard({ label, value }: { label: string; value: number }) {
-  const v = Number.isFinite(value) ? value : 0
+function Kpi({ label, value, helper }: { label: string; value: number | string; helper?: string }) {
   return (
-    <div className="rounded-2xl border p-4">
-      <div className="text-xs text-gray-500 mb-1">{label}</div>
-      <div className={`text-lg font-semibold ${v > 0 ? 'text-emerald-600' : v < 0 ? 'text-red-600' : ''}`}>
-        {fmtPlus(v)}
+    <div className="rounded-2xl border p-4 bg-white">
+      <div className="text-xs text-gray-500">{label}</div>
+      <div className="text-2xl font-semibold">{value}</div>
+      {helper ? <div className="text-xs text-gray-500 mt-1">{helper}</div> : null}
+    </div>
+  );
+}
+
+function Th({ children }: { children: React.ReactNode }) {
+  return <th className="p-3 text-left font-medium text-gray-700">{children}</th>;
+}
+
+function Td({ children, className = "", colSpan }: { children: React.ReactNode; className?: string; colSpan?: number }) {
+  return (
+    <td className={`p-3 ${className}`} colSpan={colSpan}>
+      {children}
+    </td>
+  );
+}
+
+function Scorecard({ title, holes }: { title: string; holes: any[] }) {
+  const sum = (arr: (number | null | undefined)[]) => arr.reduce((t, n) => t + (n ?? 0), 0);
+  const par = sum(holes.map(h => h.par));
+  const strokes = sum(holes.map(h => h.strokes));
+  const delta = holes.some(h => h.strokes == null) ? null : (strokes - par);
+
+  return (
+    <div className="rounded-2xl border shadow-sm bg-white">
+      <div className="flex items-center justify-between p-4 border-b">
+        <div className="font-semibold">{title}</div>
+        <div className="text-sm text-gray-600">{strokes || "—"} ({fmtScoreToPar(delta)})</div>
+      </div>
+      <div className="overflow-x-auto">
+        <table className="min-w-[520px] w-full text-sm">
+          <thead className="bg-gray-50">
+            <tr>
+              <Th></Th>
+              {holes.map(h => (
+                <Th key={`h-${h.hole_number}`}>{h.hole_number}</Th>
+              ))}
+              <Th>Total</Th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr className="border-t">
+              <Td className="font-medium">Par</Td>
+              {holes.map(h => (
+                <Td key={`p-${h.hole_number}`}>{h.par ?? "—"}</Td>
+              ))}
+              <Td className="font-semibold">{par}</Td>
+            </tr>
+            <tr className="border-t">
+              <Td className="font-medium">Strokes</Td>
+              {holes.map(h => (
+                <Td key={`s-${h.hole_number}`}>{h.strokes ?? "—"}</Td>
+              ))}
+              <Td className="font-semibold">{strokes || "—"}</Td>
+            </tr>
+            <tr className="border-t">
+              <Td className="font-medium">± Par</Td>
+              {holes.map(h => {
+                const d = h.strokes != null && h.par != null ? h.strokes - h.par : null;
+                const cls = d != null ? (d < 0 ? "text-green-600" : d > 0 ? "text-red-600" : "") : "";
+                return <Td key={`d-${h.hole_number}`} className={cls}>{fmtScoreToPar(d)}</Td>;
+              })}
+              <Td className="font-semibold">{fmtScoreToPar(delta)}</Td>
+            </tr>
+          </tbody>
+        </table>
       </div>
     </div>
-  )
-}
-
-function fmtPlus(n: number) {
-  const v = Math.round(n * 10) / 10
-  if (v > 0) return `+${v.toFixed(1)}`
-  if (v < 0) return v.toFixed(1)
-  return '0.0'
+  );
 }

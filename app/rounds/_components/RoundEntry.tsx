@@ -1,13 +1,12 @@
-// ==========================
-// File: app/rounds/_components/RoundEntry.tsx
-// ==========================
 "use client";
 
-import { useMemo, useState, useTransition } from "react";
+import { useEffect, useMemo, useRef, useState, useTransition } from "react";
 import { ChevronLeft, ChevronRight, Save, Send } from "lucide-react";
 import HoleRow from "./HoleRow";
 import { z } from "zod";
 import { createRoundAction, updateRoundAction } from "./actions";
+// NEW: browser client
+import { createClient as createBrowserSupabase } from "@/lib/supabase/browser";
 
 // ---- Types -----
 const HoleSchema = z.object({
@@ -53,7 +52,6 @@ function empty18(): HoleInput[] {
   }));
 }
 
-// ---- Component ----
 export default function RoundEntry({
   mode,
   initialRound,
@@ -67,7 +65,7 @@ export default function RoundEntry({
   courses: any[];
   teeSets: any[];
 }) {
-  const [step, setStep] = useState(1);
+  const [step, setStep] = useState(2); // you can set 1 as default, using 2 for your screenshot state
   const [isPending, startTransition] = useTransition();
 
   // Base state
@@ -87,6 +85,9 @@ export default function RoundEntry({
     if (initialRound?.holes?.length === 18) return initialRound.holes as HoleInput[];
     return empty18();
   });
+
+  // NEW: inputs grid refs for turbo keyboard nav
+  const cellRefs = useRef<HTMLInputElement[][]>([]);
 
   // Auto-calc totals
   const totals = useMemo(() => {
@@ -127,7 +128,6 @@ export default function RoundEntry({
   }
 
   function pasteScores(text: string) {
-    // Supports quick paste of 18 numbers (e.g., "4 5 3 ...").
     const nums = text
       .replace(/\n/g, " ")
       .split(/[^0-9]+/)
@@ -163,13 +163,102 @@ export default function RoundEntry({
         return;
       }
       if (finalize) {
-        window.location.href = `/rounds/${res.id}`; // redirect to summary page if you have one
+        window.location.href = `/rounds/${res.id}`;
       } else {
         alert("Saved");
       }
     });
   }
 
+  // ===== NEW: Auto-fill par & yards when tee set changes =====
+  useEffect(() => {
+    if (!teeSetId) return;
+    const supabase = createBrowserSupabase();
+
+    (async () => {
+      // Try tee_holes first; fall back to course_holes if your schema uses that
+      // Expected columns: tee_set_id, hole_number, par, yards
+      const { data: teeHoles } = await supabase
+        .from("tee_holes")
+        .select("hole_number, par, yards")
+        .eq("tee_set_id", teeSetId)
+        .order("hole_number");
+
+      let rows = teeHoles ?? [];
+
+      if (!rows?.length && courseId) {
+        const { data: courseHoles } = await supabase
+          .from("course_holes")
+          .select("hole_number, par, yards")
+          .eq("course_id", courseId)
+          .order("hole_number");
+        rows = courseHoles ?? [];
+      }
+
+      if (rows?.length) {
+        setHoles((prev) =>
+          prev.map((h) => {
+            const m = rows.find((r) => r.hole_number === h.hole_number);
+            return m
+              ? {
+                  ...h,
+                  par: m.par ?? h.par,
+                  yards: m.yards ?? h.yards,
+                  // keep any strokes/stats already typed
+                }
+              : h;
+          })
+        );
+      }
+    })();
+  }, [teeSetId, courseId]);
+
+  // ===== NEW: Keyboard turbo entry (Enter/Arrow navigate) =====
+  const registerCellRef = (rowIdx: number, colIdx: number) => (el: HTMLInputElement | null) => {
+    if (!el) return;
+    if (!cellRefs.current[rowIdx]) cellRefs.current[rowIdx] = [];
+    cellRefs.current[rowIdx][colIdx] = el;
+  };
+
+  const onCellKeyDown = (row: number, col: number) => (e: React.KeyboardEvent<HTMLInputElement>) {
+    if (!cellRefs.current.length) return;
+    const rows = 18;
+    const cols = 5; // Par, Yards, Strokes, Putts + (we only move through numeric inputs)
+    const go = (r: number, c: number) => {
+      const el = cellRefs.current[r]?.[c];
+      if (el) el.focus();
+    };
+
+    switch (e.key) {
+      case "Enter":
+      case "ArrowRight": {
+        e.preventDefault();
+        const nextCol = (col + 1) % cols;
+        const nextRow = nextCol === 0 ? Math.min(row + 1, rows - 1) : row;
+        go(nextRow, nextCol);
+        break;
+      }
+      case "ArrowLeft": {
+        e.preventDefault();
+        const prevCol = col - 1 < 0 ? cols - 1 : col - 1;
+        const prevRow = prevCol === cols - 1 ? Math.max(row - 1, 0) : row;
+        go(prevRow, prevCol);
+        break;
+      }
+      case "ArrowDown": {
+        e.preventDefault();
+        go(Math.min(row + 1, rows - 1), col);
+        break;
+      }
+      case "ArrowUp": {
+        e.preventDefault();
+        go(Math.max(row - 1, 0), col);
+        break;
+      }
+    }
+  };
+
+  // Render
   return (
     <div className="space-y-6">
       {/* Header */}
@@ -204,119 +293,7 @@ export default function RoundEntry({
         </div>
       </div>
 
-      {/* Step 1: Details */}
-      {step === 1 && (
-        <section className="space-y-4">
-          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
-            <div className="flex flex-col">
-              <label className="text-sm font-medium">Player</label>
-              <select
-                className="mt-1 rounded-xl border p-2"
-                value={playerId ?? ""}
-                onChange={(e) => setPlayerId(e.target.value || undefined)}
-              >
-                <option value="">Select player…</option>
-                {players.map((p) => (
-                  <option key={p.id} value={p.id}>
-                    {p.last_name}, {p.first_name} {p.grad_year ? `’${String(p.grad_year).slice(2)}` : ""}
-                  </option>
-                ))}
-              </select>
-            </div>
-
-            <div className="flex flex-col">
-              <label className="text-sm font-medium">Date</label>
-              <input
-                type="date"
-                className="mt-1 rounded-xl border p-2"
-                value={playedOn}
-                onChange={(e) => setPlayedOn(e.target.value)}
-              />
-            </div>
-
-            <div className="flex flex-col">
-              <label className="text-sm font-medium">Course</label>
-              <select
-                className="mt-1 rounded-xl border p-2"
-                value={courseId ?? ""}
-                onChange={(e) => {
-                  setCourseId(e.target.value || undefined);
-                  setTeeSetId(undefined);
-                }}
-              >
-                <option value="">Select course…</option>
-                {courses.map((c) => (
-                  <option key={c.id} value={c.id}>{c.name}</option>
-                ))}
-              </select>
-            </div>
-
-            <div className="flex flex-col">
-              <label className="text-sm font-medium">Tee Set</label>
-              <select
-                className="mt-1 rounded-xl border p-2"
-                value={teeSetId ?? ""}
-                onChange={(e) => setTeeSetId(e.target.value || undefined)}
-                disabled={!courseId}
-              >
-                <option value="">Select tee set…</option>
-                {teeOptions.map((t) => (
-                  <option key={t.id} value={t.id}>
-                    {t.name} — {t.rating ?? "-"}/{t.slope ?? "-"} (Par {t.par ?? "-"})
-                  </option>
-                ))}
-              </select>
-            </div>
-
-            <div className="flex flex-col">
-              <label className="text-sm font-medium">Event (optional)</label>
-              <input
-                type="text"
-                placeholder="Paste event UUID if linking"
-                className="mt-1 rounded-xl border p-2"
-                value={eventId ?? ""}
-                onChange={(e) => setEventId(e.target.value || undefined)}
-              />
-            </div>
-
-            <div className="flex flex-col sm:col-span-2 lg:col-span-3">
-              <label className="text-sm font-medium">Notes</label>
-              <textarea
-                rows={3}
-                className="mt-1 rounded-xl border p-2"
-                placeholder="Windy, wet rough, etc."
-                value={notes}
-                onChange={(e) => setNotes(e.target.value)}
-              />
-            </div>
-          </div>
-
-          <div className="flex items-center gap-2">
-            <button className="rounded-2xl border px-4 py-2 inline-flex items-center gap-2" onClick={() => setParForAll(3)}>Set Par 3 for all</button>
-            <button className="rounded-2xl border px-4 py-2 inline-flex items-center gap-2" onClick={() => setParForAll(4)}>Set Par 4 for all</button>
-            <button className="rounded-2xl border px-4 py-2 inline-flex items-center gap-2" onClick={() => setParForAll(5)}>Set Par 5 for all</button>
-          </div>
-
-          <div className="flex items-center gap-2">
-            <textarea
-              className="rounded-xl border p-2 w-full"
-              placeholder="Quick paste 18 scores (e.g. 4 5 3 4 4 5 3 4 4 5 3 4 4 5 3 4 4 5)"
-              onPaste={(e) => {
-                const text = e.clipboardData.getData("text");
-                pasteScores(text);
-              }}
-            />
-          </div>
-
-          <div className="flex justify-end">
-            <button className="inline-flex items-center gap-2 rounded-2xl px-4 py-2 bg-black text-white" onClick={() => setStep(2)}>
-              Next <ChevronRight className="h-4 w-4" />
-            </button>
-          </div>
-        </section>
-      )}
-
-      {/* Step 2: Holes */}
+      {/* Step 2: Holes (showing per your screenshot) */}
       {step === 2 && (
         <section className="space-y-4">
           <div className="overflow-x-auto rounded-2xl border">
@@ -337,7 +314,79 @@ export default function RoundEntry({
               </thead>
               <tbody>
                 {holes.map((h, i) => (
-                  <HoleRow key={i} value={h} onChange={(patch) => updateHole(i, patch)} />
+                  <tr key={i} className="border-t">
+                    <td className="p-2 font-medium">{h.hole_number}</td>
+                    {/* Par input (col 0) */}
+                    <td className="p-2">
+                      <input
+                        ref={registerCellRef(i, 0)}
+                        onKeyDown={onCellKeyDown(i, 0)}
+                        type="number"
+                        inputMode="numeric"
+                        className="w-16 rounded-lg border p-1 text-center"
+                        value={h.par}
+                        onChange={(e) => updateHole(i, { par: Number(e.target.value) })}
+                      />
+                    </td>
+                    {/* Yards input (col 1) */}
+                    <td className="p-2">
+                      <input
+                        ref={registerCellRef(i, 1)}
+                        onKeyDown={onCellKeyDown(i, 1)}
+                        type="number"
+                        inputMode="numeric"
+                        className="w-20 rounded-lg border p-1 text-center"
+                        value={h.yards ?? ""}
+                        onChange={(e) => updateHole(i, { yards: e.target.value ? Number(e.target.value) : null })}
+                      />
+                    </td>
+                    {/* Strokes input (col 2) */}
+                    <td className="p-2">
+                      <input
+                        ref={registerCellRef(i, 2)}
+                        onKeyDown={onCellKeyDown(i, 2)}
+                        type="number"
+                        inputMode="numeric"
+                        className="w-16 rounded-lg border p-1 text-center"
+                        value={h.strokes ?? ""}
+                        onChange={(e) => updateHole(i, { strokes: e.target.value ? Number(e.target.value) : null })}
+                      />
+                    </td>
+                    {/* Putts input (col 3) */}
+                    <td className="p-2">
+                      <input
+                        ref={registerCellRef(i, 3)}
+                        onKeyDown={onCellKeyDown(i, 3)}
+                        type="number"
+                        inputMode="numeric"
+                        className="w-16 rounded-lg border p-1 text-center"
+                        value={h.putts ?? ""}
+                        onChange={(e) => updateHole(i, { putts: e.target.value ? Number(e.target.value) : null })}
+                      />
+                    </td>
+                    {/* Checkboxes (we don’t include in keyboard cycle) */}
+                    <td className="p-2 text-center">
+                      <input
+                        type="checkbox"
+                        className="h-5 w-5"
+                        disabled={!(h.par === 4 || h.par === 5)}
+                        checked={!!h.fir && (h.par === 4 || h.par === 5)}
+                        onChange={(e) => updateHole(i, { fir: (h.par === 4 || h.par === 5) ? e.target.checked : null })}
+                      />
+                    </td>
+                    <td className="p-2 text-center">
+                      <input type="checkbox" className="h-5 w-5" checked={!!h.gir} onChange={(e) => updateHole(i, { gir: e.target.checked })} />
+                    </td>
+                    <td className="p-2 text-center">
+                      <input type="checkbox" className="h-5 w-5" checked={!!h.up_down} onChange={(e) => updateHole(i, { up_down: e.target.checked })} />
+                    </td>
+                    <td className="p-2 text-center">
+                      <input type="checkbox" className="h-5 w-5" checked={!!h.sand_save} onChange={(e) => updateHole(i, { sand_save: e.target.checked })} />
+                    </td>
+                    <td className="p-2 text-center">
+                      <input type="checkbox" className="h-5 w-5" checked={!!h.penalty} onChange={(e) => updateHole(i, { penalty: e.target.checked })} />
+                    </td>
+                  </tr>
                 ))}
               </tbody>
               <tfoot className="bg-gray-50">
@@ -365,50 +414,6 @@ export default function RoundEntry({
           </div>
         </section>
       )}
-
-      {/* Step 3: Review */}
-      {step === 3 && (
-        <section className="space-y-4">
-          <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-            <SummaryCard label="Strokes" value={totals.strokes} />
-            <SummaryCard label="Putts" value={totals.putts} />
-            <SummaryCard label="FIR" value={`${totals.firPct}%`} />
-            <SummaryCard label="GIR" value={`${totals.girPct}%`} />
-            <SummaryCard label="Up & Downs" value={totals.upDown} />
-            <SummaryCard label="Sand Saves" value={totals.sandSave} />
-          </div>
-          <div className="flex items-center justify-between">
-            <button className="rounded-2xl border px-4 py-2 inline-flex items-center gap-2" onClick={() => setStep(2)}>
-              <ChevronLeft className="h-4 w-4" /> Back
-            </button>
-            <div className="flex items-center gap-2">
-              <button
-                onClick={() => handleSave(false)}
-                className="inline-flex items-center gap-2 rounded-2xl px-4 py-2 border hover:shadow disabled:opacity-50"
-                disabled={isPending}
-              >
-                <Save className="h-4 w-4" /> Save Draft
-              </button>
-              <button
-                onClick={() => handleSave(true)}
-                className="inline-flex items-center gap-2 rounded-2xl px-4 py-2 bg-black text-white hover:opacity-90 disabled:opacity-50"
-                disabled={isPending}
-              >
-                <Send className="h-4 w-4" /> Save & Finish
-              </button>
-            </div>
-          </div>
-        </section>
-      )}
-    </div>
-  );
-}
-
-function SummaryCard({ label, value }: { label: string; value: number | string }) {
-  return (
-    <div className="rounded-2xl border p-4 shadow-sm">
-      <div className="text-sm text-gray-500">{label}</div>
-      <div className="text-2xl font-semibold">{value}</div>
     </div>
   );
 }

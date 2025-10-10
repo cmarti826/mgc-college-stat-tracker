@@ -220,10 +220,15 @@ export default function RoundEntry({
     cellRefs.current[rowIdx][colIdx] = el;
   };
 
-  const onCellKeyDown = (row: number, col: number) => (e: React.KeyboardEvent<HTMLInputElement>) {
+  // Replace this whole function
+const onCellKeyDown =
+  (row: number, col: number) =>
+  (e: React.KeyboardEvent<HTMLInputElement>) => {
     if (!cellRefs.current.length) return;
+
     const rows = 18;
-    const cols = 5; // Par, Yards, Strokes, Putts + (we only move through numeric inputs)
+    const cols = 5; // Par, Yards, Strokes, Putts (we only cycle numeric inputs)
+
     const go = (r: number, c: number) => {
       const el = cellRefs.current[r]?.[c];
       if (el) el.focus();
@@ -257,6 +262,7 @@ export default function RoundEntry({
       }
     }
   };
+
 
   // Render
   return (

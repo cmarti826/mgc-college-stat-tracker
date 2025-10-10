@@ -2,8 +2,8 @@
 
 import { useEffect, useMemo, useRef, useState, useTransition } from "react";
 import { ChevronLeft, ChevronRight, Save, Send } from "lucide-react";
-import HoleRow from "./HoleRow";
 import { z } from "zod";
+import HoleRow from "./HoleRow";
 import { createRoundAction, updateRoundAction } from "./actions";
 import { createClient as createBrowserSupabase } from "@/lib/supabase/browser";
 
@@ -50,6 +50,81 @@ function empty18(): HoleInput[] {
     penalty: null,
   }));
 }
+
+// B1) ---------- Auto-fill helpers ----------
+async function fetchHoleDefs(
+  supabase: ReturnType<typeof createBrowserSupabase>,
+  teeSetId?: string,
+  courseId?: string
+): Promise<Array<{ hole_number: number; par: number | null; yards: number | null }>> {
+  const tries: Array<() => Promise<{ data?: any[] | null }>> = [];
+
+  if (teeSetId) {
+    // Most common tee-based tables
+    tries.push(
+      () =>
+        supabase
+          .from("tee_holes")
+          .select("hole_number, par, yards")
+          .eq("tee_set_id", teeSetId)
+          .order("hole_number"),
+      () =>
+        supabase
+          .from("course_tee_holes")
+          .select("hole_number, par, yards")
+          .eq("tee_set_id", teeSetId)
+          .order("hole_number"),
+      () =>
+        supabase
+          .from("tee_boxes_holes")
+          .select("hole_number, par, yards")
+          .eq("tee_set_id", teeSetId)
+          .order("hole_number")
+    );
+  }
+
+  if (courseId) {
+    // Course fallbacks
+    tries.push(
+      () =>
+        supabase
+          .from("course_holes")
+          .select("hole_number, par, yards")
+          .eq("course_id", courseId)
+          .order("hole_number"),
+      () =>
+        supabase
+          .from("holes")
+          .select("hole_number, par, yards")
+          .eq("course_id", courseId)
+          .order("hole_number")
+    );
+  }
+
+  for (const fn of tries) {
+    const { data } = await fn();
+    if (data && data.length) return data as any[];
+  }
+  return [];
+}
+
+function applyHoleDefs(
+  current: HoleInput[],
+  defs: Array<{ hole_number: number; par: number | null; yards: number | null }>
+): HoleInput[] {
+  if (!defs.length) return current;
+  const map = new Map(defs.map((d) => [d.hole_number, d]));
+  return current.map((h) => {
+    const m = map.get(h.hole_number);
+    if (!m) return h;
+    return {
+      ...h,
+      par: m.par ?? h.par,
+      yards: m.yards ?? h.yards,
+    };
+  });
+}
+// ------------------------------------------
 
 export default function RoundEntry({
   mode,
@@ -169,47 +244,19 @@ export default function RoundEntry({
     });
   }
 
-  // ===== Auto-fill par & yards when tee set changes =====
+  // B2) ---------- Auto-fill when tee or course changes ----------
   useEffect(() => {
-    if (!teeSetId) return;
     const supabase = createBrowserSupabase();
-
     (async () => {
-      const { data: teeHoles } = await supabase
-        .from("tee_holes")
-        .select("hole_number, par, yards")
-        .eq("tee_set_id", teeSetId)
-        .order("hole_number");
-
-      let rows = teeHoles ?? [];
-
-      if (!rows?.length && courseId) {
-        const { data: courseHoles } = await supabase
-          .from("course_holes")
-          .select("hole_number, par, yards")
-          .eq("course_id", courseId)
-          .order("hole_number");
-        rows = courseHoles ?? [];
-      }
-
-      if (rows?.length) {
-        setHoles((prev) =>
-          prev.map((h) => {
-            const m = rows.find((r) => r.hole_number === h.hole_number);
-            return m
-              ? {
-                  ...h,
-                  par: m.par ?? h.par,
-                  yards: m.yards ?? h.yards,
-                }
-              : h;
-          })
-        );
+      const defs = await fetchHoleDefs(supabase, teeSetId, courseId);
+      if (defs.length) {
+        setHoles((prev) => applyHoleDefs(prev, defs));
       }
     })();
   }, [teeSetId, courseId]);
+  // -------------------------------------------------------------
 
-  // ===== Keyboard turbo entry =====
+  // Keyboard turbo entry
   const registerCellRef = (rowIdx: number, colIdx: number) => (el: HTMLInputElement | null) => {
     if (!el) return;
     if (!cellRefs.current[rowIdx]) cellRefs.current[rowIdx] = [];
@@ -362,6 +409,24 @@ export default function RoundEntry({
                   </option>
                 ))}
               </select>
+
+              {/* B3) Manual auto-fill button */}
+              <button
+                type="button"
+                className="mt-2 inline-flex items-center rounded-xl border px-3 py-1 text-sm hover:shadow disabled:opacity-50"
+                onClick={async () => {
+                  const supabase = createBrowserSupabase();
+                  const defs = await fetchHoleDefs(supabase, teeSetId, courseId);
+                  if (!defs.length) {
+                    alert("No per-hole data found for this tee/course. You can still type or paste values.");
+                    return;
+                  }
+                  setHoles((prev) => applyHoleDefs(prev, defs));
+                }}
+                disabled={!teeSetId && !courseId}
+              >
+                Auto-fill holes from course/tee
+              </button>
             </div>
 
             <div className="flex flex-col">
@@ -417,6 +482,7 @@ export default function RoundEntry({
         <section className="space-y-4">
           <div className="overflow-x-auto rounded-2xl border">
             <table className="min-w-[900px] w-full text-sm">
+              {/* Use sticky top-0 so it stays aligned */}
               <thead className="bg-gray-50 sticky top-0 z-10">
                 <tr>
                   <th className="p-3 text-left">#</th>
@@ -532,7 +598,7 @@ export default function RoundEntry({
       {/* Step 3: Review */}
       {step === 3 && (
         <section className="space-y-4">
-          {/* (same as before) */}
+          {/* (Use your existing review cards/totals here if you had them) */}
           <div className="flex items-center justify-between">
             <button className="rounded-2xl border px-4 py-2 inline-flex items-center gap-2" onClick={() => setStep(2)}>
               <ChevronLeft className="h-4 w-4" /> Back

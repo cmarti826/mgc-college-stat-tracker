@@ -8,11 +8,17 @@ function fmtScoreToPar(delta: number | null) {
   return delta > 0 ? `+${delta}` : `${delta}`;
 }
 
+type MaybeArray<T> = T | T[] | null | undefined;
+function one<T>(v: MaybeArray<T>): T | null {
+  if (!v) return null;
+  return Array.isArray(v) ? (v[0] ?? null) : v;
+}
+
 export default async function RoundSummaryPage({ params }: { params: { id: string } }) {
   const supabase = createClient();
   const roundId = params.id;
 
-  // Fetch round header info
+  // Fetch round header info (relations may come back as arrays depending on FK config)
   const { data: round, error: roundErr } = await supabase
     .from("rounds")
     .select(
@@ -37,6 +43,11 @@ export default async function RoundSummaryPage({ params }: { params: { id: strin
       </div>
     );
   }
+
+  // Normalize relations to single objects
+  const player = one<{ id: string; first_name: string; last_name: string; grad_year: number | null }>(round.player);
+  const course = one<{ id: string; name: string }>(round.course);
+  const tee = one<{ id: string; name: string; rating: number | null; slope: number | null; par: number | null }>(round.tee);
 
   // Fetch holes
   const { data: holes } = await supabase
@@ -98,16 +109,16 @@ export default async function RoundSummaryPage({ params }: { params: { id: strin
         <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-3">
           <div>
             <h1 className="text-2xl font-semibold">
-              {round.player?.first_name} {round.player?.last_name}
+              {player ? `${player.first_name} ${player.last_name}` : "Unknown Player"}
             </h1>
             <div className="text-gray-600 mt-1">
-              {round.course?.name} — {round.tee?.name}
+              {(course?.name ?? "Unknown Course")} — {(tee?.name ?? "Tee")}
             </div>
             <div className="text-gray-600">{dateStr}</div>
             <div className="text-gray-500 text-sm mt-1">
-              {round.tee?.rating ? `Rating ${round.tee.rating}` : ""}
-              {round.tee?.slope ? ` • Slope ${round.tee.slope}` : ""}
-              {round.tee?.par ? ` • Par ${round.tee.par}` : ""}
+              {tee?.rating ? `Rating ${tee.rating}` : ""}
+              {tee?.slope ? ` • Slope ${tee.slope}` : ""}
+              {tee?.par ? ` • Par ${tee.par}` : ""}
             </div>
           </div>
           <div className="flex items-center gap-2">
@@ -305,10 +316,8 @@ function Scorecard({ title, holes }: { title: string; holes: any[] }) {
             <tr className="border-t">
               <Td className="font-medium">± Par</Td>
               {holes.map((h) => {
-                const d =
-                  h.strokes != null && h.par != null ? h.strokes - h.par : null;
-                const cls =
-                  d != null ? (d < 0 ? "text-green-600" : d > 0 ? "text-red-600" : "") : "";
+                const d = h.strokes != null && h.par != null ? h.strokes - h.par : null;
+                const cls = d != null ? (d < 0 ? "text-green-600" : d > 0 ? "text-red-600" : "") : "";
                 return (
                   <Td key={`d-${h.hole_number}`} className={cls}>
                     {fmtScoreToPar(d)}

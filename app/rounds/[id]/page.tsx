@@ -251,9 +251,10 @@ function Kpi({ label, value, helper }: { label: string; value: number | string; 
   );
 }
 
-function Th({ children }: { children: React.ReactNode }) {
+function Th({ children }: { children?: React.ReactNode }) {
   return <th className="p-3 text-left font-medium text-gray-700">{children}</th>;
 }
+
 
 function Td({
   children,

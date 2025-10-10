@@ -18,11 +18,11 @@ export default async function RoundSummaryPage({ params }: { params: { id: strin
   const supabase = createClient();
   const roundId = params.id;
 
+  // Use * to avoid breaking if the column name differs
   const { data: round, error: roundErr } = await supabase
     .from("rounds")
     .select(`
-      id,
-      played_on:date,
+      *,
       player:players(*),
       course:courses(id, name),
       tee:tees(id, name, rating, slope, par)
@@ -42,12 +42,14 @@ export default async function RoundSummaryPage({ params }: { params: { id: strin
     );
   }
 
+  // Normalize date field: prefer `date`, fallback to `played_on`
+  const roundDateRaw = (round as any).date ?? (round as any).played_on ?? null;
+
   const player = one<any>(round.player);
   const course = one<{ id: string; name: string }>(round.course);
   const tee = one<{ id: string; name: string; rating: number | null; slope: number | null; par: number | null }>(round.tee);
 
-  const playerName =
-    player?.full_name ?? player?.name ?? player?.display_name ?? "Unknown Player";
+  const playerName = player?.full_name ?? player?.name ?? player?.display_name ?? "Unknown Player";
 
   const { data: holes } = await supabase
     .from("round_holes")
@@ -104,8 +106,8 @@ export default async function RoundSummaryPage({ params }: { params: { id: strin
   const frontToPar = anyMissing ? null : strokesFront - parFront;
   const backToPar = anyMissing ? null : strokesBack - parBack;
 
-  const dateStr = round.played_on
-    ? new Date(round.played_on).toLocaleDateString(undefined, {
+  const dateStr = roundDateRaw
+    ? new Date(roundDateRaw).toLocaleDateString(undefined, {
         year: "numeric",
         month: "short",
         day: "numeric",

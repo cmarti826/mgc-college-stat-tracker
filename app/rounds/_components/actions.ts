@@ -21,8 +21,9 @@ const RoundSchema = z.object({
   player_id: z.string().uuid(),
   course_id: z.string().uuid(),
   tee_id: z.string().uuid(),
-  date: z.string(), // <-- use DB column `date`
-  // leave these optional; we won't write unless you add them later
+  // UI sends a date string; backend maps it to the right column (date OR played_on)
+  date: z.string(),
+  // Optional in payload; we skip writing unless you add these columns
   notes: z.string().optional().nullable(),
   event_id: z.string().uuid().nullable().optional(),
   holes: z.array(HoleSchema).length(18),
@@ -30,31 +31,85 @@ const RoundSchema = z.object({
 
 export type RoundPayload = z.infer<typeof RoundSchema>;
 
+// Helper: insert round tolerant to column name
+async function insertRoundTolerant(
+  supabase: ReturnType<typeof createClient>,
+  payload: RoundPayload
+): Promise<{ id?: string; error?: string }> {
+  // First attempt: assume column is `date`
+  const baseRow: Record<string, any> = {
+    player_id: payload.player_id,
+    course_id: payload.course_id,
+    tee_id: payload.tee_id,
+  };
+
+  // Try writing with `date`
+  let { data, error } = await supabase
+    .from("rounds")
+    .insert({ ...baseRow, date: payload.date })
+    .select("id")
+    .single();
+
+  if (error && /column .*date.* does not exist|schema cache/i.test(error.message)) {
+    // Retry with `played_on`
+    const retry = await supabase
+      .from("rounds")
+      .insert({ ...baseRow, played_on: payload.date })
+      .select("id")
+      .single();
+
+    if (retry.error) return { error: retry.error.message };
+    return { id: retry.data?.id };
+  }
+
+  if (error) return { error: error.message };
+  return { id: data?.id };
+}
+
+// Helper: update round tolerant to column name
+async function updateRoundTolerant(
+  supabase: ReturnType<typeof createClient>,
+  payload: RoundPayload
+): Promise<{ error?: string }> {
+  const baseRow: Record<string, any> = {
+    player_id: payload.player_id,
+    course_id: payload.course_id,
+    tee_id: payload.tee_id,
+  };
+
+  // Try with `date`
+  let { error } = await supabase
+    .from("rounds")
+    .update({ ...baseRow, date: payload.date })
+    .eq("id", payload.id as string);
+
+  if (error && /column .*date.* does not exist|schema cache/i.test(error.message)) {
+    // Retry with `played_on`
+    const retry = await supabase
+      .from("rounds")
+      .update({ ...baseRow, played_on: payload.date })
+      .eq("id", payload.id as string);
+
+    if (retry.error) return { error: retry.error.message };
+    return {};
+  }
+
+  if (error) return { error: error.message };
+  return {};
+}
+
 export async function createRoundAction(payload: RoundPayload) {
   const supabase = createClient();
 
   const parsed = RoundSchema.safeParse(payload);
   if (!parsed.success) return { error: "Invalid round payload" };
 
-  const roundRow: Record<string, any> = {
-    player_id: payload.player_id,
-    course_id: payload.course_id,
-    tee_id: payload.tee_id,
-    date: payload.date, // <-- write to `date`
-    // notes: payload.notes ?? null,
-    // event_id: payload.event_id ?? null,
-  };
+  const ins = await insertRoundTolerant(supabase, payload);
+  if (ins.error || !ins.id) return { error: ins.error ?? "Failed to create round" };
 
-  const { data: round, error } = await supabase
-    .from("rounds")
-    .insert(roundRow)
-    .select("id")
-    .single();
-
-  if (error) return { error: error.message };
-
+  // Now insert 18 holes
   const rows = payload.holes.map((h) => ({
-    round_id: round!.id,
+    round_id: ins.id!,
     hole_number: h.hole_number,
     par: h.par,
     yards: h.yards,
@@ -70,25 +125,17 @@ export async function createRoundAction(payload: RoundPayload) {
   const { error: holesErr } = await supabase.from("round_holes").insert(rows);
   if (holesErr) return { error: holesErr.message };
 
-  return { id: round!.id };
+  return { id: ins.id };
 }
 
 export async function updateRoundAction(payload: RoundPayload) {
   const supabase = createClient();
   if (!payload.id) return { error: "Missing round id" };
 
-  const roundRow: Record<string, any> = {
-    player_id: payload.player_id,
-    course_id: payload.course_id,
-    tee_id: payload.tee_id,
-    date: payload.date, // <-- write to `date`
-    // notes: payload.notes ?? null,
-    // event_id: payload.event_id ?? null,
-  };
+  const upd = await updateRoundTolerant(supabase, payload);
+  if (upd.error) return { error: upd.error };
 
-  const { error } = await supabase.from("rounds").update(roundRow).eq("id", payload.id);
-  if (error) return { error: error.message };
-
+  // Replace holes
   await supabase.from("round_holes").delete().eq("round_id", payload.id);
 
   const rows = payload.holes.map((h) => ({

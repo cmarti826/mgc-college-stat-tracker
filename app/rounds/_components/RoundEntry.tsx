@@ -6,6 +6,7 @@ import { z } from "zod";
 import { createRoundAction, updateRoundAction } from "./actions";
 import { createClient as createBrowserSupabase } from "@/lib/supabase/browser";
 
+/* ----------------------- Zod types ----------------------- */
 const HoleSchema = z.object({
   hole_number: z.number(),
   par: z.number().min(3).max(6),
@@ -23,8 +24,8 @@ const RoundSchema = z.object({
   id: z.string().uuid().optional(),
   player_id: z.string().uuid(),
   course_id: z.string().uuid(),
-  tee_id: z.string().uuid(),         // ← schema-aligned
-  played_on: z.string(),
+  tee_id: z.string().uuid(), // matches DB
+  date: z.string(), // matches DB (we’ll alias to played_on on the show page)
   notes: z.string().optional().nullable(),
   event_id: z.string().uuid().nullable().optional(),
   holes: z.array(HoleSchema).length(18),
@@ -33,6 +34,7 @@ const RoundSchema = z.object({
 export type HoleInput = z.infer<typeof HoleSchema>;
 export type RoundInput = z.infer<typeof RoundSchema>;
 
+/* ----------------------- Helpers ----------------------- */
 function empty18(): HoleInput[] {
   return Array.from({ length: 18 }, (_, i) => ({
     hole_number: i + 1,
@@ -48,31 +50,41 @@ function empty18(): HoleInput[] {
   }));
 }
 
-// --- Auto-fill helpers (uses your holes table: tee_id + number/par/yards) ---
+// Try to load per-hole defs from your schema.
+// Prefers: holes by tee_id (alias number->hole_number), then holes by course_id.
 async function fetchHoleDefs(
   supabase: ReturnType<typeof createBrowserSupabase>,
   teeId?: string,
   courseId?: string
 ): Promise<Array<{ hole_number: number; par: number | null; yards: number | null }>> {
-  const trySelect = async (table: string, whereCol: string, whereVal: string, selectExpr: string, orderCol: string) => {
-    const { data, error } = await supabase.from(table).select(selectExpr).eq(whereCol, whereVal).order(orderCol);
+  const trySelect = async (
+    table: string,
+    whereCol: string,
+    whereVal: string,
+    selectExpr: string,
+    orderCol: string
+  ) => {
+    const { data, error } = await supabase
+      .from(table)
+      .select(selectExpr)
+      .eq(whereCol, whereVal)
+      .order(orderCol);
     if (error) return null;
     return (data ?? []) as any[];
   };
 
   if (teeId) {
-    // holes by tee_id; alias number→hole_number
-    let d =
+    const byTee =
       (await trySelect("holes", "tee_id", teeId, "hole_number:number, par, yards", "number")) ??
       (await trySelect("holes", "tee_id", teeId, "hole_number, par, yards", "hole_number"));
-    if (d && d.length) return d;
+    if (byTee && byTee.length) return byTee;
   }
 
   if (courseId) {
-    let d =
+    const byCourse =
       (await trySelect("holes", "course_id", courseId, "hole_number:number, par, yards", "number")) ??
       (await trySelect("holes", "course_id", courseId, "hole_number, par, yards", "hole_number"));
-    if (d && d.length) return d;
+    if (byCourse && byCourse.length) return byCourse;
   }
 
   return [];
@@ -91,33 +103,40 @@ function applyHoleDefs(
   });
 }
 
-// --- Component ---
+/* ----------------------- Component ----------------------- */
 export default function RoundEntry({
   mode,
   initialRound,
   players,
   courses,
-  teeSets, // from DB: tees
+  teeSets, // array from either `tees` or `tee_sets`, normalized by the server page
 }: {
   mode: "create" | "edit";
   initialRound: null | { round: any; holes: HoleInput[] };
   players: any[];
   courses: any[];
-  teeSets: any[]; // tees
+  teeSets: any[];
 }) {
   const [step, setStep] = useState(1);
   const [isPending, startTransition] = useTransition();
 
+  // Base form
   const [playerId, setPlayerId] = useState<string | undefined>(initialRound?.round?.player_id);
   const [courseId, setCourseId] = useState<string | undefined>(initialRound?.round?.course_id);
   const [teeId, setTeeId] = useState<string | undefined>(initialRound?.round?.tee_id);
-  const [playedOn, setPlayedOn] = useState<string>(initialRound?.round?.played_on ?? new Date().toISOString().slice(0, 10));
+  const [roundDate, setRoundDate] = useState<string>(
+    initialRound?.round?.date ?? new Date().toISOString().slice(0, 10)
+  );
   const [notes, setNotes] = useState<string>(initialRound?.round?.notes ?? "");
   const [eventId, setEventId] = useState<string | undefined>(initialRound?.round?.event_id ?? undefined);
 
+  // Dependent options
   const teeOptions = useMemo(() => teeSets.filter((t) => t.course_id === courseId), [teeSets, courseId]);
 
-  const [holes, setHoles] = useState<HoleInput[]>(() => (initialRound?.holes?.length === 18 ? initialRound.holes : empty18()));
+  // Holes state
+  const [holes, setHoles] = useState<HoleInput[]>(
+    initialRound?.holes?.length === 18 ? (initialRound.holes as HoleInput[]) : empty18()
+  );
 
   // Totals
   const totals = useMemo(() => {
@@ -125,12 +144,12 @@ export default function RoundEntry({
       (acc, h) => {
         acc.strokes += h.strokes ?? 0;
         acc.putts += h.putts ?? 0;
-        if (h.fir === true && (h.par === 4 || h.par === 5)) acc.firYes += 1;
+        if ((h.par === 4 || h.par === 5) && h.fir) acc.firYes += 1;
         if (h.par === 4 || h.par === 5) acc.firOpp += 1;
-        if (h.gir === true) acc.girYes += 1;
+        if (h.gir) acc.girYes += 1;
         acc.girOpp += 1;
-        if (h.up_down === true) acc.udYes += 1;
-        if (h.sand_save === true) acc.ssYes += 1;
+        if (h.up_down) acc.udYes += 1;
+        if (h.sand_save) acc.ssYes += 1;
         return acc;
       },
       { strokes: 0, putts: 0, firYes: 0, firOpp: 0, girYes: 0, girOpp: 0, udYes: 0, ssYes: 0 }
@@ -145,40 +164,37 @@ export default function RoundEntry({
     };
   }, [holes]);
 
-  function updateHole(idx: number, patch: Partial<HoleInput>) {
+  // Mutators
+  const updateHole = (idx: number, patch: Partial<HoleInput>) =>
     setHoles((prev) => {
       const next = [...prev];
       next[idx] = { ...next[idx], ...patch };
       return next;
     });
-  }
 
-  function setParForAll(par: number) {
-    setHoles((prev) => prev.map((h) => ({ ...h, par })));
-  }
+  const setParForAll = (par: number) => setHoles((prev) => prev.map((h) => ({ ...h, par })));
 
-  function pasteScores(text: string) {
+  const pasteScores = (text: string) => {
     const nums = text.replace(/\n/g, " ").split(/[^0-9]+/).filter(Boolean).map(Number);
-    if (nums.length >= 18) {
-      setHoles((prev) => prev.map((h, i) => ({ ...h, strokes: nums[i] ?? h.strokes })));
-    }
-  }
+    if (nums.length >= 18) setHoles((prev) => prev.map((h, i) => ({ ...h, strokes: nums[i] ?? h.strokes })));
+  };
 
+  // Save
   async function handleSave(finalize: boolean) {
     const payload: RoundInput = {
       id: initialRound?.round?.id,
       player_id: playerId!,
       course_id: courseId!,
-      tee_id: teeId!,            // ← key is tee_id
-      played_on: playedOn,
-      notes: notes || null,      // harmless if column exists; ignored by action otherwise
-      event_id: eventId ?? null, // harmless if column exists; ignored by action otherwise
+      tee_id: teeId!,
+      date: roundDate,
+      notes: notes || null, // harmless if column absent (action ignores)
+      event_id: eventId ?? null, // harmless if column absent (action ignores)
       holes,
     };
 
     const parsed = RoundSchema.safeParse(payload);
     if (!parsed.success) {
-      alert("Please complete required fields (player, course, tee, date) and 18 holes.");
+      alert("Please complete player, date, course, tee and ensure 18 holes are present.");
       return;
     }
 
@@ -193,7 +209,7 @@ export default function RoundEntry({
     });
   }
 
-  // Auto-fill on tee/course change
+  // Auto-fill par & yards when tee/course changes
   useEffect(() => {
     const supabase = createBrowserSupabase();
     (async () => {
@@ -213,30 +229,66 @@ export default function RoundEntry({
     (row: number, col: number) =>
     (e: React.KeyboardEvent<HTMLInputElement>) => {
       if (!cellRefs.current.length) return;
+
       const rows = 18;
       const cols = 4; // Par, Yards, Strokes, Putts
-      const go = (r: number, c: number) => cellRefs.current[r]?.[c]?.focus();
+
+      const go = (r: number, c: number) => {
+        const el = cellRefs.current[r]?.[c];
+        if (el) el.focus();
+      };
+
       switch (e.key) {
         case "Enter":
-        case "ArrowRight": e.preventDefault(); go((col + 1) % cols === 0 ? Math.min(row + 1, rows - 1) : row, (col + 1) % cols); break;
-        case "ArrowLeft": e.preventDefault(); go(col - 1 < 0 ? Math.max(row - 1, 0) : row, col - 1 < 0 ? cols - 1 : col - 1); break;
-        case "ArrowDown": e.preventDefault(); go(Math.min(row + 1, rows - 1), col); break;
-        case "ArrowUp": e.preventDefault(); go(Math.max(row - 1, 0), col); break;
+        case "ArrowRight": {
+          e.preventDefault();
+          const nextCol = (col + 1) % cols;
+          const nextRow = nextCol === 0 ? Math.min(row + 1, rows - 1) : row;
+          go(nextRow, nextCol);
+          break;
+        }
+        case "ArrowLeft": {
+          e.preventDefault();
+          const prevCol = col - 1 < 0 ? cols - 1 : col - 1;
+          const prevRow = prevCol === cols - 1 ? Math.max(row - 1, 0) : row;
+          go(prevRow, prevCol);
+          break;
+        }
+        case "ArrowDown": {
+          e.preventDefault();
+          go(Math.min(row + 1, rows - 1), col);
+          break;
+        }
+        case "ArrowUp": {
+          e.preventDefault();
+          go(Math.max(row - 1, 0), col);
+          break;
+        }
       }
     };
 
   return (
     <div className="space-y-6">
-      {/* Header */}
+      {/* Sticky header + actions */}
       <div className="sticky top-0 z-10 bg-white/80 backdrop-blur border-b p-4 rounded-xl shadow-sm">
         <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
           <h1 className="text-2xl font-semibold">{mode === "create" ? "New Round" : "Edit Round"}</h1>
           <div className="flex items-center gap-2">
-            <button onClick={() => handleSave(false)} className="inline-flex items-center gap-2 rounded-2xl px-4 py-2 border hover:shadow disabled:opacity-50" disabled={isPending}>
-              <Save className="h-4 w-4" /> Save Draft
+            <button
+              onClick={() => handleSave(false)}
+              className="inline-flex items-center gap-2 rounded-2xl px-4 py-2 border hover:shadow disabled:opacity-50"
+              disabled={isPending}
+            >
+              <Save className="h-4 w-4" />
+              Save Draft
             </button>
-            <button onClick={() => handleSave(true)} className="inline-flex items-center gap-2 rounded-2xl px-4 py-2 bg-black text-white hover:opacity-90 disabled:opacity-50" disabled={isPending}>
-              <Send className="h-4 w-4" /> Save & Finish
+            <button
+              onClick={() => handleSave(true)}
+              className="inline-flex items-center gap-2 rounded-2xl px-4 py-2 bg-black text-white hover:opacity-90 disabled:opacity-50"
+              disabled={isPending}
+            >
+              <Send className="h-4 w-4" />
+              Save & Finish
             </button>
           </div>
         </div>
@@ -255,35 +307,59 @@ export default function RoundEntry({
       {step === 1 && (
         <section className="space-y-4">
           <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
+            {/* Player */}
             <div className="flex flex-col">
               <label className="text-sm font-medium">Player</label>
-              <select className="mt-1 rounded-xl border p-2" value={playerId ?? ""} onChange={(e) => setPlayerId(e.target.value || undefined)}>
+              <select
+                className="mt-1 rounded-xl border p-2"
+                value={playerId ?? ""}
+                onChange={(e) => setPlayerId(e.target.value || undefined)}
+              >
                 <option value="">Select player…</option>
                 {players.map((p) => {
                   const label = p.full_name ?? p.name ?? p.display_name ?? "Player";
                   const gy = p.grad_year ? ` ’${String(p.grad_year).slice(2)}` : "";
-                  return <option key={p.id} value={p.id}>{`${label}${gy}`}</option>;
+                  return (
+                    <option key={p.id} value={p.id}>
+                      {`${label}${gy}`}
+                    </option>
+                  );
                 })}
               </select>
             </div>
 
+            {/* Date */}
             <div className="flex flex-col">
               <label className="text-sm font-medium">Date</label>
-              <input type="date" className="mt-1 rounded-xl border p-2" value={playedOn} onChange={(e) => setPlayedOn(e.target.value)} />
+              <input
+                type="date"
+                className="mt-1 rounded-xl border p-2"
+                value={roundDate}
+                onChange={(e) => setRoundDate(e.target.value)}
+              />
             </div>
 
+            {/* Course */}
             <div className="flex flex-col">
               <label className="text-sm font-medium">Course</label>
               <select
                 className="mt-1 rounded-xl border p-2"
                 value={courseId ?? ""}
-                onChange={(e) => { setCourseId(e.target.value || undefined); setTeeId(undefined); }}
+                onChange={(e) => {
+                  setCourseId(e.target.value || undefined);
+                  setTeeId(undefined);
+                }}
               >
                 <option value="">Select course…</option>
-                {courses.map((c) => <option key={c.id} value={c.id}>{c.name}</option>)}
+                {courses.map((c) => (
+                  <option key={c.id} value={c.id}>
+                    {c.name}
+                  </option>
+                ))}
               </select>
             </div>
 
+            {/* Tee */}
             <div className="flex flex-col">
               <label className="text-sm font-medium">Tee</label>
               <select
@@ -306,7 +382,10 @@ export default function RoundEntry({
                 onClick={async () => {
                   const supabase = createBrowserSupabase();
                   const defs = await fetchHoleDefs(supabase, teeId, courseId);
-                  if (!defs.length) { alert("No per-hole data found for this tee/course."); return; }
+                  if (!defs.length) {
+                    alert("No per-hole data found for this tee/course. You can still type or paste values.");
+                    return;
+                  }
                   setHoles((prev) => applyHoleDefs(prev, defs));
                 }}
                 disabled={!teeId && !courseId}
@@ -315,33 +394,60 @@ export default function RoundEntry({
               </button>
             </div>
 
+            {/* Event (optional) */}
             <div className="flex flex-col">
               <label className="text-sm font-medium">Event (optional)</label>
-              <input type="text" placeholder="Paste event UUID if linking" className="mt-1 rounded-xl border p-2" value={eventId ?? ""} onChange={(e) => setEventId(e.target.value || undefined)} />
+              <input
+                type="text"
+                placeholder="Paste event UUID if linking"
+                className="mt-1 rounded-xl border p-2"
+                value={eventId ?? ""}
+                onChange={(e) => setEventId(e.target.value || undefined)}
+              />
             </div>
 
+            {/* Notes */}
             <div className="flex flex-col sm:col-span-2 lg:col-span-3">
               <label className="text-sm font-medium">Notes</label>
-              <textarea rows={3} className="mt-1 rounded-xl border p-2" placeholder="Windy, wet rough, etc." value={notes} onChange={(e) => setNotes(e.target.value)} />
+              <textarea
+                rows={3}
+                className="mt-1 rounded-xl border p-2"
+                placeholder="Windy, wet rough, etc."
+                value={notes}
+                onChange={(e) => setNotes(e.target.value)}
+              />
             </div>
           </div>
 
+          {/* Quick helpers */}
           <div className="flex items-center gap-2">
-            <button className="rounded-2xl border px-4 py-2" onClick={() => setParForAll(3)}>Set Par 3 for all</button>
-            <button className="rounded-2xl border px-4 py-2" onClick={() => setParForAll(4)}>Set Par 4 for all</button>
-            <button className="rounded-2xl border px-4 py-2" onClick={() => setParForAll(5)}>Set Par 5 for all</button>
+            <button className="rounded-2xl border px-4 py-2" onClick={() => setParForAll(3)}>
+              Set Par 3 for all
+            </button>
+            <button className="rounded-2xl border px-4 py-2" onClick={() => setParForAll(4)}>
+              Set Par 4 for all
+            </button>
+            <button className="rounded-2xl border px-4 py-2" onClick={() => setParForAll(5)}>
+              Set Par 5 for all
+            </button>
           </div>
 
           <div className="flex items-center gap-2">
             <textarea
               className="rounded-xl border p-2 w-full"
               placeholder="Quick paste 18 scores (e.g. 4 5 3 4 4 5 3 4 4 5 3 4 4 5 3 4 4 5)"
-              onPaste={(e) => { const text = e.clipboardData.getData("text"); pasteScores(text); }}
+              onPaste={(e) => {
+                const text = e.clipboardData.getData("text");
+                pasteScores(text);
+              }}
             />
           </div>
 
           <div className="flex justify-end">
-            <button className="inline-flex items-center gap-2 rounded-2xl px-4 py-2 bg-black text-white" onClick={() => setStep(2)}>
+            <button
+              className="inline-flex items-center gap-2 rounded-2xl px-4 py-2 bg-black text-white"
+              onClick={() => setStep(2)}
+            >
               Next <ChevronRight className="h-4 w-4" />
             </button>
           </div>
@@ -372,45 +478,105 @@ export default function RoundEntry({
                   <tr key={i} className="border-t">
                     <td className="p-2 font-medium">{h.hole_number}</td>
                     <td className="p-2">
-                      <input ref={registerCellRef(i, 0)} onKeyDown={onCellKeyDown(i, 0)} type="number" inputMode="numeric" className="w-16 rounded-lg border p-1 text-center" value={h.par} onChange={(e) => updateHole(i, { par: Number(e.target.value) })} />
+                      <input
+                        ref={registerCellRef(i, 0)}
+                        onKeyDown={onCellKeyDown(i, 0)}
+                        type="number"
+                        inputMode="numeric"
+                        className="w-16 rounded-lg border p-1 text-center"
+                        value={h.par}
+                        onChange={(e) => updateHole(i, { par: Number(e.target.value) })}
+                      />
                     </td>
                     <td className="p-2">
-                      <input ref={registerCellRef(i, 1)} onKeyDown={onCellKeyDown(i, 1)} type="number" inputMode="numeric" className="w-20 rounded-lg border p-1 text-center" value={h.yards ?? ""} onChange={(e) => updateHole(i, { yards: e.target.value ? Number(e.target.value) : null })} />
+                      <input
+                        ref={registerCellRef(i, 1)}
+                        onKeyDown={onCellKeyDown(i, 1)}
+                        type="number"
+                        inputMode="numeric"
+                        className="w-20 rounded-lg border p-1 text-center"
+                        value={h.yards ?? ""}
+                        onChange={(e) => updateHole(i, { yards: e.target.value ? Number(e.target.value) : null })}
+                      />
                     </td>
                     <td className="p-2">
-                      <input ref={registerCellRef(i, 2)} onKeyDown={onCellKeyDown(i, 2)} type="number" inputMode="numeric" className="w-16 rounded-lg border p-1 text-center" value={h.strokes ?? ""} onChange={(e) => updateHole(i, { strokes: e.target.value ? Number(e.target.value) : null })} />
+                      <input
+                        ref={registerCellRef(i, 2)}
+                        onKeyDown={onCellKeyDown(i, 2)}
+                        type="number"
+                        inputMode="numeric"
+                        className="w-16 rounded-lg border p-1 text-center"
+                        value={h.strokes ?? ""}
+                        onChange={(e) => updateHole(i, { strokes: e.target.value ? Number(e.target.value) : null })}
+                      />
                     </td>
                     <td className="p-2">
-                      <input ref={registerCellRef(i, 3)} onKeyDown={onCellKeyDown(i, 3)} type="number" inputMode="numeric" className="w-16 rounded-lg border p-1 text-center" value={h.putts ?? ""} onChange={(e) => updateHole(i, { putts: e.target.value ? Number(e.target.value) : null })} />
+                      <input
+                        ref={registerCellRef(i, 3)}
+                        onKeyDown={onCellKeyDown(i, 3)}
+                        type="number"
+                        inputMode="numeric"
+                        className="w-16 rounded-lg border p-1 text-center"
+                        value={h.putts ?? ""}
+                        onChange={(e) => updateHole(i, { putts: e.target.value ? Number(e.target.value) : null })}
+                      />
                     </td>
                     <td className="p-2 text-center">
-                      <input type="checkbox" className="h-5 w-5" disabled={!(h.par === 4 || h.par === 5)} checked={!!h.fir && (h.par === 4 || h.par === 5)} onChange={(e) => updateHole(i, { fir: (h.par === 4 || h.par === 5) ? e.target.checked : null })} />
+                      <input
+                        type="checkbox"
+                        className="h-5 w-5"
+                        disabled={!(h.par === 4 || h.par === 5)}
+                        checked={!!h.fir && (h.par === 4 || h.par === 5)}
+                        onChange={(e) => updateHole(i, { fir: (h.par === 4 || h.par === 5) ? e.target.checked : null })}
+                      />
                     </td>
                     <td className="p-2 text-center">
-                      <input type="checkbox" className="h-5 w-5" checked={!!h.gir} onChange={(e) => updateHole(i, { gir: e.target.checked })} />
+                      <input
+                        type="checkbox"
+                        className="h-5 w-5"
+                        checked={!!h.gir}
+                        onChange={(e) => updateHole(i, { gir: e.target.checked })}
+                      />
                     </td>
                     <td className="p-2 text-center">
-                      <input type="checkbox" className="h-5 w-5" checked={!!h.up_down} onChange={(e) => updateHole(i, { up_down: e.target.checked })} />
+                      <input
+                        type="checkbox"
+                        className="h-5 w-5"
+                        checked={!!h.up_down}
+                        onChange={(e) => updateHole(i, { up_down: e.target.checked })}
+                      />
                     </td>
                     <td className="p-2 text-center">
-                      <input type="checkbox" className="h-5 w-5" checked={!!h.sand_save} onChange={(e) => updateHole(i, { sand_save: e.target.checked })} />
+                      <input
+                        type="checkbox"
+                        className="h-5 w-5"
+                        checked={!!h.sand_save}
+                        onChange={(e) => updateHole(i, { sand_save: e.target.checked })}
+                      />
                     </td>
                     <td className="p-2 text-center">
-                      <input type="checkbox" className="h-5 w-5" checked={!!h.penalty} onChange={(e) => updateHole(i, { penalty: e.target.checked })} />
+                      <input
+                        type="checkbox"
+                        className="h-5 w-5"
+                        checked={!!h.penalty}
+                        onChange={(e) => updateHole(i, { penalty: e.target.checked })}
+                      />
                     </td>
                   </tr>
                 ))}
               </tbody>
               <tfoot className="bg-gray-50">
                 <tr>
-                  <td className="p-3 font-medium" colSpan={3}>Totals</td>
+                  <td className="p-3 font-medium" colSpan={3}>
+                    Totals
+                  </td>
                   <td className="p-3 font-semibold">{totals.strokes}</td>
                   <td className="p-3 font-semibold">{totals.putts}</td>
                   <td className="p-3 font-semibold">{totals.firPct}%</td>
                   <td className="p-3 font-semibold">{totals.girPct}%</td>
                   <td className="p-3 font-semibold">{totals.upDown}</td>
                   <td className="p-3 font-semibold">{totals.sandSave}</td>
-                  <td className="p-3"></td>
+                  <td className="p-3" />
                 </tr>
               </tfoot>
             </table>
@@ -427,7 +593,7 @@ export default function RoundEntry({
         </section>
       )}
 
-      {/* Step 3: Review (lightweight) */}
+      {/* Step 3: Review (lightweight gate before saving) */}
       {step === 3 && (
         <section className="space-y-4">
           <div className="flex items-center justify-between">
@@ -435,10 +601,18 @@ export default function RoundEntry({
               <ChevronLeft className="h-4 w-4" /> Back
             </button>
             <div className="flex items-center gap-2">
-              <button onClick={() => handleSave(false)} className="inline-flex items-center gap-2 rounded-2xl px-4 py-2 border hover:shadow disabled:opacity-50" disabled={isPending}>
+              <button
+                onClick={() => handleSave(false)}
+                className="inline-flex items-center gap-2 rounded-2xl px-4 py-2 border hover:shadow disabled:opacity-50"
+                disabled={isPending}
+              >
                 <Save className="h-4 w-4" /> Save Draft
               </button>
-              <button onClick={() => handleSave(true)} className="inline-flex items-center gap-2 rounded-2xl px-4 py-2 bg-black text-white hover:opacity-90 disabled:opacity-50" disabled={isPending}>
+              <button
+                onClick={() => handleSave(true)}
+                className="inline-flex items-center gap-2 rounded-2xl px-4 py-2 bg-black text-white hover:opacity-90 disabled:opacity-50"
+                disabled={isPending}
+              >
                 <Send className="h-4 w-4" /> Save & Finish
               </button>
             </div>

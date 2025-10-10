@@ -22,7 +22,8 @@ export default async function RoundSummaryPage({ params }: { params: { id: strin
     .from("rounds")
     .select(
       `
-      id, played_on,
+      id,
+      played_on:date,          -- alias DB "date" as played_on for UI
       player:players(*),
       course:courses(id, name),
       tee:tees(id, name, rating, slope, par)
@@ -90,10 +91,13 @@ export default async function RoundSummaryPage({ params }: { params: { id: strin
   const frontToPar = anyMissing ? null : strokesFront - parFront;
   const backToPar = anyMissing ? null : strokesBack - parBack;
 
-  const dateStr = round.played_on
-    ? new Date(round.played_on).toLocaleDateString(undefined, { year: "numeric", month: "short", day: "numeric" })
+   const dateStr = round.played_on
+    ? new Date(round.played_on).toLocaleDateString(undefined, {
+        year: "numeric",
+        month: "short",
+        day: "numeric",
+      })
     : "";
-
   return (
     <div className="mx-auto max-w-[1100px] p-6 space-y-8">
       {/* Header */}

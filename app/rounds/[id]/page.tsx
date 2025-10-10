@@ -18,13 +18,12 @@ export default async function RoundSummaryPage({ params }: { params: { id: strin
   const supabase = createClient();
   const roundId = params.id;
 
-  // Fetch round header info (relations may come back as arrays depending on FK config)
   const { data: round, error: roundErr } = await supabase
     .from("rounds")
     .select(
       `
       id, played_on, notes,
-      player:players(id, first_name, last_name, grad_year),
+      player:players(*),
       course:courses(id, name),
       tee:tee_sets(id, name, rating, slope, par)
     `
@@ -44,12 +43,17 @@ export default async function RoundSummaryPage({ params }: { params: { id: strin
     );
   }
 
-  // Normalize relations to single objects
-  const player = one<{ id: string; first_name: string; last_name: string; grad_year: number | null }>(round.player);
+  const player = one<any>(round.player);
   const course = one<{ id: string; name: string }>(round.course);
   const tee = one<{ id: string; name: string; rating: number | null; slope: number | null; par: number | null }>(round.tee);
 
-  // Fetch holes
+  // Resilient player name (supports first/last or single-name schemas)
+  const playerName = player
+    ? ((player.first_name || player.last_name)
+        ? `${player.first_name ?? ""} ${player.last_name ?? ""}`.trim()
+        : (player.name ?? player.display_name ?? player.full_name ?? "Unknown Player"))
+    : "Unknown Player";
+
   const { data: holes } = await supabase
     .from("round_holes")
     .select("hole_number, par, yards, strokes, putts, fir, gir, up_down, sand_save, penalty")
@@ -57,8 +61,6 @@ export default async function RoundSummaryPage({ params }: { params: { id: strin
     .order("hole_number");
 
   const holeList = holes ?? [];
-
-  // Derive stats
   const byNine = (start: number, end: number) =>
     holeList.filter((h) => h.hole_number >= start && h.hole_number <= end);
   const front = byNine(1, 9);
@@ -88,7 +90,6 @@ export default async function RoundSummaryPage({ params }: { params: { id: strin
   const ssYes = holeList.filter((h) => h.sand_save === true).length;
   const penYes = holeList.filter((h) => h.penalty === true).length;
 
-  // If any strokes missing, score-to-par is partial; otherwise total
   const anyMissing = holeList.some((h) => h.strokes == null);
   const scoreToPar = anyMissing ? null : strokesTotal - parTotal;
   const frontToPar = anyMissing ? null : strokesFront - parFront;
@@ -108,9 +109,7 @@ export default async function RoundSummaryPage({ params }: { params: { id: strin
       <div className="rounded-2xl border p-5 shadow-sm bg-white">
         <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-3">
           <div>
-            <h1 className="text-2xl font-semibold">
-              {player ? `${player.first_name} ${player.last_name}` : "Unknown Player"}
-            </h1>
+            <h1 className="text-2xl font-semibold">{playerName}</h1>
             <div className="text-gray-600 mt-1">
               {(course?.name ?? "Unknown Course")} — {(tee?.name ?? "Tee")}
             </div>
@@ -176,25 +175,14 @@ export default async function RoundSummaryPage({ params }: { params: { id: strin
           </thead>
           <tbody>
             {holeList.map((h) => {
-              const delta =
-                h.strokes != null && h.par != null ? h.strokes - h.par : null;
+              const delta = h.strokes != null && h.par != null ? h.strokes - h.par : null;
               return (
                 <tr key={h.hole_number} className="border-t">
                   <Td>{h.hole_number}</Td>
                   <Td>{h.par ?? "—"}</Td>
                   <Td>{h.yards ?? "—"}</Td>
                   <Td>{h.strokes ?? "—"}</Td>
-                  <Td
-                    className={
-                      delta != null
-                        ? delta < 0
-                          ? "text-green-600"
-                          : delta > 0
-                          ? "text-red-600"
-                          : ""
-                        : ""
-                    }
-                  >
+                  <Td className={delta != null ? (delta < 0 ? "text-green-600" : delta > 0 ? "text-red-600" : "") : ""}>
                     {fmtScoreToPar(delta)}
                   </Td>
                   <Td>{h.putts ?? "—"}</Td>
@@ -209,9 +197,7 @@ export default async function RoundSummaryPage({ params }: { params: { id: strin
           </tbody>
           <tfoot className="bg-gray-50">
             <tr>
-              <Td colSpan={3} className="font-medium">
-                Totals
-              </Td>
+              <Td colSpan={3} className="font-medium">Totals</Td>
               <Td className="font-semibold">{strokesTotal || "—"}</Td>
               <Td className="font-semibold">{fmtScoreToPar(scoreToPar)}</Td>
               <Td className="font-semibold">{puttsTotal}</Td>
@@ -224,9 +210,6 @@ export default async function RoundSummaryPage({ params }: { params: { id: strin
           </tfoot>
         </table>
       </div>
-
-      {/* Placeholder: Strokes Gained
-          If you already have a SG view/table, tell me the name + columns and I’ll render it here. */}
     </div>
   );
 }
@@ -254,7 +237,6 @@ function Kpi({ label, value, helper }: { label: string; value: number | string; 
 function Th({ children }: { children?: React.ReactNode }) {
   return <th className="p-3 text-left font-medium text-gray-700">{children}</th>;
 }
- 
 
 function Td({
   children,
@@ -292,7 +274,7 @@ function Scorecard({ title, holes }: { title: string; holes: any[] }) {
         <table className="min-w-[520px] w-full text-sm">
           <thead className="bg-gray-50">
             <tr>
-              <Th></Th>
+              <Th>&nbsp;</Th>
               {holes.map((h) => (
                 <Th key={`h-${h.hole_number}`}>{h.hole_number}</Th>
               ))}

@@ -7,9 +7,9 @@ export const dynamic = "force-dynamic"; // avoid caching while building
 export default async function NewRoundPage() {
   const supabase = createClient();
 
-  // Fetch minimal data needed to render selectors
+  // Fetch minimal data needed to render selectors (players: select("*") so missing columns don't break)
   const [playersRes, coursesRes, teeSetsRes] = await Promise.all([
-    supabase.from("players").select("id, first_name, last_name, grad_year").order("last_name"),
+    supabase.from("players").select("*").order("id"),
     supabase.from("courses").select("id, name").order("name"),
     supabase.from("tee_sets").select("id, course_id, name, rating, slope, par").order("name"),
   ]);
@@ -32,16 +32,6 @@ export default async function NewRoundPage() {
             {coursesRes.error && <li>Courses: {coursesRes.error.message}</li>}
             {teeSetsRes.error && <li>Tee Sets: {teeSetsRes.error.message}</li>}
           </ul>
-          <div className="text-sm mt-3 text-red-900/80">
-            If you’re using Supabase RLS, make sure `select` is allowed for anonymous or the
-            logged-in user on <code>players</code>, <code>courses</code>, and <code>tee_sets</code>.
-          </div>
-        </div>
-      ) : null}
-
-      {!anyError && players.length === 0 && courses.length === 0 && teeSets.length === 0 ? (
-        <div className="rounded-xl border p-4 bg-yellow-50 border-yellow-300 text-yellow-900">
-          No seed data found yet. Add at least one player, course, and tee set.
         </div>
       ) : null}
 

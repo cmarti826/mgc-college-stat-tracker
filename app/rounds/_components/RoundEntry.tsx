@@ -5,7 +5,6 @@ import { ChevronLeft, ChevronRight, Save, Send } from "lucide-react";
 import HoleRow from "./HoleRow";
 import { z } from "zod";
 import { createRoundAction, updateRoundAction } from "./actions";
-// NEW: browser client
 import { createClient as createBrowserSupabase } from "@/lib/supabase/browser";
 
 // ---- Types -----
@@ -65,7 +64,7 @@ export default function RoundEntry({
   courses: any[];
   teeSets: any[];
 }) {
-  const [step, setStep] = useState(2); // you can set 1 as default, using 2 for your screenshot state
+  const [step, setStep] = useState(1);
   const [isPending, startTransition] = useTransition();
 
   // Base state
@@ -86,7 +85,7 @@ export default function RoundEntry({
     return empty18();
   });
 
-  // NEW: inputs grid refs for turbo keyboard nav
+  // Inputs grid refs for turbo keyboard nav
   const cellRefs = useRef<HTMLInputElement[][]>([]);
 
   // Auto-calc totals
@@ -170,14 +169,12 @@ export default function RoundEntry({
     });
   }
 
-  // ===== NEW: Auto-fill par & yards when tee set changes =====
+  // ===== Auto-fill par & yards when tee set changes =====
   useEffect(() => {
     if (!teeSetId) return;
     const supabase = createBrowserSupabase();
 
     (async () => {
-      // Try tee_holes first; fall back to course_holes if your schema uses that
-      // Expected columns: tee_set_id, hole_number, par, yards
       const { data: teeHoles } = await supabase
         .from("tee_holes")
         .select("hole_number, par, yards")
@@ -204,7 +201,6 @@ export default function RoundEntry({
                   ...h,
                   par: m.par ?? h.par,
                   yards: m.yards ?? h.yards,
-                  // keep any strokes/stats already typed
                 }
               : h;
           })
@@ -213,58 +209,55 @@ export default function RoundEntry({
     })();
   }, [teeSetId, courseId]);
 
-  // ===== NEW: Keyboard turbo entry (Enter/Arrow navigate) =====
+  // ===== Keyboard turbo entry =====
   const registerCellRef = (rowIdx: number, colIdx: number) => (el: HTMLInputElement | null) => {
     if (!el) return;
     if (!cellRefs.current[rowIdx]) cellRefs.current[rowIdx] = [];
     cellRefs.current[rowIdx][colIdx] = el;
   };
 
-  // Replace this whole function
-const onCellKeyDown =
-  (row: number, col: number) =>
-  (e: React.KeyboardEvent<HTMLInputElement>) => {
-    if (!cellRefs.current.length) return;
+  const onCellKeyDown =
+    (row: number, col: number) =>
+    (e: React.KeyboardEvent<HTMLInputElement>) => {
+      if (!cellRefs.current.length) return;
 
-    const rows = 18;
-    const cols = 5; // Par, Yards, Strokes, Putts (we only cycle numeric inputs)
+      const rows = 18;
+      const cols = 4; // Par, Yards, Strokes, Putts
 
-    const go = (r: number, c: number) => {
-      const el = cellRefs.current[r]?.[c];
-      if (el) el.focus();
+      const go = (r: number, c: number) => {
+        const el = cellRefs.current[r]?.[c];
+        if (el) el.focus();
+      };
+
+      switch (e.key) {
+        case "Enter":
+        case "ArrowRight": {
+          e.preventDefault();
+          const nextCol = (col + 1) % cols;
+          const nextRow = nextCol === 0 ? Math.min(row + 1, rows - 1) : row;
+          go(nextRow, nextCol);
+          break;
+        }
+        case "ArrowLeft": {
+          e.preventDefault();
+          const prevCol = col - 1 < 0 ? cols - 1 : col - 1;
+          const prevRow = prevCol === cols - 1 ? Math.max(row - 1, 0) : row;
+          go(prevRow, prevCol);
+          break;
+        }
+        case "ArrowDown": {
+          e.preventDefault();
+          go(Math.min(row + 1, rows - 1), col);
+          break;
+        }
+        case "ArrowUp": {
+          e.preventDefault();
+          go(Math.max(row - 1, 0), col);
+          break;
+        }
+      }
     };
 
-    switch (e.key) {
-      case "Enter":
-      case "ArrowRight": {
-        e.preventDefault();
-        const nextCol = (col + 1) % cols;
-        const nextRow = nextCol === 0 ? Math.min(row + 1, rows - 1) : row;
-        go(nextRow, nextCol);
-        break;
-      }
-      case "ArrowLeft": {
-        e.preventDefault();
-        const prevCol = col - 1 < 0 ? cols - 1 : col - 1;
-        const prevRow = prevCol === cols - 1 ? Math.max(row - 1, 0) : row;
-        go(prevRow, prevCol);
-        break;
-      }
-      case "ArrowDown": {
-        e.preventDefault();
-        go(Math.min(row + 1, rows - 1), col);
-        break;
-      }
-      case "ArrowUp": {
-        e.preventDefault();
-        go(Math.max(row - 1, 0), col);
-        break;
-      }
-    }
-  };
-
-
-  // Render
   return (
     <div className="space-y-6">
       {/* Header */}
@@ -299,7 +292,127 @@ const onCellKeyDown =
         </div>
       </div>
 
-      {/* Step 2: Holes (showing per your screenshot) */}
+      {/* Step 1: Details */}
+      {step === 1 && (
+        <section className="space-y-4">
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
+            {/* Player select — resilient to schema */}
+            <div className="flex flex-col">
+              <label className="text-sm font-medium">Player</label>
+              <select
+                className="mt-1 rounded-xl border p-2"
+                value={playerId ?? ""}
+                onChange={(e) => setPlayerId(e.target.value || undefined)}
+              >
+                <option value="">Select player…</option>
+                {players.map((p) => {
+                  const hasFirstOrLast = Boolean(p.first_name || p.last_name);
+                  const labelCore = hasFirstOrLast
+                    ? `${p.last_name ?? ""}${p.last_name && p.first_name ? ", " : ""}${p.first_name ?? ""}`.trim()
+                    : (p.name ?? p.display_name ?? p.full_name ?? "Player");
+                  const gy = p.grad_year ? ` ’${String(p.grad_year).slice(2)}` : "";
+                  return (
+                    <option key={p.id} value={p.id}>
+                      {`${labelCore}${gy}`}
+                    </option>
+                  );
+                })}
+              </select>
+            </div>
+
+            <div className="flex flex-col">
+              <label className="text-sm font-medium">Date</label>
+              <input
+                type="date"
+                className="mt-1 rounded-xl border p-2"
+                value={playedOn}
+                onChange={(e) => setPlayedOn(e.target.value)}
+              />
+            </div>
+
+            <div className="flex flex-col">
+              <label className="text-sm font-medium">Course</label>
+              <select
+                className="mt-1 rounded-xl border p-2"
+                value={courseId ?? ""}
+                onChange={(e) => {
+                  setCourseId(e.target.value || undefined);
+                  setTeeSetId(undefined);
+                }}
+              >
+                <option value="">Select course…</option>
+                {courses.map((c) => (
+                  <option key={c.id} value={c.id}>{c.name}</option>
+                ))}
+              </select>
+            </div>
+
+            <div className="flex flex-col">
+              <label className="text-sm font-medium">Tee Set</label>
+              <select
+                className="mt-1 rounded-xl border p-2"
+                value={teeSetId ?? ""}
+                onChange={(e) => setTeeSetId(e.target.value || undefined)}
+                disabled={!courseId}
+              >
+                <option value="">Select tee set…</option>
+                {teeOptions.map((t) => (
+                  <option key={t.id} value={t.id}>
+                    {t.name} — {t.rating ?? "-"} / {t.slope ?? "-"} (Par {t.par ?? "-"})
+                  </option>
+                ))}
+              </select>
+            </div>
+
+            <div className="flex flex-col">
+              <label className="text-sm font-medium">Event (optional)</label>
+              <input
+                type="text"
+                placeholder="Paste event UUID if linking"
+                className="mt-1 rounded-xl border p-2"
+                value={eventId ?? ""}
+                onChange={(e) => setEventId(e.target.value || undefined)}
+              />
+            </div>
+
+            <div className="flex flex-col sm:col-span-2 lg:col-span-3">
+              <label className="text-sm font-medium">Notes</label>
+              <textarea
+                rows={3}
+                className="mt-1 rounded-xl border p-2"
+                placeholder="Windy, wet rough, etc."
+                value={notes}
+                onChange={(e) => setNotes(e.target.value)}
+              />
+            </div>
+          </div>
+
+          <div className="flex items-center gap-2">
+            <button className="rounded-2xl border px-4 py-2 inline-flex items-center gap-2" onClick={() => setParForAll(3)}>Set Par 3 for all</button>
+            <button className="rounded-2xl border px-4 py-2 inline-flex items-center gap-2" onClick={() => setParForAll(4)}>Set Par 4 for all</button>
+            <button className="rounded-2xl border px-4 py-2 inline-flex items-center gap-2" onClick={() => setParForAll(5)}>Set Par 5 for all</button>
+          </div>
+
+          <div className="flex items-center gap-2">
+            <textarea
+              className="rounded-xl border p-2 w-full"
+              placeholder="Quick paste 18 scores (e.g. 4 5 3 4 4 5 3 4 4 5 3 4 4 5 3 4 4 5)"
+              onPaste={(e) => {
+                const text = e.clipboardData.getData("text");
+                pasteScores(text);
+              }}
+            />
+          </div>
+
+          <div className="flex justify-end">
+            <button className="inline-flex items-center gap-2 rounded-2xl px-4 py-2 bg-black text-white" onClick={() => setStep(2)}>
+              Next <ChevronRight className="h-4 w-4" />
+            </button>
+          </div>
+        </section>
+      )}
+
+      {/* Step 2: Holes */}
       {step === 2 && (
         <section className="space-y-4">
           <div className="overflow-x-auto rounded-2xl border">
@@ -322,7 +435,6 @@ const onCellKeyDown =
                 {holes.map((h, i) => (
                   <tr key={i} className="border-t">
                     <td className="p-2 font-medium">{h.hole_number}</td>
-                    {/* Par input (col 0) */}
                     <td className="p-2">
                       <input
                         ref={registerCellRef(i, 0)}
@@ -334,7 +446,6 @@ const onCellKeyDown =
                         onChange={(e) => updateHole(i, { par: Number(e.target.value) })}
                       />
                     </td>
-                    {/* Yards input (col 1) */}
                     <td className="p-2">
                       <input
                         ref={registerCellRef(i, 1)}
@@ -346,7 +457,6 @@ const onCellKeyDown =
                         onChange={(e) => updateHole(i, { yards: e.target.value ? Number(e.target.value) : null })}
                       />
                     </td>
-                    {/* Strokes input (col 2) */}
                     <td className="p-2">
                       <input
                         ref={registerCellRef(i, 2)}
@@ -358,7 +468,6 @@ const onCellKeyDown =
                         onChange={(e) => updateHole(i, { strokes: e.target.value ? Number(e.target.value) : null })}
                       />
                     </td>
-                    {/* Putts input (col 3) */}
                     <td className="p-2">
                       <input
                         ref={registerCellRef(i, 3)}
@@ -370,7 +479,6 @@ const onCellKeyDown =
                         onChange={(e) => updateHole(i, { putts: e.target.value ? Number(e.target.value) : null })}
                       />
                     </td>
-                    {/* Checkboxes (we don’t include in keyboard cycle) */}
                     <td className="p-2 text-center">
                       <input
                         type="checkbox"
@@ -417,6 +525,34 @@ const onCellKeyDown =
             <button className="rounded-2xl bg-black text-white px-4 py-2 inline-flex items-center gap-2" onClick={() => setStep(3)}>
               Review <ChevronRight className="h-4 w-4" />
             </button>
+          </div>
+        </section>
+      )}
+
+      {/* Step 3: Review */}
+      {step === 3 && (
+        <section className="space-y-4">
+          {/* (same as before) */}
+          <div className="flex items-center justify-between">
+            <button className="rounded-2xl border px-4 py-2 inline-flex items-center gap-2" onClick={() => setStep(2)}>
+              <ChevronLeft className="h-4 w-4" /> Back
+            </button>
+            <div className="flex items-center gap-2">
+              <button
+                onClick={() => handleSave(false)}
+                className="inline-flex items-center gap-2 rounded-2xl px-4 py-2 border hover:shadow disabled:opacity-50"
+                disabled={isPending}
+              >
+                <Save className="h-4 w-4" /> Save Draft
+              </button>
+              <button
+                onClick={() => handleSave(true)}
+                className="inline-flex items-center gap-2 rounded-2xl px-4 py-2 bg-black text-white hover:opacity-90 disabled:opacity-50"
+                disabled={isPending}
+              >
+                <Send className="h-4 w-4" /> Save & Finish
+              </button>
+            </div>
           </div>
         </section>
       )}

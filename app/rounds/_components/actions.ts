@@ -1,6 +1,3 @@
-// ==========================
-// File: app/rounds/_components/actions.ts
-// ==========================
 "use server";
 
 import { createClient } from "@/lib/supabase/server";
@@ -23,25 +20,35 @@ const RoundSchema = z.object({
   id: z.string().uuid().optional(),
   player_id: z.string().uuid(),
   course_id: z.string().uuid(),
-  tee_set_id: z.string().uuid(),
-  event_id: z.string().uuid().nullable().optional(),
+  tee_id: z.string().uuid(),            // ← matches your schema
   played_on: z.string(),
+  // Optional in payload, but we won't write unless you add columns:
   notes: z.string().optional().nullable(),
+  event_id: z.string().uuid().nullable().optional(),
   holes: z.array(HoleSchema).length(18),
 });
 
-export async function createRoundAction(payload: z.infer<typeof RoundSchema>) {
+export type RoundPayload = z.infer<typeof RoundSchema>;
+
+export async function createRoundAction(payload: RoundPayload) {
   const supabase = createClient();
+
+  const parsed = RoundSchema.safeParse(payload);
+  if (!parsed.success) return { error: "Invalid round payload" };
+
+  // Only known-safe columns (no notes/event unless you add them)
+  const roundRow: Record<string, any> = {
+    player_id: payload.player_id,
+    course_id: payload.course_id,
+    tee_id: payload.tee_id,
+    played_on: payload.played_on,
+    // notes: payload.notes ?? null,
+    // event_id: payload.event_id ?? null,
+  };
+
   const { data: round, error } = await supabase
     .from("rounds")
-    .insert({
-      player_id: payload.player_id,
-      course_id: payload.course_id,
-      tee_set_id: payload.tee_set_id,
-      event_id: payload.event_id ?? null,
-      played_on: payload.played_on,
-      notes: payload.notes ?? null,
-    })
+    .insert(roundRow)
     .select("id")
     .single();
 
@@ -67,25 +74,23 @@ export async function createRoundAction(payload: z.infer<typeof RoundSchema>) {
   return { id: round!.id };
 }
 
-export async function updateRoundAction(payload: z.infer<typeof RoundSchema>) {
+export async function updateRoundAction(payload: RoundPayload) {
   const supabase = createClient();
   if (!payload.id) return { error: "Missing round id" };
 
-  const { error } = await supabase
-    .from("rounds")
-    .update({
-      player_id: payload.player_id,
-      course_id: payload.course_id,
-      tee_set_id: payload.tee_set_id,
-      event_id: payload.event_id ?? null,
-      played_on: payload.played_on,
-      notes: payload.notes ?? null,
-    })
-    .eq("id", payload.id);
+  const roundRow: Record<string, any> = {
+    player_id: payload.player_id,
+    course_id: payload.course_id,
+    tee_id: payload.tee_id,
+    played_on: payload.played_on,
+    // notes: payload.notes ?? null,
+    // event_id: payload.event_id ?? null,
+  };
 
+  const { error } = await supabase.from("rounds").update(roundRow).eq("id", payload.id);
   if (error) return { error: error.message };
 
-  // Upsert holes (simple strategy: delete + insert to avoid constraint headaches)
+  // Replace holes for this round
   await supabase.from("round_holes").delete().eq("round_id", payload.id);
 
   const rows = payload.holes.map((h) => ({

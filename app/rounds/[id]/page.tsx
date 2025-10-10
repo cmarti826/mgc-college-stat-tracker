@@ -22,10 +22,10 @@ export default async function RoundSummaryPage({ params }: { params: { id: strin
     .from("rounds")
     .select(
       `
-      id, played_on, notes,
+      id, played_on,
       player:players(*),
       course:courses(id, name),
-      tee:tee_sets(id, name, rating, slope, par)
+      tee:tees(id, name, rating, slope, par)
     `
     )
     .eq("id", roundId)
@@ -47,11 +47,8 @@ export default async function RoundSummaryPage({ params }: { params: { id: strin
   const course = one<{ id: string; name: string }>(round.course);
   const tee = one<{ id: string; name: string; rating: number | null; slope: number | null; par: number | null }>(round.tee);
 
-  // Resilient player name (supports first/last or single-name schemas)
   const playerName = player
-    ? ((player.first_name || player.last_name)
-        ? `${player.first_name ?? ""} ${player.last_name ?? ""}`.trim()
-        : (player.name ?? player.display_name ?? player.full_name ?? "Unknown Player"))
+    ? (player.full_name ?? player.name ?? player.display_name ?? "Unknown Player")
     : "Unknown Player";
 
   const { data: holes } = await supabase
@@ -61,13 +58,11 @@ export default async function RoundSummaryPage({ params }: { params: { id: strin
     .order("hole_number");
 
   const holeList = holes ?? [];
-  const byNine = (start: number, end: number) =>
-    holeList.filter((h) => h.hole_number >= start && h.hole_number <= end);
+  const byNine = (start: number, end: number) => holeList.filter((h) => h.hole_number >= start && h.hole_number <= end);
   const front = byNine(1, 9);
   const back = byNine(10, 18);
 
-  const sum = (arr: Array<number | null | undefined>) =>
-    arr.reduce((t: number, n) => t + (n ?? 0), 0);
+  const sum = (arr: Array<number | null | undefined>) => arr.reduce((t: number, n) => t + (n ?? 0), 0);
 
   const parFront = sum(front.map((h) => h.par));
   const parBack = sum(back.map((h) => h.par));
@@ -96,11 +91,7 @@ export default async function RoundSummaryPage({ params }: { params: { id: strin
   const backToPar = anyMissing ? null : strokesBack - parBack;
 
   const dateStr = round.played_on
-    ? new Date(round.played_on).toLocaleDateString(undefined, {
-        year: "numeric",
-        month: "short",
-        day: "numeric",
-      })
+    ? new Date(round.played_on).toLocaleDateString(undefined, { year: "numeric", month: "short", day: "numeric" })
     : "";
 
   return (
@@ -129,7 +120,6 @@ export default async function RoundSummaryPage({ params }: { params: { id: strin
             </Link>
           </div>
         </div>
-        {round.notes && <p className="mt-3 text-gray-700 whitespace-pre-wrap">{round.notes}</p>}
       </div>
 
       {/* Score Overview */}
@@ -137,12 +127,6 @@ export default async function RoundSummaryPage({ params }: { params: { id: strin
         <StatCard label="Total" value={strokesTotal || "—"} sub={fmtScoreToPar(scoreToPar)} />
         <StatCard label="Front 9" value={strokesFront || "—"} sub={fmtScoreToPar(frontToPar)} />
         <StatCard label="Back 9" value={strokesBack || "—"} sub={fmtScoreToPar(backToPar)} />
-      </div>
-
-      {/* Scorecards */}
-      <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-        <Scorecard title="Front 9" holes={front} />
-        <Scorecard title="Back 9" holes={back} />
       </div>
 
       {/* KPIs */}
@@ -195,19 +179,6 @@ export default async function RoundSummaryPage({ params }: { params: { id: strin
               );
             })}
           </tbody>
-          <tfoot className="bg-gray-50">
-            <tr>
-              <Td colSpan={3} className="font-medium">Totals</Td>
-              <Td className="font-semibold">{strokesTotal || "—"}</Td>
-              <Td className="font-semibold">{fmtScoreToPar(scoreToPar)}</Td>
-              <Td className="font-semibold">{puttsTotal}</Td>
-              <Td className="font-semibold">{`${firYes}/${firOpp}`}</Td>
-              <Td className="font-semibold">{`${girYes}/18`}</Td>
-              <Td className="font-semibold">{udYes}</Td>
-              <Td className="font-semibold">{ssYes}</Td>
-              <Td className="font-semibold">{penYes}</Td>
-            </tr>
-          </tfoot>
         </table>
       </div>
     </div>
@@ -251,67 +222,5 @@ function Td({
     <td className={`p-3 ${className}`} colSpan={colSpan}>
       {children}
     </td>
-  );
-}
-
-function Scorecard({ title, holes }: { title: string; holes: any[] }) {
-  const sum = (arr: Array<number | null | undefined>) =>
-    arr.reduce((t: number, n) => t + (n ?? 0), 0);
-
-  const par = sum(holes.map((h) => h.par));
-  const strokes = sum(holes.map((h) => h.strokes));
-  const delta = holes.some((h) => h.strokes == null) ? null : strokes - par;
-
-  return (
-    <div className="rounded-2xl border shadow-sm bg-white">
-      <div className="flex items-center justify-between p-4 border-b">
-        <div className="font-semibold">{title}</div>
-        <div className="text-sm text-gray-600">
-          {strokes || "—"} ({fmtScoreToPar(delta)})
-        </div>
-      </div>
-      <div className="overflow-x-auto">
-        <table className="min-w-[520px] w-full text-sm">
-          <thead className="bg-gray-50">
-            <tr>
-              <Th>&nbsp;</Th>
-              {holes.map((h) => (
-                <Th key={`h-${h.hole_number}`}>{h.hole_number}</Th>
-              ))}
-              <Th>Total</Th>
-            </tr>
-          </thead>
-          <tbody>
-            <tr className="border-t">
-              <Td className="font-medium">Par</Td>
-              {holes.map((h) => (
-                <Td key={`p-${h.hole_number}`}>{h.par ?? "—"}</Td>
-              ))}
-              <Td className="font-semibold">{par}</Td>
-            </tr>
-            <tr className="border-t">
-              <Td className="font-medium">Strokes</Td>
-              {holes.map((h) => (
-                <Td key={`s-${h.hole_number}`}>{h.strokes ?? "—"}</Td>
-              ))}
-              <Td className="font-semibold">{strokes || "—"}</Td>
-            </tr>
-            <tr className="border-t">
-              <Td className="font-medium">± Par</Td>
-              {holes.map((h) => {
-                const d = h.strokes != null && h.par != null ? h.strokes - h.par : null;
-                const cls = d != null ? (d < 0 ? "text-green-600" : d > 0 ? "text-red-600" : "") : "";
-                return (
-                  <Td key={`d-${h.hole_number}`} className={cls}>
-                    {fmtScoreToPar(d)}
-                  </Td>
-                );
-              })}
-              <Td className="font-semibold">{fmtScoreToPar(delta)}</Td>
-            </tr>
-          </tbody>
-        </table>
-      </div>
-    </div>
   );
 }

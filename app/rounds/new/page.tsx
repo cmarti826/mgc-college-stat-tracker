@@ -2,23 +2,23 @@
 import { createClient } from "@/lib/supabase/server";
 import RoundEntry from "../_components/RoundEntry";
 
-export const dynamic = "force-dynamic"; // avoid caching while building
+export const dynamic = "force-dynamic";
 
 export default async function NewRoundPage() {
   const supabase = createClient();
 
-  // Fetch minimal data needed to render selectors (players: select("*") so missing columns don't break)
-  const [playersRes, coursesRes, teeSetsRes] = await Promise.all([
+  const [playersRes, coursesRes, teesRes] = await Promise.all([
+    // players: select * so we work with full_name or any fields you have
     supabase.from("players").select("*").order("id"),
     supabase.from("courses").select("id, name").order("name"),
-    supabase.from("tee_sets").select("id, course_id, name, rating, slope, par").order("name"),
+    supabase.from("tees").select("id, course_id, name, rating, slope, par").order("name"),
   ]);
 
   const players = playersRes.data ?? [];
   const courses = coursesRes.data ?? [];
-  const teeSets = teeSetsRes.data ?? [];
+  const teeSets = teesRes.data ?? []; // prop name can stay teeSets
 
-  const anyError = playersRes.error || coursesRes.error || teeSetsRes.error;
+  const anyError = playersRes.error || coursesRes.error || teesRes.error;
 
   return (
     <div className="mx-auto max-w-[1200px] p-4 sm:p-6 lg:p-8 space-y-4">
@@ -30,7 +30,7 @@ export default async function NewRoundPage() {
           <ul className="text-sm mt-2 list-disc pl-5 space-y-1">
             {playersRes.error && <li>Players: {playersRes.error.message}</li>}
             {coursesRes.error && <li>Courses: {coursesRes.error.message}</li>}
-            {teeSetsRes.error && <li>Tee Sets: {teeSetsRes.error.message}</li>}
+            {teesRes.error && <li>Tees: {teesRes.error.message}</li>}
           </ul>
         </div>
       ) : null}

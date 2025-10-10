@@ -20,9 +20,9 @@ const RoundSchema = z.object({
   id: z.string().uuid().optional(),
   player_id: z.string().uuid(),
   course_id: z.string().uuid(),
-  tee_id: z.string().uuid(),            // ← matches your schema
-  played_on: z.string(),
-  // Optional in payload, but we won't write unless you add columns:
+  tee_id: z.string().uuid(),
+  date: z.string(), // <-- use DB column `date`
+  // leave these optional; we won't write unless you add them later
   notes: z.string().optional().nullable(),
   event_id: z.string().uuid().nullable().optional(),
   holes: z.array(HoleSchema).length(18),
@@ -36,12 +36,11 @@ export async function createRoundAction(payload: RoundPayload) {
   const parsed = RoundSchema.safeParse(payload);
   if (!parsed.success) return { error: "Invalid round payload" };
 
-  // Only known-safe columns (no notes/event unless you add them)
   const roundRow: Record<string, any> = {
     player_id: payload.player_id,
     course_id: payload.course_id,
     tee_id: payload.tee_id,
-    played_on: payload.played_on,
+    date: payload.date, // <-- write to `date`
     // notes: payload.notes ?? null,
     // event_id: payload.event_id ?? null,
   };
@@ -82,7 +81,7 @@ export async function updateRoundAction(payload: RoundPayload) {
     player_id: payload.player_id,
     course_id: payload.course_id,
     tee_id: payload.tee_id,
-    played_on: payload.played_on,
+    date: payload.date, // <-- write to `date`
     // notes: payload.notes ?? null,
     // event_id: payload.event_id ?? null,
   };
@@ -90,7 +89,6 @@ export async function updateRoundAction(payload: RoundPayload) {
   const { error } = await supabase.from("rounds").update(roundRow).eq("id", payload.id);
   if (error) return { error: error.message };
 
-  // Replace holes for this round
   await supabase.from("round_holes").delete().eq("round_id", payload.id);
 
   const rows = payload.holes.map((h) => ({

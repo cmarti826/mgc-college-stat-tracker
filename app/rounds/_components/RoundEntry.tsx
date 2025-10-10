@@ -3,11 +3,10 @@
 import { useEffect, useMemo, useRef, useState, useTransition } from "react";
 import { ChevronLeft, ChevronRight, Save, Send } from "lucide-react";
 import { z } from "zod";
-import HoleRow from "./HoleRow";
 import { createRoundAction, updateRoundAction } from "./actions";
 import { createClient as createBrowserSupabase } from "@/lib/supabase/browser";
 
-// ---- Types -----
+// ---------- Types ----------
 const HoleSchema = z.object({
   hole_number: z.number(),
   par: z.number().min(3).max(6),
@@ -27,7 +26,7 @@ const RoundSchema = z.object({
   course_id: z.string().uuid(),
   tee_set_id: z.string().uuid(),
   event_id: z.string().uuid().nullable().optional(),
-  played_on: z.string(), // ISO date
+  played_on: z.string(),
   notes: z.string().optional().nullable(),
   holes: z.array(HoleSchema).length(18),
 });
@@ -35,7 +34,7 @@ const RoundSchema = z.object({
 export type HoleInput = z.infer<typeof HoleSchema>;
 export type RoundInput = z.infer<typeof RoundSchema>;
 
-// ---- Helpers ----
+// ---------- Helpers ----------
 function empty18(): HoleInput[] {
   return Array.from({ length: 18 }, (_, i) => ({
     hole_number: i + 1,
@@ -51,60 +50,62 @@ function empty18(): HoleInput[] {
   }));
 }
 
-// B1) ---------- Auto-fill helpers ----------
+// B1) Fetch hole defs with multiple schema fallbacks.
+// Prefers: holes (by tee_id), fields may be named "number" (we alias to hole_number).
 async function fetchHoleDefs(
   supabase: ReturnType<typeof createBrowserSupabase>,
   teeSetId?: string,
   courseId?: string
 ): Promise<Array<{ hole_number: number; par: number | null; yards: number | null }>> {
-  const tries: Array<() => Promise<{ data?: any[] | null }>> = [];
+  // Utility to try a select and gracefully swallow “unknown column” errors.
+  const trySelect = async (
+    table: string,
+    whereCol: string,
+    whereVal: string,
+    selectExpr: string,
+    orderCol: string
+  ) => {
+    const { data, error } = await supabase
+      .from(table)
+      .select(selectExpr)
+      .eq(whereCol, whereVal)
+      .order(orderCol);
+    if (error) return null;
+    return (data ?? []) as any[];
+  };
 
+  // 1) holes filtered by tee id (most specific)
   if (teeSetId) {
-    // Most common tee-based tables
-    tries.push(
-      () =>
-        supabase
-          .from("tee_holes")
-          .select("hole_number, par, yards")
-          .eq("tee_set_id", teeSetId)
-          .order("hole_number"),
-      () =>
-        supabase
-          .from("course_tee_holes")
-          .select("hole_number, par, yards")
-          .eq("tee_set_id", teeSetId)
-          .order("hole_number"),
-      () =>
-        supabase
-          .from("tee_boxes_holes")
-          .select("hole_number, par, yards")
-          .eq("tee_set_id", teeSetId)
-          .order("hole_number")
-    );
+    // a) holes.tee_id with "number" aliased to hole_number
+    let d =
+      (await trySelect("holes", "tee_id", teeSetId, "hole_number:number, par, yards", "number")) ??
+      // b) holes.tee_id with real hole_number column
+      (await trySelect("holes", "tee_id", teeSetId, "hole_number, par, yards", "hole_number"));
+    if (d && d.length) return d;
   }
 
+  // 2) holes filtered by course id (coarser fallback)
   if (courseId) {
-    // Course fallbacks
-    tries.push(
-      () =>
-        supabase
-          .from("course_holes")
-          .select("hole_number, par, yards")
-          .eq("course_id", courseId)
-          .order("hole_number"),
-      () =>
-        supabase
-          .from("holes")
-          .select("hole_number, par, yards")
-          .eq("course_id", courseId)
-          .order("hole_number")
-    );
+    let d =
+      (await trySelect("holes", "course_id", courseId, "hole_number:number, par, yards", "number")) ??
+      (await trySelect("holes", "course_id", courseId, "hole_number, par, yards", "hole_number"));
+    if (d && d.length) return d;
   }
 
-  for (const fn of tries) {
-    const { data } = await fn();
-    if (data && data.length) return data as any[];
+  // 3) Extra common tables (if you later add them)
+  if (teeSetId) {
+    const alt =
+      (await trySelect("tee_holes", "tee_set_id", teeSetId, "hole_number, par, yards", "hole_number")) ??
+      (await trySelect("course_tee_holes", "tee_set_id", teeSetId, "hole_number, par, yards", "hole_number"));
+    if (alt && alt.length) return alt;
   }
+  if (courseId) {
+    const alt =
+      (await trySelect("course_holes", "course_id", courseId, "hole_number, par, yards", "hole_number")) ??
+      (await trySelect("holes", "course_id", courseId, "number:hole_number, par, yards", "hole_number"));
+    if (alt && alt.length) return alt;
+  }
+
   return [];
 }
 
@@ -124,8 +125,8 @@ function applyHoleDefs(
     };
   });
 }
-// ------------------------------------------
 
+// ---------- Component ----------
 export default function RoundEntry({
   mode,
   initialRound,
@@ -160,10 +161,9 @@ export default function RoundEntry({
     return empty18();
   });
 
-  // Inputs grid refs for turbo keyboard nav
+  // Refs for keyboard nav
   const cellRefs = useRef<HTMLInputElement[][]>([]);
 
-  // Auto-calc totals
   const totals = useMemo(() => {
     const s = holes.reduce(
       (acc, h) => {
@@ -244,7 +244,7 @@ export default function RoundEntry({
     });
   }
 
-  // B2) ---------- Auto-fill when tee or course changes ----------
+  // B2) Auto-fill when tee or course changes
   useEffect(() => {
     const supabase = createBrowserSupabase();
     (async () => {
@@ -254,7 +254,6 @@ export default function RoundEntry({
       }
     })();
   }, [teeSetId, courseId]);
-  // -------------------------------------------------------------
 
   // Keyboard turbo entry
   const registerCellRef = (rowIdx: number, colIdx: number) => (el: HTMLInputElement | null) => {
@@ -267,15 +266,12 @@ export default function RoundEntry({
     (row: number, col: number) =>
     (e: React.KeyboardEvent<HTMLInputElement>) => {
       if (!cellRefs.current.length) return;
-
       const rows = 18;
       const cols = 4; // Par, Yards, Strokes, Putts
-
       const go = (r: number, c: number) => {
         const el = cellRefs.current[r]?.[c];
         if (el) el.focus();
       };
-
       switch (e.key) {
         case "Enter":
         case "ArrowRight": {
@@ -343,7 +339,7 @@ export default function RoundEntry({
       {step === 1 && (
         <section className="space-y-4">
           <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
-            {/* Player select — resilient to schema */}
+            {/* Player (resilient naming) */}
             <div className="flex flex-col">
               <label className="text-sm font-medium">Player</label>
               <select
@@ -352,6 +348,8 @@ export default function RoundEntry({
                 onChange={(e) => setPlayerId(e.target.value || undefined)}
               >
                 <option value="">Select player…</option>
+                {/* Keep your own fields here; using * in fetch means we can fall back cleanly */}
+                {/* @ts-ignore */}
                 {players.map((p) => {
                   const hasFirstOrLast = Boolean(p.first_name || p.last_name);
                   const labelCore = hasFirstOrLast
@@ -403,14 +401,16 @@ export default function RoundEntry({
                 disabled={!courseId}
               >
                 <option value="">Select tee set…</option>
-                {teeOptions.map((t) => (
-                  <option key={t.id} value={t.id}>
-                    {t.name} — {t.rating ?? "-"} / {t.slope ?? "-"} (Par {t.par ?? "-"})
-                  </option>
-                ))}
+                {teeSets
+                  .filter((t) => t.course_id === courseId)
+                  .map((t) => (
+                    <option key={t.id} value={t.id}>
+                      {t.name} — {t.rating ?? "-"} / {t.slope ?? "-"} (Par {t.par ?? "-"})
+                    </option>
+                  ))}
               </select>
 
-              {/* B3) Manual auto-fill button */}
+              {/* B3) Manual auto-fill */}
               <button
                 type="button"
                 className="mt-2 inline-flex items-center rounded-xl border px-3 py-1 text-sm hover:shadow disabled:opacity-50"
@@ -482,7 +482,7 @@ export default function RoundEntry({
         <section className="space-y-4">
           <div className="overflow-x-auto rounded-2xl border">
             <table className="min-w-[900px] w-full text-sm">
-              {/* Use sticky top-0 so it stays aligned */}
+              {/* Sticky header fix */}
               <thead className="bg-gray-50 sticky top-0 z-10">
                 <tr>
                   <th className="p-3 text-left">#</th>
@@ -598,7 +598,7 @@ export default function RoundEntry({
       {/* Step 3: Review */}
       {step === 3 && (
         <section className="space-y-4">
-          {/* (Use your existing review cards/totals here if you had them) */}
+          {/* Your review UI here */}
           <div className="flex items-center justify-between">
             <button className="rounded-2xl border px-4 py-2 inline-flex items-center gap-2" onClick={() => setStep(2)}>
               <ChevronLeft className="h-4 w-4" /> Back

@@ -8,9 +8,9 @@ const one = <T,>(v: T | T[] | null | undefined): T | null =>
 
 export default async function RoundSummaryPage({ params }: { params: { id: string } }) {
   const supabase = createClient();
-  const { id } = params;
+  const roundId = params.id;
 
-  // Round + related
+  // Round + related entities (assumes standardized schema: rounds.date, rounds.tee_id -> tees)
   const { data: round, error: rErr } = await supabase
     .from("rounds")
     .select(`
@@ -19,7 +19,7 @@ export default async function RoundSummaryPage({ params }: { params: { id: strin
       course:courses(id, name),
       tee:tees(id, name, rating, slope, par)
     `)
-    .eq("id", id)
+    .eq("id", roundId)
     .single();
 
   if (rErr || !round) {
@@ -28,9 +28,7 @@ export default async function RoundSummaryPage({ params }: { params: { id: strin
         <h1 className="text-2xl font-semibold">Round not found</h1>
         <p className="text-gray-600 mt-2">{rErr?.message ?? "We couldn't load that round."}</p>
         <div className="mt-6">
-          <Link href="/rounds" className="underline">
-            Back to rounds
-          </Link>
+          <Link href="/rounds" className="underline">Back to rounds</Link>
         </div>
       </div>
     );
@@ -38,18 +36,14 @@ export default async function RoundSummaryPage({ params }: { params: { id: strin
 
   const player = one<any>(round.player);
   const course = one<{ id: string; name: string }>(round.course);
-  const tee = one<{ id: string; name: string; rating: number | null; slope: number | null; par: number | null }>(
-    round.tee
-  );
+  const tee = one<{ id: string; name: string; rating: number | null; slope: number | null; par: number | null }>(round.tee);
   const playerName = player?.full_name ?? player?.name ?? player?.display_name ?? "Unknown Player";
 
-  // Holes
+  // Holes for this round
   const { data: holes } = await supabase
     .from("round_holes")
-    .select(
-      "hole_number, par, yards, strokes, putts, fir, gir, up_down, sand_save, penalty"
-    )
-    .eq("round_id", id)
+    .select("hole_number, par, yards, strokes, putts, fir, gir, up_down, sand_save, penalty")
+    .eq("round_id", roundId)
     .order("hole_number");
 
   type HoleRow = {
@@ -67,12 +61,11 @@ export default async function RoundSummaryPage({ params }: { params: { id: strin
 
   const hs = (holes ?? []) as HoleRow[];
 
-  // --- helpers (typed to avoid the TS error you saw) ---
+  // Helpers (typed reduce avoids TS "t possibly null" errors)
   const sum = (xs: Array<number | null | undefined>): number =>
     xs.reduce<number>((acc, n) => acc + (n ?? 0), 0);
 
   const by = (a: number, b: number) => hs.filter((h) => h.hole_number >= a && h.hole_number <= b);
-
   const front = by(1, 9);
   const back = by(10, 18);
 
@@ -94,11 +87,7 @@ export default async function RoundSummaryPage({ params }: { params: { id: strin
   const girYes = hs.filter((h) => h.gir).length;
 
   const dateStr = round.date
-    ? new Date(round.date).toLocaleDateString(undefined, {
-        year: "numeric",
-        month: "short",
-        day: "numeric",
-      })
+    ? new Date(round.date).toLocaleDateString(undefined, { year: "numeric", month: "short", day: "numeric" })
     : "";
 
   return (
@@ -108,9 +97,7 @@ export default async function RoundSummaryPage({ params }: { params: { id: strin
         <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-3">
           <div>
             <h1 className="text-2xl font-semibold">{playerName}</h1>
-            <div className="text-gray-600 mt-1">
-              {(course?.name ?? "Unknown Course")} — {(tee?.name ?? "Tee")}
-            </div>
+            <div className="text-gray-600 mt-1">{course?.name ?? "Unknown Course"} — {tee?.name ?? "Tee"}</div>
             <div className="text-gray-600">{dateStr}</div>
             <div className="text-gray-500 text-sm mt-1">
               {tee?.rating ? `Rating ${tee.rating}` : ""}
@@ -118,8 +105,12 @@ export default async function RoundSummaryPage({ params }: { params: { id: strin
               {tee?.par ? ` • Par ${tee.par}` : ""}
             </div>
           </div>
-          <div className="flex items-center gap-2">
-            <Link href={`/rounds/${id}/edit`} className="rounded-2xl border px-4 py-2 hover:shadow">
+          <div className="flex flex-wrap items-center gap-2">
+            {/* Optional link requested */}
+            <Link href={`/rounds/${roundId}/shots`} className="rounded-2xl border px-4 py-2 hover:shadow">
+              Add Shots
+            </Link>
+            <Link href={`/rounds/${roundId}/edit`} className="rounded-2xl border px-4 py-2 hover:shadow">
               Edit
             </Link>
             <Link href="/rounds" className="rounded-2xl border px-4 py-2 hover:shadow">
@@ -146,7 +137,7 @@ export default async function RoundSummaryPage({ params }: { params: { id: strin
         <Kpi label="Penalties" value={hs.filter((h) => h.penalty).length} />
       </div>
 
-      {/* Holes */}
+      {/* Holes table */}
       <div className="overflow-x-auto rounded-2xl border">
         <table className="min-w-[900px] w-full text-sm">
           <thead className="bg-gray-50">
@@ -166,25 +157,14 @@ export default async function RoundSummaryPage({ params }: { params: { id: strin
           </thead>
           <tbody>
             {hs.map((h) => {
-              const delta =
-                h.strokes != null && h.par != null ? h.strokes - h.par : null;
+              const delta = h.strokes != null && h.par != null ? h.strokes - h.par : null;
               return (
                 <tr key={h.hole_number} className="border-t">
                   <Td>{h.hole_number}</Td>
                   <Td>{h.par ?? "—"}</Td>
                   <Td>{h.yards ?? "—"}</Td>
                   <Td>{h.strokes ?? "—"}</Td>
-                  <Td
-                    className={
-                      delta != null
-                        ? delta < 0
-                          ? "text-green-600"
-                          : delta > 0
-                          ? "text-red-600"
-                          : ""
-                        : ""
-                    }
-                  >
+                  <Td className={delta != null ? (delta < 0 ? "text-green-600" : delta > 0 ? "text-red-600" : "") : ""}>
                     {fmtToPar(delta)}
                   </Td>
                   <Td>{h.putts ?? "—"}</Td>
@@ -226,7 +206,16 @@ function Kpi({ label, value, helper }: { label: string; value: number | string; 
 function Th({ children }: { children: React.ReactNode }) {
   return <th className="p-3 text-left font-medium text-gray-700">{children}</th>;
 }
-function Td({ children, className = "", colSpan }: { children: React.ReactNode; className?: string; colSpan?: number }) {
+
+function Td({
+  children,
+  className = "",
+  colSpan,
+}: {
+  children: React.ReactNode;
+  className?: string;
+  colSpan?: number;
+}) {
   return (
     <td className={`p-3 ${className}`} colSpan={colSpan}>
       {children}

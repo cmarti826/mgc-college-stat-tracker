@@ -20,35 +20,73 @@ const RoundSchema = z.object({
   id: z.string().uuid().optional(),
   player_id: z.string().uuid(),
   course_id: z.string().uuid(),
-  tee_id: z.string().uuid(),
-  date: z.string(), // yyyy-mm-dd
-  notes: z.string().nullable().optional(),
-  event_id: z.string().uuid().nullable().optional(),
+  tee_id: z.string().uuid(),  // canonical now
+  date: z.string(),           // yyyy-mm-dd
   holes: z.array(HoleSchema).length(18),
 });
 
 export type RoundPayload = z.infer<typeof RoundSchema>;
 
+async function assertExists(
+  supabase: ReturnType<typeof createClient>,
+  table: "players" | "courses" | "tees",
+  id: string,
+  label: string
+) {
+  const { data, error } = await supabase.from(table).select("id").eq("id", id).maybeSingle();
+  if (error) return `${label}: ${error.message}`;
+  if (!data) return `${label}: not found (id ${id})`;
+  return null;
+}
+
 export async function createRoundAction(payload: RoundPayload) {
   const supabase = createClient();
-  const parsed = RoundSchema.safeParse(payload);
-  if (!parsed.success) return { error: "Invalid round payload" };
 
-  const { data: round, error } = await supabase
+  const parsed = RoundSchema.safeParse(payload);
+  if (!parsed.success) return { error: "Please complete player, course, tee, date and 18 holes." };
+
+  // Preflight FK checks (clear error messages instead of FK crash)
+  for (const [table, id, label] of [
+    ["players", payload.player_id, "Player"] as const,
+    ["courses", payload.course_id, "Course"] as const,
+    ["tees",    payload.tee_id,    "Tee"] as const,
+  ]) {
+    const err = await assertExists(supabase, table as any, id, label);
+    if (err) return { error: err };
+  }
+
+  // Insert round (write tee_set_id too if it exists in your DB)
+  let { data: round, error } = await supabase
     .from("rounds")
     .insert({
       player_id: payload.player_id,
       course_id: payload.course_id,
       tee_id: payload.tee_id,
+      tee_set_id: payload.tee_id, // harmless if col missing; we'll retry below
       date: payload.date,
-      notes: payload.notes ?? null,
-      event_id: payload.event_id ?? null,
-    })
+    } as any)
     .select("id")
     .single();
 
+  if (error && /column .* does not exist|schema cache/i.test(error.message)) {
+    // Retry without tee_set_id if that column doesn't exist
+    const retry = await supabase
+      .from("rounds")
+      .insert({
+        player_id: payload.player_id,
+        course_id: payload.course_id,
+        tee_id: payload.tee_id,
+        date: payload.date,
+      })
+      .select("id")
+      .single();
+    error = retry.error ?? null;
+    round = retry.data ?? null;
+  }
+
   if (error) return { error: error.message };
 
+  // Insert holes
   const rows = payload.holes.map((h) => ({
     round_id: round!.id,
     hole_number: h.hole_number,
@@ -73,17 +111,39 @@ export async function updateRoundAction(payload: RoundPayload) {
   const supabase = createClient();
   if (!payload.id) return { error: "Missing round id" };
 
-  const { error } = await supabase
+  // Preflight
+  for (const [table, id, label] of [
+    ["players", payload.player_id, "Player"] as const,
+    ["courses", payload.course_id, "Course"] as const,
+    ["tees",    payload.tee_id,    "Tee"] as const,
+  ]) {
+    const err = await assertExists(supabase, table as any, id, label);
+    if (err) return { error: err };
+  }
+
+  let { error } = await supabase
     .from("rounds")
     .update({
       player_id: payload.player_id,
       course_id: payload.course_id,
       tee_id: payload.tee_id,
+      tee_set_id: payload.tee_id, // retry fallback below
       date: payload.date,
-      notes: payload.notes ?? null,
-      event_id: payload.event_id ?? null,
-    })
+    } as any)
     .eq("id", payload.id);
+
+  if (error && /column .* does not exist|schema cache/i.test(error.message)) {
+    const retry = await supabase
+      .from("rounds")
+      .update({
+        player_id: payload.player_id,
+        course_id: payload.course_id,
+        tee_id: payload.tee_id,
+        date: payload.date,
+      })
+      .eq("id", payload.id);
+    error = retry.error ?? null;
+  }
 
   if (error) return { error: error.message };
 

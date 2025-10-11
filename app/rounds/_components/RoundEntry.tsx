@@ -162,6 +162,8 @@ export default function RoundEntry({
       alert("Please complete player, date, course, tee and 18 holes.");
       return;
     }
+// just before createRoundAction/updateRoundAction
+console.log("payload:", payload);
 
     startTransition(async () => {
       const res = mode === "create" ? await createRoundAction(payload) : await updateRoundAction(payload);

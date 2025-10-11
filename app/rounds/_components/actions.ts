@@ -3,112 +3,139 @@
 import { createClient } from "@/lib/supabase/server";
 import { z } from "zod";
 
-export const ShotInput = z.object({
-  hole_number: z.number().min(1).max(18),
-  shot_order: z.number().min(1), // 1 = tee shot
-  club: z.string().optional().nullable(),
-  lie: z.enum(["Tee", "Fairway", "Rough", "Sand", "Recovery", "Green", "Penalty", "Other"]),
-  distance_to_hole_m: z.number().nullable().optional(),
-  start_x: z.number().nullable().optional(),
-  start_y: z.number().nullable().optional(),
-  end_x: z.number().nullable().optional(),
-  end_y: z.number().nullable().optional(),
-  result_lie: z
-    .enum(["Fairway", "Rough", "Sand", "Green", "Hole", "Penalty", "Other"])
-    .nullable()
-    .optional(),
-  result_distance_to_hole_m: z.number().nullable().optional(),
-  putt: z.boolean().optional().nullable(),
-  penalty_strokes: z.number().int().min(0).optional().nullable(),
+const HoleSchema = z.object({
+  hole_number: z.number(),
+  par: z.number().min(3).max(6),
+  yards: z.number().nullable().optional(),
+  strokes: z.number().nullable().optional(),
+  putts: z.number().nullable().optional(),
+  fir: z.boolean().nullable().optional(),
+  gir: z.boolean().nullable().optional(),
+  up_down: z.boolean().nullable().optional(),
+  sand_save: z.boolean().nullable().optional(),
+  penalty: z.boolean().nullable().optional(),
 });
-export type ShotInputType = z.infer<typeof ShotInput>;
 
-const ShotArray = z.array(ShotInput);
+const RoundSchema = z.object({
+  id: z.string().uuid().optional(),
+  player_id: z.string().uuid(),
+  course_id: z.string().uuid(),
+  tee_id: z.string().uuid(),  // canonical now
+  date: z.string(),           // yyyy-mm-dd
+  holes: z.array(HoleSchema).length(18),
+});
 
-export async function getRoundHeader(roundId: string) {
+export type RoundPayload = z.infer<typeof RoundSchema>;
+
+async function mustExist(
+  supabase: ReturnType<typeof createClient>,
+  table: "players" | "courses" | "tees",
+  id: string,
+  label: string
+) {
+  const { data, error } = await supabase.from(table).select("id").eq("id", id).maybeSingle();
+  if (error) return `${label}: ${error.message}`;
+  if (!data) return `${label} not found (id ${id})`;
+  return null;
+}
+
+export async function createRoundAction(payload: RoundPayload) {
   const supabase = createClient();
-  const { data, error } = await supabase
+
+  const parsed = RoundSchema.safeParse(payload);
+  if (!parsed.success) return { error: "Please complete player, course, tee, date and 18 holes." };
+
+  // Preflight FK checks
+  for (const [table, id, label] of [
+    ["players", payload.player_id, "Player"] as const,
+    ["courses", payload.course_id, "Course"] as const,
+    ["tees", payload.tee_id, "Tee"] as const,
+  ]) {
+    const err = await mustExist(supabase, table as any, id, label);
+    if (err) return { error: err };
+  }
+
+  // Insert round
+  const { data: round, error } = await supabase
     .from("rounds")
-    .select(
-      `
-      id, date,
-      player:players(*),
-      course:courses(id, name),
-      tee:tees(id, name, rating, slope, par)
-    `
-    )
-    .eq("id", roundId)
+    .insert({
+      player_id: payload.player_id,
+      course_id: payload.course_id,
+      tee_id: payload.tee_id,
+      date: payload.date,
+    })
+    .select("id")
     .single();
+
   if (error) return { error: error.message };
-  return { data };
-}
 
-export async function getShots(roundId: string) {
-  const supabase = createClient();
-  const { data, error } = await supabase
-    .from("shots")
-    .select(
-      "id, round_id, hole_number, shot_order, club, lie, distance_to_hole_m, start_x, start_y, end_x, end_y, result_lie, result_distance_to_hole_m, putt, penalty_strokes"
-    )
-    .eq("round_id", roundId)
-    .order("hole_number", { ascending: true })
-    .order("shot_order", { ascending: true });
-  if (error) return { error: error.message };
-  return { data: data ?? [] };
-}
-
-/**
- * Replace all shots for a round with the provided set.
- * Orders within each hole are normalized to 1..N.
- */
-export async function saveShots(roundId: string, shots: ShotInputType[]) {
-  const supabase = createClient();
-
-  const parsed = ShotArray.safeParse(shots);
-  if (!parsed.success) {
-    return { error: "Invalid shots payload" };
-  }
-
-  // Normalize orders per hole
-  const byHole = new Map<number, ShotInputType[]>();
-  for (const s of shots) {
-    if (!byHole.has(s.hole_number)) byHole.set(s.hole_number, []);
-    byHole.get(s.hole_number)!.push(s);
-  }
-  const normalized: ShotInputType[] = [];
-  for (const [hole, arr] of byHole.entries()) {
-    const sorted = arr
-      .slice()
-      .sort((a, b) => a.shot_order - b.shot_order)
-      .map((s, idx) => ({ ...s, shot_order: idx + 1 }));
-    normalized.push(...sorted);
-  }
-
-  // Replace strategy
-  const { error: delErr } = await supabase.from("shots").delete().eq("round_id", roundId);
-  if (delErr) return { error: delErr.message };
-
-  const rows = normalized.map((s) => ({
-    round_id: roundId,
-    hole_number: s.hole_number,
-    shot_order: s.shot_order,
-    club: s.club ?? null,
-    lie: s.lie,
-    distance_to_hole_m: s.distance_to_hole_m ?? null,
-    start_x: s.start_x ?? null,
-    start_y: s.start_y ?? null,
-    end_x: s.end_x ?? null,
-    end_y: s.end_y ?? null,
-    result_lie: s.result_lie ?? null,
-    result_distance_to_hole_m: s.result_distance_to_hole_m ?? null,
-    putt: !!s.putt,
-    penalty_strokes: s.penalty_strokes ?? 0,
+  // Insert holes
+  const rows = payload.holes.map((h) => ({
+    round_id: round!.id,
+    hole_number: h.hole_number,
+    par: h.par,
+    yards: h.yards,
+    strokes: h.strokes,
+    putts: h.putts,
+    fir: h.par === 4 || h.par === 5 ? h.fir : null,
+    gir: h.gir,
+    up_down: h.up_down,
+    sand_save: h.sand_save,
+    penalty: h.penalty,
   }));
 
-  if (rows.length) {
-    const { error: insErr } = await supabase.from("shots").insert(rows);
-    if (insErr) return { error: insErr.message };
+  const { error: holesErr } = await supabase.from("round_holes").insert(rows);
+  if (holesErr) return { error: holesErr.message };
+
+  return { id: round!.id };
+}
+
+export async function updateRoundAction(payload: RoundPayload) {
+  const supabase = createClient();
+  if (!payload.id) return { error: "Missing round id" };
+
+  // Preflight FK checks
+  for (const [table, id, label] of [
+    ["players", payload.player_id, "Player"] as const,
+    ["courses", payload.course_id, "Course"] as const,
+    ["tees", payload.tee_id, "Tee"] as const,
+  ]) {
+    const err = await mustExist(supabase, table as any, id, label);
+    if (err) return { error: err };
   }
 
-  return { ok: true };
+  // Update round
+  const { error } = await supabase
+    .from("rounds")
+    .update({
+      player_id: payload.player_id,
+      course_id: payload.course_id,
+      tee_id: payload.tee_id,
+      date: payload.date,
+    })
+    .eq("id", payload.id);
+
+  if (error) return { error: error.message };
+
+  // Replace holes
+  await supabase.from("round_holes").delete().eq("round_id", payload.id);
+
+  const rows = payload.holes.map((h) => ({
+    round_id: payload.id!,
+    hole_number: h.hole_number,
+    par: h.par,
+    yards: h.yards,
+    strokes: h.strokes,
+    putts: h.putts,
+    fir: h.par === 4 || h.par === 5 ? h.fir : null,
+    gir: h.gir,
+    up_down: h.up_down,
+    sand_save: h.sand_save,
+    penalty: h.penalty,
+  }));
+
+  const { error: holesErr } = await supabase.from("round_holes").insert(rows);
+  if (holesErr) return { error: holesErr.message };
+
+  return { id: payload.id };
 }

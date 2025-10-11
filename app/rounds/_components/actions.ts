@@ -1,9 +1,9 @@
+// app/rounds/_components/actions.ts (drop-in)
 "use server";
-
 import { createClient } from "@/lib/supabase/server";
 import { z } from "zod";
 
-const HoleSchema = z.object({
+const Hole = z.object({
   hole_number: z.number(),
   par: z.number().min(3).max(6),
   yards: z.number().nullable().optional(),
@@ -15,79 +15,42 @@ const HoleSchema = z.object({
   sand_save: z.boolean().nullable().optional(),
   penalty: z.boolean().nullable().optional(),
 });
-
-const RoundSchema = z.object({
+const Round = z.object({
   id: z.string().uuid().optional(),
   player_id: z.string().uuid(),
   course_id: z.string().uuid(),
-  tee_id: z.string().uuid(),  // canonical now
-  date: z.string(),           // yyyy-mm-dd
-  holes: z.array(HoleSchema).length(18),
+  tee_id: z.string().uuid(),
+  date: z.string(), // yyyy-mm-dd
+  holes: z.array(Hole).length(18),
 });
+type RoundPayload = z.infer<typeof Round>;
 
-export type RoundPayload = z.infer<typeof RoundSchema>;
-
-async function assertExists(
-  supabase: ReturnType<typeof createClient>,
-  table: "players" | "courses" | "tees",
-  id: string,
-  label: string
-) {
+async function mustExist(supabase: any, table: "players"|"courses"|"tees", id: string, label: string) {
   const { data, error } = await supabase.from(table).select("id").eq("id", id).maybeSingle();
   if (error) return `${label}: ${error.message}`;
-  if (!data) return `${label}: not found (id ${id})`;
+  if (!data) return `${label} not found (id ${id})`;
   return null;
 }
 
-export async function createRoundAction(payload: RoundPayload) {
+export async function createRoundAction(p: RoundPayload) {
   const supabase = createClient();
-
-  const parsed = RoundSchema.safeParse(payload);
+  const parsed = Round.safeParse(p);
   if (!parsed.success) return { error: "Please complete player, course, tee, date and 18 holes." };
 
-  // Preflight FK checks (clear error messages instead of FK crash)
-  for (const [table, id, label] of [
-    ["players", payload.player_id, "Player"] as const,
-    ["courses", payload.course_id, "Course"] as const,
-    ["tees",    payload.tee_id,    "Tee"] as const,
-  ]) {
-    const err = await assertExists(supabase, table as any, id, label);
+  for (const [t,id,label] of [["players",p.player_id,"Player"],["courses",p.course_id,"Course"],["tees",p.tee_id,"Tee"]] as const) {
+    const err = await mustExist(supabase, t as any, id, label);
     if (err) return { error: err };
   }
 
-  // Insert round (write tee_set_id too if it exists in your DB)
   let { data: round, error } = await supabase
     .from("rounds")
-    .insert({
-      player_id: payload.player_id,
-      course_id: payload.course_id,
-      tee_id: payload.tee_id,
-      tee_set_id: payload.tee_id, // harmless if col missing; we'll retry below
-      date: payload.date,
-    } as any)
+    .insert({ player_id: p.player_id, course_id: p.course_id, tee_id: p.tee_id, date: p.date })
     .select("id")
     .single();
 
-  if (error && /column .* does not exist|schema cache/i.test(error.message)) {
-    // Retry without tee_set_id if that column doesn't exist
-    const retry = await supabase
-      .from("rounds")
-      .insert({
-        player_id: payload.player_id,
-        course_id: payload.course_id,
-        tee_id: payload.tee_id,
-        date: payload.date,
-      })
-      .select("id")
-      .single();
-    error = retry.error ?? null;
-    round = retry.data ?? null;
-  }
-
   if (error) return { error: error.message };
 
-  // Insert holes
-  const rows = payload.holes.map((h) => ({
+  const rows = p.holes.map(h => ({
     round_id: round!.id,
     hole_number: h.hole_number,
     par: h.par,
@@ -100,57 +63,30 @@ export async function createRoundAction(payload: RoundPayload) {
     sand_save: h.sand_save,
     penalty: h.penalty,
   }));
-
   const { error: holesErr } = await supabase.from("round_holes").insert(rows);
   if (holesErr) return { error: holesErr.message };
 
   return { id: round!.id };
 }
 
-export async function updateRoundAction(payload: RoundPayload) {
+export async function updateRoundAction(p: RoundPayload) {
   const supabase = createClient();
-  if (!payload.id) return { error: "Missing round id" };
+  if (!p.id) return { error: "Missing round id" };
 
-  // Preflight
-  for (const [table, id, label] of [
-    ["players", payload.player_id, "Player"] as const,
-    ["courses", payload.course_id, "Course"] as const,
-    ["tees",    payload.tee_id,    "Tee"] as const,
-  ]) {
-    const err = await assertExists(supabase, table as any, id, label);
+  for (const [t,id,label] of [["players",p.player_id,"Player"],["courses",p.course_id,"Course"],["tees",p.tee_id,"Tee"]] as const) {
+    const err = await mustExist(supabase, t as any, id, label);
     if (err) return { error: err };
   }
 
-  let { error } = await supabase
+  const { error } = await supabase
     .from("rounds")
-    .update({
-      player_id: payload.player_id,
-      course_id: payload.course_id,
-      tee_id: payload.tee_id,
-      tee_set_id: payload.tee_id, // retry fallback below
-      date: payload.date,
-    } as any)
-    .eq("id", payload.id);
-
-  if (error && /column .* does not exist|schema cache/i.test(error.message)) {
-    const retry = await supabase
-      .from("rounds")
-      .update({
-        player_id: payload.player_id,
-        course_id: payload.course_id,
-        tee_id: payload.tee_id,
-        date: payload.date,
-      })
-      .eq("id", payload.id);
-    error = retry.error ?? null;
-  }
-
+    .update({ player_id: p.player_id, course_id: p.course_id, tee_id: p.tee_id, date: p.date })
+    .eq("id", p.id);
   if (error) return { error: error.message };
 
-  await supabase.from("round_holes").delete().eq("round_id", payload.id);
-
-  const rows = payload.holes.map((h) => ({
-    round_id: payload.id,
+  await supabase.from("round_holes").delete().eq("round_id", p.id);
+  const rows = p.holes.map(h => ({
+    round_id: p.id,
     hole_number: h.hole_number,
     par: h.par,
     yards: h.yards,
@@ -162,9 +98,8 @@ export async function updateRoundAction(payload: RoundPayload) {
     sand_save: h.sand_save,
     penalty: h.penalty,
   }));
-
   const { error: holesErr } = await supabase.from("round_holes").insert(rows);
   if (holesErr) return { error: holesErr.message };
 
-  return { id: payload.id };
+  return { id: p.id };
 }

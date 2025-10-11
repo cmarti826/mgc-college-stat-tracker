@@ -6,14 +6,14 @@ import { z } from "zod";
 const HoleSchema = z.object({
   hole_number: z.number(),
   par: z.number().min(3).max(6),
-  yards: z.number().optional().nullable(),
-  strokes: z.number().optional().nullable(),
-  putts: z.number().optional().nullable(),
-  fir: z.boolean().optional().nullable(),
-  gir: z.boolean().optional().nullable(),
-  up_down: z.boolean().optional().nullable(),
-  sand_save: z.boolean().optional().nullable(),
-  penalty: z.boolean().optional().nullable(),
+  yards: z.number().nullable().optional(),
+  strokes: z.number().nullable().optional(),
+  putts: z.number().nullable().optional(),
+  fir: z.boolean().nullable().optional(),
+  gir: z.boolean().nullable().optional(),
+  up_down: z.boolean().nullable().optional(),
+  sand_save: z.boolean().nullable().optional(),
+  penalty: z.boolean().nullable().optional(),
 });
 
 const RoundSchema = z.object({
@@ -21,91 +21,36 @@ const RoundSchema = z.object({
   player_id: z.string().uuid(),
   course_id: z.string().uuid(),
   tee_id: z.string().uuid(),
-  // UI sends a date string; backend maps it to the correct column (round_date/date/played_on/played_at)
-  date: z.string(),
-  // Optional in payload; we skip writing unless your DB actually has these columns
-  notes: z.string().optional().nullable(),
+  date: z.string(), // yyyy-mm-dd
+  notes: z.string().nullable().optional(),
   event_id: z.string().uuid().nullable().optional(),
   holes: z.array(HoleSchema).length(18),
 });
 
 export type RoundPayload = z.infer<typeof RoundSchema>;
 
-// Column candidates in priority order (based on your schema diagram)
-const DATE_COL_CANDIDATES = ["round_date", "date", "played_on", "played_at"] as const;
-type DateCol = typeof DATE_COL_CANDIDATES[number];
-
-function isMissingDateColError(msg: string | undefined) {
-  if (!msg) return false;
-  const m = msg.toLowerCase();
-  return m.includes("schema cache") || (m.includes("column") && m.includes("does not exist"));
-}
-
-async function tolerantInsertRound(
-  supabase: ReturnType<typeof createClient>,
-  payload: RoundPayload
-): Promise<{ id?: string; error?: string }> {
-  const baseRow: Record<string, any> = {
-    player_id: payload.player_id,
-    course_id: payload.course_id,
-    tee_id: payload.tee_id,
-  };
-
-  // Try each candidate date column until one succeeds
-  for (const col of DATE_COL_CANDIDATES) {
-    const row = { ...baseRow, [col]: payload.date };
-    const { data, error } = await supabase.from("rounds").insert(row).select("id").single();
-    if (!error) return { id: data?.id };
-    if (!isMissingDateColError(error.message)) {
-      // Real error unrelated to missing column
-      return { error: error.message };
-    }
-    // otherwise try next candidate
-  }
-
-  // Final attempt without a date column (in case it's nullable)
-  const { data, error } = await supabase.from("rounds").insert(baseRow).select("id").single();
-  if (error) return { error: error.message };
-  return { id: data?.id };
-}
-
-async function tolerantUpdateRound(
-  supabase: ReturnType<typeof createClient>,
-  payload: RoundPayload
-): Promise<{ error?: string }> {
-  const baseRow: Record<string, any> = {
-    player_id: payload.player_id,
-    course_id: payload.course_id,
-    tee_id: payload.tee_id,
-  };
-
-  for (const col of DATE_COL_CANDIDATES) {
-    const row = { ...baseRow, [col]: payload.date };
-    const { error } = await supabase.from("rounds").update(row).eq("id", payload.id as string);
-    if (!error) return {};
-    if (!isMissingDateColError(error.message)) {
-      return { error: error.message };
-    }
-  }
-
-  // Last resort: update without date column
-  const { error } = await supabase.from("rounds").update(baseRow).eq("id", payload.id as string);
-  if (error) return { error: error.message };
-  return {};
-}
-
 export async function createRoundAction(payload: RoundPayload) {
   const supabase = createClient();
-
   const parsed = RoundSchema.safeParse(payload);
   if (!parsed.success) return { error: "Invalid round payload" };
 
-  const ins = await tolerantInsertRound(supabase, payload);
-  if (ins.error || !ins.id) return { error: ins.error ?? "Failed to create round" };
+  const { data: round, error } = await supabase
+    .from("rounds")
+    .insert({
+      player_id: payload.player_id,
+      course_id: payload.course_id,
+      tee_id: payload.tee_id,
+      date: payload.date,
+      notes: payload.notes ?? null,
+      event_id: payload.event_id ?? null,
+    })
+    .select("id")
+    .single();
 
-  // Insert holes
+  if (error) return { error: error.message };
+
   const rows = payload.holes.map((h) => ({
-    round_id: ins.id!,
+    round_id: round!.id,
     hole_number: h.hole_number,
     par: h.par,
     yards: h.yards,
@@ -121,17 +66,27 @@ export async function createRoundAction(payload: RoundPayload) {
   const { error: holesErr } = await supabase.from("round_holes").insert(rows);
   if (holesErr) return { error: holesErr.message };
 
-  return { id: ins.id };
+  return { id: round!.id };
 }
 
 export async function updateRoundAction(payload: RoundPayload) {
   const supabase = createClient();
   if (!payload.id) return { error: "Missing round id" };
 
-  const upd = await tolerantUpdateRound(supabase, payload);
-  if (upd.error) return { error: upd.error };
+  const { error } = await supabase
+    .from("rounds")
+    .update({
+      player_id: payload.player_id,
+      course_id: payload.course_id,
+      tee_id: payload.tee_id,
+      date: payload.date,
+      notes: payload.notes ?? null,
+      event_id: payload.event_id ?? null,
+    })
+    .eq("id", payload.id);
 
-  // Replace holes for the round
+  if (error) return { error: error.message };
+
   await supabase.from("round_holes").delete().eq("round_id", payload.id);
 
   const rows = payload.holes.map((h) => ({

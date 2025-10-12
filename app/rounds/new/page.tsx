@@ -10,17 +10,18 @@ type Tee = { id: string; name: string; course_id: string | null; rating: number 
 export default async function NewRoundPage() {
   const supabase = createClient();
 
-  // Load dropdown data (IDs only — no chance of FK mismatch from names)
-  const [{ data: players, error: pErr }, { data: courses, error: cErr }, { data: tees, error: tErr }] =
-    await Promise.all([
-      supabase.from("players").select("id, full_name").order("full_name", { ascending: true }),
-      supabase.from("courses").select("id, name").order("name", { ascending: true }),
-      supabase.from("tees").select("id, name, course_id, rating, slope, par").order("name", { ascending: true }),
-    ]);
+  const [
+    { data: players, error: pErr },
+    { data: courses, error: cErr },
+    { data: tees, error: tErr },
+  ] = await Promise.all([
+    supabase.from("players").select("id, full_name").order("full_name", { ascending: true }),
+    supabase.from("courses").select("id, name").order("name", { ascending: true }),
+    supabase.from("tees").select("id, name, course_id, rating, slope, par").order("name", { ascending: true }),
+  ]);
 
   const loadError = pErr?.message || cErr?.message || tErr?.message;
 
-  // Gentle empty-state guidance
   const hasPlayers = (players?.length ?? 0) > 0;
   const hasCourses = (courses?.length ?? 0) > 0;
   const hasTees = (tees?.length ?? 0) > 0;
@@ -40,24 +41,31 @@ export default async function NewRoundPage() {
         </div>
       )}
 
-      {/* If any list is empty, show a helper instead of a broken form */}
-      {(!hasPlayers || !hasCourses || !hasTees) ? (
+      {!hasPlayers || !hasCourses || !hasTees ? (
         <div className="rounded-xl border p-5 bg-white">
-          <p className="text-gray-800 mb-3">You need a player, a course, and a tee before entering a round.</p>
+          <p className="text-gray-800 mb-3">
+            You need a player, a course, and a tee before entering a round.
+          </p>
           <ul className="list-disc pl-5 text-gray-700 space-y-1">
             {!hasPlayers && <li>Add at least one player (table: <code>players</code>).</li>}
             {!hasCourses && <li>Add at least one course (table: <code>courses</code>).</li>}
             {!hasTees && <li>Add at least one tee (table: <code>tees</code>, linked to a course).</li>}
           </ul>
           <p className="text-gray-600 mt-3">
-            Tip: run the seed CTE we used earlier or add rows in the Supabase table editor. Once they exist, refresh this page.
+            Add rows in the Supabase table editor (or run the seed we used earlier), then refresh.
           </p>
         </div>
       ) : (
         <RoundEntry
-          players={(players as Player[]).map(p => ({ id: p.id, full_name: p.full_name ?? "Unnamed Player" }))}
+          mode="create"
+          initialRound={null}
+          players={(players as Player[]).map((p) => ({
+            id: p.id,
+            full_name: p.full_name ?? "Unnamed Player",
+          }))}
           courses={(courses as Course[])}
-          tees={(tees as Tee[])}
+          // IMPORTANT: your component prop is not "tees"; it expects "teeSelects"
+          teeSelects={(tees as Tee[])}
         />
       )}
     </div>

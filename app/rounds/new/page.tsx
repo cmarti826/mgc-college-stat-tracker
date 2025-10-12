@@ -5,7 +5,14 @@ import RoundEntry from "../_components/RoundEntry";
 
 type Player = { id: string; full_name: string | null };
 type Course = { id: string; name: string };
-type Tee = { id: string; name: string; course_id: string | null; rating: number | null; slope: number | null; par: number | null };
+type Tee = {
+  id: string;
+  name: string;
+  course_id: string | null;
+  rating: number | null;
+  slope: number | null;
+  par: number | null;
+};
 
 export default async function NewRoundPage() {
   const supabase = createClient();
@@ -52,7 +59,7 @@ export default async function NewRoundPage() {
             {!hasTees && <li>Add at least one tee (table: <code>tees</code>, linked to a course).</li>}
           </ul>
           <p className="text-gray-600 mt-3">
-            Add rows in the Supabase table editor (or run the seed we used earlier), then refresh.
+            Add rows in the Supabase table editor (or run the seed), then refresh.
           </p>
         </div>
       ) : (
@@ -64,8 +71,7 @@ export default async function NewRoundPage() {
             full_name: p.full_name ?? "Unnamed Player",
           }))}
           courses={(courses as Course[])}
-          // IMPORTANT: your component prop is not "tees"; it expects "teeSelects"
-          teeSelects={(tees as Tee[])}
+          teeSets={(tees as Tee[])}   {/* <- correct prop name */}
         />
       )}
     </div>

@@ -1,7 +1,7 @@
 // app/rounds/[id]/shots/page.tsx
 import { getRoundHeader, getShots } from "@/app/rounds/_components/shotActions";
 import ShotEditor from "@/app/rounds/_components/ShotEditor";
-import type { ShotInputType } from "@/app/rounds/_components/shotActions";
+import type { ShotInputType } from "@/app/rounds/_components/shotSchema";
 import Link from "next/link";
 
 export default async function ShotsPage({ params }: { params: { id: string } }) {

@@ -1,42 +1,18 @@
 "use server";
 
 import { createClient } from "@/lib/supabase/server";
-import { z } from "zod";
-
-export const ShotInput = z.object({
-  hole_number: z.number().min(1).max(18),
-  shot_order: z.number().min(1), // 1 = tee shot
-  club: z.string().optional().nullable(),
-  lie: z.enum(["Tee", "Fairway", "Rough", "Sand", "Recovery", "Green", "Penalty", "Other"]),
-  distance_to_hole_m: z.number().nullable().optional(),
-  start_x: z.number().nullable().optional(),
-  start_y: z.number().nullable().optional(),
-  end_x: z.number().nullable().optional(),
-  end_y: z.number().nullable().optional(),
-  result_lie: z
-    .enum(["Fairway", "Rough", "Sand", "Green", "Hole", "Penalty", "Other"])
-    .nullable()
-    .optional(),
-  result_distance_to_hole_m: z.number().nullable().optional(),
-  putt: z.boolean().optional().nullable(),
-  penalty_strokes: z.number().int().min(0).optional().nullable(),
-});
-export type ShotInputType = z.infer<typeof ShotInput>;
-
-const ShotArray = z.array(ShotInput);
+import { ShotArray, type ShotInputType } from "./shotSchema";
 
 export async function getRoundHeader(roundId: string) {
   const supabase = createClient();
   const { data, error } = await supabase
     .from("rounds")
-    .select(
-      `
+    .select(`
       id, date,
       player:players(*),
       course:courses(id, name),
       tee:tees(id, name, rating, slope, par)
-    `
-    )
+    `)
     .eq("id", roundId)
     .single();
   if (error) return { error: error.message };
@@ -47,9 +23,7 @@ export async function getShots(roundId: string) {
   const supabase = createClient();
   const { data, error } = await supabase
     .from("shots")
-    .select(
-      "id, round_id, hole_number, shot_order, club, lie, distance_to_hole_m, start_x, start_y, end_x, end_y, result_lie, result_distance_to_hole_m, putt, penalty_strokes"
-    )
+    .select("id, round_id, hole_number, shot_order, club, lie, distance_to_hole_m, start_x, start_y, end_x, end_y, result_lie, result_distance_to_hole_m, putt, penalty_strokes")
     .eq("round_id", roundId)
     .order("hole_number", { ascending: true })
     .order("shot_order", { ascending: true });
@@ -64,7 +38,7 @@ export async function saveShots(roundId: string, shots: ShotInputType[]) {
   const parsed = ShotArray.safeParse(shots);
   if (!parsed.success) return { error: "Invalid shots payload" };
 
-  // Normalize orders per hole
+  // Normalize shot_order per hole
   const byHole = new Map<number, ShotInputType[]>();
   for (const s of shots) {
     if (!byHole.has(s.hole_number)) byHole.set(s.hole_number, []);

@@ -1,7 +1,8 @@
 "use client";
 
 import { useMemo, useState, useTransition } from "react";
-import { saveShots, type ShotInputType } from "./shotActions";
+import { saveShots } from "./shotActions";
+import type { ShotInputType } from "./shotSchema";
 import { ChevronLeft, ChevronRight, Plus, Trash2, Save } from "lucide-react";
 
 type Header = {

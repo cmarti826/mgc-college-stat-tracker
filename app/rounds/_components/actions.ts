@@ -33,11 +33,16 @@ async function mustExist(
   id: string,
   label: string
 ) {
+  // cheap uuid gate — avoids querying with non-uuids
+  const isUuid = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(id);
+  if (!isUuid) return `${label}: invalid id (${id})`;
+
   const { data, error } = await supabase.from(table).select("id").eq("id", id).maybeSingle();
   if (error) return `${label}: ${error.message}`;
   if (!data) return `${label} not found (id ${id})`;
   return null;
 }
+
 
 export async function createRoundAction(payload: RoundPayload) {
   const supabase = createClient();

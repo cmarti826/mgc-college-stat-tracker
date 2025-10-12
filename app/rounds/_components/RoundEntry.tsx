@@ -163,7 +163,8 @@ export default function RoundEntry({
       return;
     }
 // just before createRoundAction/updateRoundAction
-console.log("payload:", payload);
+console.log("round payload", payload);
+
 
     startTransition(async () => {
       const res = mode === "create" ? await createRoundAction(payload) : await updateRoundAction(payload);

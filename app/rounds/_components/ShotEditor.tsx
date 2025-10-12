@@ -1,7 +1,7 @@
 "use client";
 
 import { useMemo, useState, useTransition } from "react";
-import { saveShots, ShotInputType } from "./shotActions";
+import { saveShots, type ShotInputType } from "./shotActions";
 import { ChevronLeft, ChevronRight, Plus, Trash2, Save } from "lucide-react";
 
 type Header = {
@@ -25,10 +25,7 @@ export default function ShotEditor({
   const [isPending, startTransition] = useTransition();
 
   const shotsForHole = useMemo(
-    () =>
-      shots
-        .filter((s) => s.hole_number === hole)
-        .sort((a, b) => a.shot_order - b.shot_order),
+    () => shots.filter((s) => s.hole_number === hole).sort((a, b) => a.shot_order - b.shot_order),
     [shots, hole]
   );
 
@@ -55,23 +52,16 @@ export default function ShotEditor({
   function removeShot(order: number) {
     setShots((prev) => {
       const keep = prev.filter((s) => !(s.hole_number === hole && s.shot_order === order));
-      // reindex
-      const adjusted = keep.map((s) =>
-        s.hole_number !== hole || s.shot_order < order
-          ? s
-          : s.hole_number === hole
-          ? { ...s, shot_order: s.shot_order - 1 }
-          : s
+      // reindex the remaining shots for this hole
+      return keep.map((s) =>
+        s.hole_number === hole && s.shot_order > order ? { ...s, shot_order: s.shot_order - 1 } : s
       );
-      return adjusted;
     });
   }
 
   function updateShot(order: number, patch: Partial<ShotInputType>) {
     setShots((prev) =>
-      prev.map((s) =>
-        s.hole_number === hole && s.shot_order === order ? { ...s, ...patch } : s
-      )
+      prev.map((s) => (s.hole_number === hole && s.shot_order === order ? { ...s, ...patch } : s))
     );
   }
 
@@ -96,11 +86,8 @@ export default function ShotEditor({
   function saveAll() {
     startTransition(async () => {
       const res = await saveShots(roundId, shots);
-      if (res?.error) {
-        alert(res.error);
-      } else {
-        alert("Shots saved");
-      }
+      if (res?.error) alert(res.error);
+      else alert("Shots saved");
     });
   }
 
@@ -131,7 +118,7 @@ export default function ShotEditor({
       {/* Hole nav */}
       <div className="flex items-center justify-between">
         <button
-          className="rounded-xl border px-3 py-1 inline-flex items-center gap-1"
+          className="rounded-xl border px-3 py-1 inline-flex items-center gap-1 disabled:opacity-50"
           onClick={() => changeHole(hole - 1)}
           disabled={hole === 1}
         >
@@ -139,7 +126,7 @@ export default function ShotEditor({
         </button>
         <div className="text-lg font-semibold">Hole {hole}</div>
         <button
-          className="rounded-xl border px-3 py-1 inline-flex items-center gap-1"
+          className="rounded-xl border px-3 py-1 inline-flex items-center gap-1 disabled:opacity-50"
           onClick={() => changeHole(hole + 1)}
           disabled={hole === 18}
         >
@@ -160,7 +147,7 @@ export default function ShotEditor({
               <Th>Result Dist</Th>
               <Th>Putt</Th>
               <Th>Penalty</Th>
-              <Th></Th>
+              <Th>Actions</Th>
             </tr>
           </thead>
           <tbody>
@@ -295,22 +282,19 @@ export default function ShotEditor({
       </div>
 
       <div className="flex items-center justify-between">
-        <button
-          className="inline-flex items-center gap-2 rounded-xl border px-3 py-2"
-          onClick={addShot}
-        >
+        <button className="inline-flex items-center gap-2 rounded-xl border px-3 py-2" onClick={addShot}>
           <Plus className="w-4 h-4" /> Add shot
         </button>
         <div className="flex items-center gap-2">
           <button
-            className="rounded-xl border px-3 py-2"
+            className="rounded-xl border px-3 py-2 disabled:opacity-50"
             onClick={() => changeHole(hole - 1)}
             disabled={hole === 1}
           >
             Prev hole
           </button>
           <button
-            className="rounded-xl border px-3 py-2"
+            className="rounded-xl border px-3 py-2 disabled:opacity-50"
             onClick={() => changeHole(hole + 1)}
             disabled={hole === 18}
           >
@@ -325,6 +309,7 @@ export default function ShotEditor({
 function Th({ children }: { children: React.ReactNode }) {
   return <th className="p-3 text-left font-medium text-gray-700">{children}</th>;
 }
+
 function Td({
   children,
   className = "",

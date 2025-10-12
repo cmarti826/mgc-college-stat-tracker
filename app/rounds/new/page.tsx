@@ -1,85 +1,65 @@
 // app/rounds/new/page.tsx
 import { createClient } from "@/lib/supabase/server";
+import Link from "next/link";
 import RoundEntry from "../_components/RoundEntry";
 
-export const dynamic = "force-dynamic";
-
-type TeeUi = {
-  id: string;
-  course_id: string;
-  name: string;
-  rating: number | null;
-  slope: number | null;
-  par: number | null;
-};
-
-async function loadTees(supabase: ReturnType<typeof createClient>): Promise<{
-  tees: TeeUi[];
-  errorMsg?: string;
-}> {
-  // Try "tees" first
-  const t1 = await supabase
-    .from("tees")
-    .select("id, course_id, name, rating, slope, par")
-    .order("name");
-
-  if (!t1.error) {
-    return { tees: (t1.data ?? []) as TeeUi[] };
-  }
-
-  // If "tees" doesn't exist, try "tee_sets"
-  const t2 = await supabase
-    .from("tee_sets")
-    .select("id, course_id, name, rating, slope, par")
-    .order("name");
-
-  if (!t2.error) {
-    return { tees: (t2.data ?? []) as TeeUi[] };
-  }
-
-  // If both fail, return the first error (usually "table not found")
-  return { tees: [], errorMsg: t1.error?.message || t2.error?.message || "Unknown error loading tees" };
-}
+type Player = { id: string; full_name: string | null };
+type Course = { id: string; name: string };
+type Tee = { id: string; name: string; course_id: string | null; rating: number | null; slope: number | null; par: number | null };
 
 export default async function NewRoundPage() {
   const supabase = createClient();
 
-  const [playersRes, coursesRes] = await Promise.all([
-    // Use * so we work with full_name or any other fields
-    supabase.from("players").select("*").order("id"),
-    supabase.from("courses").select("id, name").order("name"),
-  ]);
+  // Load dropdown data (IDs only — no chance of FK mismatch from names)
+  const [{ data: players, error: pErr }, { data: courses, error: cErr }, { data: tees, error: tErr }] =
+    await Promise.all([
+      supabase.from("players").select("id, full_name").order("full_name", { ascending: true }),
+      supabase.from("courses").select("id, name").order("name", { ascending: true }),
+      supabase.from("tees").select("id, name, course_id, rating, slope, par").order("name", { ascending: true }),
+    ]);
 
-  const { tees, errorMsg: teesErr } = await loadTees(supabase);
+  const loadError = pErr?.message || cErr?.message || tErr?.message;
 
-  const players = playersRes.data ?? [];
-  const courses = coursesRes.data ?? [];
-  const teeSets = tees; // prop name can stay teeSets
-
-  const anyError = playersRes.error || coursesRes.error || teesErr;
+  // Gentle empty-state guidance
+  const hasPlayers = (players?.length ?? 0) > 0;
+  const hasCourses = (courses?.length ?? 0) > 0;
+  const hasTees = (tees?.length ?? 0) > 0;
 
   return (
-    <div className="mx-auto max-w-[1200px] p-4 sm:p-6 lg:p-8 space-y-4">
-      <h1 className="text-2xl font-semibold">New Round</h1>
+    <div className="mx-auto max-w-[1100px] p-6 space-y-6">
+      <div className="flex items-center justify-between">
+        <h1 className="text-2xl font-semibold">New Round</h1>
+        <Link href="/rounds" className="rounded-xl border px-4 py-2 hover:shadow">
+          All Rounds
+        </Link>
+      </div>
 
-      {anyError ? (
-        <div className="rounded-xl border border-red-300 bg-red-50 p-4 text-red-800">
-          <div className="font-medium">Couldn’t load setup data.</div>
-          <ul className="text-sm mt-2 list-disc pl-5 space-y-1">
-            {playersRes.error && <li>Players: {playersRes.error.message}</li>}
-            {coursesRes.error && <li>Courses: {coursesRes.error.message}</li>}
-            {teesErr && <li>Tees: {teesErr}</li>}
-          </ul>
+      {loadError && (
+        <div className="rounded-xl border border-red-200 bg-red-50 p-4 text-red-700">
+          Couldn’t load dropdown data: {loadError}
         </div>
-      ) : null}
+      )}
 
-      <RoundEntry
-        mode="create"
-        initialRound={null}
-        players={players}
-        courses={courses}
-        teeSets={teeSets}
-      />
+      {/* If any list is empty, show a helper instead of a broken form */}
+      {(!hasPlayers || !hasCourses || !hasTees) ? (
+        <div className="rounded-xl border p-5 bg-white">
+          <p className="text-gray-800 mb-3">You need a player, a course, and a tee before entering a round.</p>
+          <ul className="list-disc pl-5 text-gray-700 space-y-1">
+            {!hasPlayers && <li>Add at least one player (table: <code>players</code>).</li>}
+            {!hasCourses && <li>Add at least one course (table: <code>courses</code>).</li>}
+            {!hasTees && <li>Add at least one tee (table: <code>tees</code>, linked to a course).</li>}
+          </ul>
+          <p className="text-gray-600 mt-3">
+            Tip: run the seed CTE we used earlier or add rows in the Supabase table editor. Once they exist, refresh this page.
+          </p>
+        </div>
+      ) : (
+        <RoundEntry
+          players={(players as Player[]).map(p => ({ id: p.id, full_name: p.full_name ?? "Unnamed Player" }))}
+          courses={(courses as Course[])}
+          tees={(tees as Tee[])}
+        />
+      )}
     </div>
   );
 }

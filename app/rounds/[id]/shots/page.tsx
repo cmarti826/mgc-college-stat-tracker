@@ -1,5 +1,7 @@
+// app/rounds/[id]/shots/page.tsx
 import { getRoundHeader, getShots } from "@/app/rounds/_components/shotActions";
 import ShotEditor from "@/app/rounds/_components/ShotEditor";
+import type { ShotInputType } from "@/app/rounds/_components/shotActions";
 import Link from "next/link";
 
 export default async function ShotsPage({ params }: { params: { id: string } }) {
@@ -54,6 +56,8 @@ export default async function ShotsPage({ params }: { params: { id: string } }) 
     );
   }
 
+  const shots: ShotInputType[] = (existingShots ?? []) as ShotInputType[];
+
   return (
     <div className="mx-auto max-w-[1100px] p-6 space-y-6">
       <div className="flex items-center justify-between">
@@ -63,7 +67,7 @@ export default async function ShotsPage({ params }: { params: { id: string } }) 
         </Link>
       </div>
 
-      <ShotEditor roundId={roundId} header={header} initialShots={existingShots} />
+      <ShotEditor roundId={roundId} header={header} initialShots={shots} />
     </div>
   );
 }

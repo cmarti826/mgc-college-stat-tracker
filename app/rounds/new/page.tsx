@@ -59,7 +59,7 @@ export default async function NewRoundPage() {
             {!hasTees && <li>Add at least one tee (table: <code>tees</code>, linked to a course).</li>}
           </ul>
           <p className="text-gray-600 mt-3">
-            Add rows in the Supabase table editor (or run the seed), then refresh.
+            Add rows in the Supabase table editor (or run your seed), then refresh.
           </p>
         </div>
       ) : (
@@ -71,7 +71,7 @@ export default async function NewRoundPage() {
             full_name: p.full_name ?? "Unnamed Player",
           }))}
           courses={(courses as Course[])}
-          teeSets={(tees as Tee[])}   {/* <- correct prop name */}
+          teeSets={(tees as Tee[])}
         />
       )}
     </div>

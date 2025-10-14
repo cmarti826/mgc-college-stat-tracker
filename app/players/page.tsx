@@ -1,124 +1,48 @@
-// app/players/page.tsx
-'use client'
+import Link from 'next/link';
+import { createClient } from '@/lib/supabase/server';
 
-import { useEffect, useMemo, useState } from 'react'
-import { supabaseBrowser } from '@/lib/supabase-browser'
+type Player = { id: string; full_name: string | null };
 
-type Player = { id: string; full_name: string; grad_year: number | null }
-type Mapping = { player_id: string | null } | null
+export default async function PlayersPage() {
+  const supabase = createClient();
+  const {
+    data: { user },
+  } = await supabase.auth.getUser();
+  if (!user) return <div className="p-6">Please <Link href="/login">log in</Link>.</div>;
 
-export default function PlayersPage() {
-  const supabase = useMemo(() => supabaseBrowser(), [])
-  const [players, setPlayers] = useState<Player[]>([])
-  const [myPlayerId, setMyPlayerId] = useState<string | null>(null)
-  const [newName, setNewName] = useState('')
-  const [newGrad, setNewGrad] = useState<number | ''>('')
-
-  async function load() {
-    const { data: { user } } = await supabase.auth.getUser()
-    // current mapping
-    let mp: Mapping = null
-    if (user?.id) {
-      const { data } = await supabase
-        .from('user_players')
-        .select('player_id')
-        .eq('user_id', user.id)
-        .maybeSingle()
-      mp = data ?? null
-    }
-    setMyPlayerId(mp?.player_id ?? null)
-
-    // all players
-    const { data: list } = await supabase
-      .from('players')
-      .select('id, full_name, grad_year')
-      .order('full_name', { ascending: true })
-    setPlayers((list ?? []) as Player[])
-  }
-
-  useEffect(() => { load() }, [])
-
-  async function addPlayer(e: React.FormEvent) {
-    e.preventDefault()
-    if (!newName.trim()) return
-    await supabase.from('players').insert({
-      full_name: newName.trim(),
-      grad_year: newGrad === '' ? null : Number(newGrad),
-    })
-    setNewName('')
-    setNewGrad('')
-    await load()
-  }
-
-  async function linkMe(playerId: string) {
-    const { data: { user } } = await supabase.auth.getUser()
-    if (!user?.id) return alert('Please sign in.')
-    await supabase
-      .from('user_players')
-      .upsert({ user_id: user.id, player_id: playerId }, { onConflict: 'user_id' })
-    setMyPlayerId(playerId)
-    alert('Linked! Your rounds and filters will use this player.')
+  // If you created the v_my_players view, this is super simple:
+  const { data: players, error } = await supabase.from('v_my_players').select('*');
+  if (error) {
+    return <div className="p-6 text-red-600">Error loading players: {error.message}</div>;
   }
 
   return (
-    <div className="space-y-6">
+    <div className="mx-auto max-w-3xl p-6 space-y-6">
       <div className="flex items-center justify-between">
-        <h1>Players</h1>
+        <h1 className="text-2xl font-semibold">My Players</h1>
+        <Link href="/players/attach" className="rounded border px-3 py-2 hover:shadow">
+          Link Player
+        </Link>
       </div>
 
-      {/* Add player */}
-      <div className="card">
-        <div className="card-header">
-          <div className="card-title">Add Player</div>
+      {players?.length ? (
+        <ul className="space-y-2">
+          {players.map((p: Player) => (
+            <li key={p.id} className="rounded border p-3">
+              <div className="font-medium">{p.full_name ?? 'Unnamed Player'}</div>
+              <div className="text-xs text-gray-500">{p.id}</div>
+            </li>
+          ))}
+        </ul>
+      ) : (
+        <div className="text-sm text-gray-600">
+          No players linked to your account yet.{' '}
+          <Link href="/players/attach" className="underline">
+            Link one now
+          </Link>
+          .
         </div>
-        <form onSubmit={addPlayer} className="grid gap-3 sm:grid-cols-3">
-          <div>
-            <label className="label">Full name</label>
-            <input className="input" value={newName} onChange={e => setNewName(e.target.value)} placeholder="First Last" />
-          </div>
-          <div>
-            <label className="label">Grad year (optional)</label>
-            <input className="input" type="number" value={newGrad} onChange={e => setNewGrad(e.target.value === '' ? '' : Number(e.target.value))} placeholder="2028" />
-          </div>
-          <div className="flex items-end">
-            <button className="btn-on-light" type="submit">Add Player</button>
-          </div>
-        </form>
-      </div>
-
-      {/* Current link */}
-      <div className="card">
-        <div className="card-header">
-          <div>
-            <div className="card-title">Your Player Link</div>
-            <div className="card-subtle">
-              {myPlayerId ? 'You are linked to a roster player. You can change it below.' : 'Not linked yet. Choose a player below.'}
-            </div>
-          </div>
-        </div>
-        <table className="table">
-          <thead>
-            <tr>
-              <th>Name</th><th>Grad</th><th>Link</th>
-            </tr>
-          </thead>
-          <tbody>
-            {players.map(p => (
-              <tr key={p.id}>
-                <td>{p.full_name}</td>
-                <td>{p.grad_year ?? '—'}</td>
-                <td>
-                  {myPlayerId === p.id ? (
-                    <span className="chip chip-blue">Linked</span>
-                  ) : (
-                    <button className="btn-on-light-outline" onClick={() => linkMe(p.id)}>Link me</button>
-                  )}
-                </td>
-              </tr>
-            ))}
-          </tbody>
-        </table>
-      </div>
+      )}
     </div>
-  )
+  );
 }

@@ -1,123 +1,134 @@
-'use client'
+// app/page.tsx
+import Link from "next/link";
+import { createClient } from "@/lib/supabase/server";
+import DashboardPanel from "./_components/DashboardPanel";
 
-import { useEffect, useMemo, useState } from 'react'
-import Link from 'next/link'
-import { useRouter } from 'next/navigation'
-import { supabaseBrowser } from '@/lib/supabase-browser'
+type Player = { id: string; full_name: string | null };
 
-type Course = { id: string; name: string; city: string | null; state: string | null }
-type TeeSet = { id: string; course_id: string }
+type RoundTotals = {
+  round_id: string;
+  player_id: string;
+  round_date: string | null;
+  strokes_total: number | null;
+  putts_total: number | null;
+  fir_hits: number | null;
+  fir_opps: number | null;
+  fir_measured: number | null;
+  gir_hits: number | null;
+  gir_opps: number | null;
+  penalties_total: number | null;
+};
 
-export default function HomePage() {
-  const supabase = useMemo(() => supabaseBrowser(), [])
-  const router = useRouter()
-  const [loading, setLoading] = useState(true)
-  const [courses, setCourses] = useState<Course[]>([])
-  const [teeCounts, setTeeCounts] = useState<Record<string, number>>({})
+type RoundMeta = {
+  id: string;             // round id
+  player_id: string;
+  tee_id: string | null;
+  date: string | null;
+  tee_name: string | null;
+  rating: number | null;
+  slope: number | null;
+  course_par: number | null;
+};
 
-  useEffect(() => {
-    let alive = true
-    ;(async () => {
-      setLoading(true)
+type SGRows = {
+  round_id: string;
+  sg_ott: number | null;
+  sg_app: number | null;
+  sg_arg: number | null;
+  sg_putt: number | null;
+  sg_total: number | null;
+};
 
-      // require login
-      const { data: { user } } = await supabase.auth.getUser()
-      if (!user) { router.push('/auth/login'); return }
+export default async function DashboardPage() {
+  const supabase = createClient();
+  const { data: auth } = await supabase.auth.getUser();
+  const user = auth.user;
 
-      // load user's courses
-      const { data: courseRows, error: cErr } = await supabase
-        .from('courses')
-        .select('id,name,city,state')
-        .order('name', { ascending: true })
-      if (cErr) { alert(`Error loading courses: ${cErr.message}`); return }
-      if (!alive) return
-
-      setCourses(courseRows ?? [])
-
-      // load tee sets (to compute counts per course)
-      const { data: tees, error: tErr } = await supabase
-        .from('tee_sets')
-        .select('id,course_id')
-      if (tErr) { console.warn('tee_sets load:', tErr.message) }
-
-      const counts: Record<string, number> = {}
-      ;(tees ?? []).forEach((t: TeeSet) => {
-        counts[t.course_id] = (counts[t.course_id] ?? 0) + 1
-      })
-      if (!alive) return
-      setTeeCounts(counts)
-
-      setLoading(false)
-    })()
-    return () => { alive = false }
-  }, [router, supabase])
-
-  if (loading) {
+  if (!user) {
     return (
-      <div className="mx-auto max-w-4xl p-6 space-y-4">
-        <div className="flex items-center justify-between">
-          <h1 className="text-2xl font-semibold">Courses</h1>
-          <div className="flex gap-2">
-            <span className="rounded-xl border px-3 py-1.5 bg-gray-50 animate-pulse">New Course</span>
-            <span className="rounded-xl border px-3 py-1.5 bg-gray-50 animate-pulse">New Tee Set</span>
-          </div>
-        </div>
-        <div className="h-24 rounded-2xl bg-gray-100 animate-pulse" />
+      <div className="mx-auto max-w-3xl p-8">
+        <h1 className="text-2xl font-semibold mb-4">Welcome</h1>
+        <p>
+          Please <Link className="underline" href="/login">sign in</Link> to see your dashboard.
+        </p>
       </div>
-    )
+    );
+  }
+
+  // Players linked to this user
+  let players: Player[] = [];
+  const viewPlayers = await supabase.from("v_my_players").select("*");
+  if (!viewPlayers.error && viewPlayers.data) {
+    players = viewPlayers.data as any;
+  } else {
+    const links = await supabase.from("user_players").select("player_id").eq("user_id", user.id);
+    const ids = links.data?.map(r => r.player_id) ?? [];
+    if (ids.length) {
+      const { data } = await supabase.from("players").select("id, full_name").in("id", ids);
+      players = (data ?? []) as any;
+    }
+  }
+  const playerIds = players.map(p => p.id);
+
+  // Recent rounds totals (limit 50 for charts)
+  let rounds: RoundTotals[] = [];
+  if (playerIds.length) {
+    const { data } = await supabase
+      .from("v_round_totals")
+      .select("*")
+      .in("player_id", playerIds)
+      .order("round_date", { ascending: false })
+      .limit(50);
+    rounds = (data ?? []) as any;
+  }
+
+  // Meta (par, tee name, etc.)
+  const roundIds = rounds.map(r => r.round_id);
+  const metaMap: Record<string, RoundMeta> = {};
+  if (roundIds.length) {
+    const { data } = await supabase
+      .from("v_rounds_enriched")
+      .select("*")
+      .in("id", roundIds);
+    for (const m of (data ?? []) as any[]) {
+      metaMap[m.id] = m as RoundMeta;
+    }
+  }
+
+  // Optional Strokes Gained view (skip silently if missing)
+  const sgMap: Record<string, SGRows> = {};
+  if (roundIds.length) {
+    const sg = await supabase
+      .from("v_round_sg_totals") // <- name this view exactly; if absent, this just errors and we ignore
+      .select("*")
+      .in("round_id", roundIds);
+    if (!sg.error && sg.data) {
+      for (const row of sg.data as any[]) {
+        sgMap[row.round_id] = row as SGRows;
+      }
+    }
   }
 
   return (
-    <div className="mx-auto max-w-5xl p-6 space-y-6">
+    <div className="mx-auto max-w-6xl p-6 space-y-8">
       <div className="flex items-center justify-between">
-        <h1 className="text-2xl font-semibold">Courses</h1>
+        <h1 className="text-2xl font-semibold">Dashboard</h1>
         <div className="flex gap-2">
-          <Link href="/courses/new" className="rounded-2xl border px-3 py-1.5 shadow hover:bg-gray-50">New Course</Link>
-          <Link href="/tee-sets/new" className="rounded-2xl border px-3 py-1.5 shadow hover:bg-gray-50">New Tee Set</Link>
-          <Link href="/rounds/new" className="rounded-2xl border px-3 py-1.5 shadow hover:bg-gray-50">Start Round</Link>
+          <Link href="/rounds/new" className="rounded-xl border px-4 py-2 hover:shadow">
+            + New Round
+          </Link>
+          <Link href="/players/attach" className="rounded-xl border px-4 py-2 hover:shadow">
+            Link Player
+          </Link>
         </div>
       </div>
 
-      {courses.length === 0 ? (
-        <div className="rounded-2xl border p-6 text-sm">
-          No courses yet. Create your first one:
-          <Link href="/courses/new" className="ml-2 underline">Add Course</Link>
-        </div>
-      ) : (
-        <ul className="grid sm:grid-cols-2 lg:grid-cols-3 gap-4">
-          {courses.map(c => {
-            const count = teeCounts[c.id] ?? 0
-            const location = [c.city, c.state].filter(Boolean).join(', ')
-            return (
-              <li key={c.id} className="rounded-2xl border p-4 shadow-sm bg-white flex flex-col gap-3">
-                <div>
-                  <div className="text-base font-semibold">{c.name}</div>
-                  <div className="text-xs text-gray-500">{location || '—'}</div>
-                </div>
-                <div className="text-xs text-gray-600">
-                  Tee sets: <span className="font-medium">{count}</span>
-                </div>
-                <div className="mt-auto flex gap-2">
-                  <Link
-                    href="/tee-sets/new"
-                    className="rounded-xl border px-3 py-1.5 text-sm hover:bg-gray-50"
-                    title="Create a tee set for this course"
-                  >
-                    Add Tee Set
-                  </Link>
-                  <Link
-                    href="/rounds/new"
-                    className="rounded-xl border px-3 py-1.5 text-sm hover:bg-gray-50"
-                    title="Start a new round"
-                  >
-                    Start Round
-                  </Link>
-                </div>
-              </li>
-            )
-          })}
-        </ul>
-      )}
+      <DashboardPanel
+        players={players}
+        rounds={rounds}
+        meta={metaMap}
+        sg={sgMap}
+      />
     </div>
-  )
+  );
 }

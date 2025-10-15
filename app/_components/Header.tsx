@@ -1,6 +1,6 @@
+// app/_components/Header.tsx
 import Link from "next/link";
 import { createClient } from "@/lib/supabase/server";
-import { signOutAction } from "@/app/actions/auth";
 
 export default async function Header() {
   const supabase = createClient();
@@ -15,7 +15,7 @@ export default async function Header() {
             <>
               <Link href="/rounds" className="px-2">Rounds</Link>
               <Link href="/players" className="px-2">Players</Link>
-              <form action={signOutAction}>
+              <form action="/logout" method="post">
                 <button className="rounded border px-3 py-1">Sign out</button>
               </form>
             </>

@@ -35,11 +35,11 @@ export default async function ShotsPage({ params }: { params: { id: string } }) 
     : "";
 
   const header = {
-    playerName: player?.full_name ?? player?.name ?? "Unknown Player",
-    courseName: course?.name ?? "Unknown Course",
-    teeName: tee?.name ?? "Tee",
-    dateStr,
-  };
+  player_name: playerName,
+  course_name: courseName,
+  tee_name: teeName,
+  round_date: dateStr,
+};
 
   const { data: existingShots, error: shotsErr } = await getShots(roundId);
   if (shotsErr) {

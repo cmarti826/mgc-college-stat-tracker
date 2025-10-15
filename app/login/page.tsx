@@ -1,6 +1,7 @@
 'use client';
 
 import { useState } from "react";
+import { useSearchParams } from "next/navigation";
 import { createClient } from "@/lib/supabase/browser";
 
 export default function LoginPage() {
@@ -8,12 +9,22 @@ export default function LoginPage() {
   const [email, setEmail] = useState("");
   const [sent, setSent] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const search = useSearchParams();
+  const requested = search.get("redirect") || "/rounds";
 
   async function onSubmit(e: React.FormEvent) {
     e.preventDefault();
     setError(null);
-    const origin = typeof window !== "undefined" ? window.location.origin : (process.env.NEXT_PUBLIC_SITE_URL ?? "");
-    const redirectTo = `${origin}/auth/callback`;
+
+    const origin =
+      typeof window !== "undefined"
+        ? window.location.origin
+        : (process.env.NEXT_PUBLIC_SITE_URL ?? "");
+
+    const redirectTo = `${origin}/auth/callback?redirect=${encodeURIComponent(
+      requested
+    )}`;
+
     const { error } = await supabase.auth.signInWithOtp({
       email,
       options: { emailRedirectTo: redirectTo },
@@ -37,7 +48,9 @@ export default function LoginPage() {
             onChange={(e) => setEmail(e.target.value)}
             required
           />
-          <button className="rounded bg-indigo-600 px-4 py-2 text-white">Send magic link</button>
+          <button className="rounded bg-indigo-600 px-4 py-2 text-white">
+            Send magic link
+          </button>
           {error && <p className="text-red-600 text-sm">{error}</p>}
         </form>
       )}

@@ -59,16 +59,28 @@ export default async function DashboardPage() {
   let players: Player[] = [];
   const viewPlayers = await supabase.from("v_my_players").select("*");
   if (!viewPlayers.error && viewPlayers.data) {
-    players = viewPlayers.data as any;
+    players = viewPlayers.data as Player[];
   } else {
-    const links = await supabase.from("user_players").select("player_id").eq("user_id", user.id);
-    const ids = links.data?.map(r => r.player_id) ?? [];
+    const links = await supabase
+      .from("user_players")
+      .select("player_id")
+      .eq("user_id", user.id);
+
+    // ✅ FIX: type the map row
+    const ids: string[] = (links.data ?? []).map(
+      (r: { player_id: string }) => r.player_id
+    );
+
     if (ids.length) {
-      const { data } = await supabase.from("players").select("id, full_name").in("id", ids);
-      players = (data ?? []) as any;
+      const { data } = await supabase
+        .from("players")
+        .select("id, full_name")
+        .in("id", ids);
+      players = (data ?? []) as Player[];
     }
   }
-  const playerIds = players.map(p => p.id);
+
+  const playerIds = players.map((p) => p.id);
 
   // Recent rounds totals (limit 50 for charts)
   let rounds: RoundTotals[] = [];
@@ -79,11 +91,11 @@ export default async function DashboardPage() {
       .in("player_id", playerIds)
       .order("round_date", { ascending: false })
       .limit(50);
-    rounds = (data ?? []) as any;
+    rounds = (data ?? []) as RoundTotals[];
   }
 
   // Meta (par, tee name, etc.)
-  const roundIds = rounds.map(r => r.round_id);
+  const roundIds = rounds.map((r) => r.round_id);
   const metaMap: Record<string, RoundMeta> = {};
   if (roundIds.length) {
     const { data } = await supabase
@@ -99,7 +111,7 @@ export default async function DashboardPage() {
   const sgMap: Record<string, SGRows> = {};
   if (roundIds.length) {
     const sg = await supabase
-      .from("v_round_sg_totals") // <- name this view exactly; if absent, this just errors and we ignore
+      .from("v_round_sg_totals") // if you don’t have this view, it will just be undefined/error and we ignore
       .select("*")
       .in("round_id", roundIds);
     if (!sg.error && sg.data) {
@@ -123,12 +135,7 @@ export default async function DashboardPage() {
         </div>
       </div>
 
-      <DashboardPanel
-        players={players}
-        rounds={rounds}
-        meta={metaMap}
-        sg={sgMap}
-      />
+      <DashboardPanel players={players} rounds={rounds} meta={metaMap} sg={sgMap} />
     </div>
   );
 }

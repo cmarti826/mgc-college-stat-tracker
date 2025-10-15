@@ -1,5 +1,5 @@
+// app/login/page.tsx
 'use client';
-
 import { useState } from "react";
 import { useSearchParams } from "next/navigation";
 import { createClient } from "@/lib/supabase/browser";
@@ -9,8 +9,8 @@ export default function LoginPage() {
   const [email, setEmail] = useState("");
   const [sent, setSent] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const search = useSearchParams();
-  const requested = search.get("redirect") || "/rounds";
+  const params = useSearchParams();
+  const requested = params.get("redirect") || "/rounds";
 
   async function onSubmit(e: React.FormEvent) {
     e.preventDefault();
@@ -21,14 +21,13 @@ export default function LoginPage() {
         ? window.location.origin
         : (process.env.NEXT_PUBLIC_SITE_URL ?? "");
 
-    const redirectTo = `${origin}/auth/callback?redirect=${encodeURIComponent(
-      requested
-    )}`;
+    const redirectTo = `${origin}/auth/callback?redirect=${encodeURIComponent(requested)}`;
 
     const { error } = await supabase.auth.signInWithOtp({
       email,
       options: { emailRedirectTo: redirectTo },
     });
+
     if (error) setError(error.message);
     else setSent(true);
   }

@@ -17,7 +17,8 @@ export function createClient() {
           cookieStore.set({ name, value, ...options });
         },
         remove(name: string, options: CookieOptions) {
-          cookieStore.set({ name, value: "", ...options });
+          // ✅ use delete – avoids empty-value quirks
+          cookieStore.delete({ name, ...options });
         },
       },
     }

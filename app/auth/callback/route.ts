@@ -8,7 +8,7 @@ export async function GET(req: Request) {
   const redirectTo = url.searchParams.get("redirect") || "/rounds";
 
   try {
-    // This sets the auth cookies for the current domain
+    // ✅ MUST pass the full request URL string
     await supabase.auth.exchangeCodeForSession(req.url);
     return NextResponse.redirect(new URL(redirectTo, url.origin));
   } catch (err: any) {

@@ -1,28 +1,42 @@
+// middleware.ts (root)
 import { NextResponse } from "next/server";
 import type { NextRequest } from "next/server";
+import { createMiddlewareClient } from "@supabase/ssr";
 
-const PROTECTED = ["/rounds", "/players", "/courses", "/events"]; // add more as needed
+export async function middleware(req: NextRequest) {
+  const res = NextResponse.next();
+  const supabase = createMiddlewareClient({
+    req,
+    res,
+    supabaseUrl: process.env.NEXT_PUBLIC_SUPABASE_URL!,
+    supabaseKey: process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
+  });
 
-export function middleware(req: NextRequest) {
-  const path = req.nextUrl.pathname;
-  const isProtected = PROTECTED.some(p => path === p || path.startsWith(`${p}/`));
+  // Refresh session if needed, sets cookies on res
+  await supabase.auth.getSession();
 
-  if (!isProtected) return NextResponse.next();
+  const { data: { user } } = await supabase.auth.getUser();
 
-  // Supabase cookies that may be present
-  const hasAccess =
-    req.cookies.get("sb-access-token")?.value ||
-    req.cookies.get("sb:token")?.value || // sometimes used
-    req.cookies.get("supabase-auth-token")?.value; // older
+  // Only guard protected routes
+  const isProtected = req.nextUrl.pathname.startsWith("/rounds")
+    || req.nextUrl.pathname.startsWith("/players")
+    || req.nextUrl.pathname.startsWith("/teams")
+    || req.nextUrl.pathname === "/";
 
-  if (!hasAccess) {
+  if (isProtected && !user) {
     const login = new URL("/login", req.url);
-    login.searchParams.set("redirect", path);
+    login.searchParams.set("redirect", req.nextUrl.pathname + req.nextUrl.search);
     return NextResponse.redirect(login);
   }
-  return NextResponse.next();
+
+  return res;
 }
 
 export const config = {
-  matcher: ["/((?!_next|favicon.ico|public).*)"],
+  matcher: [
+    "/",           // dashboard
+    "/rounds/:path*",
+    "/players/:path*",
+    "/teams/:path*",
+  ],
 };

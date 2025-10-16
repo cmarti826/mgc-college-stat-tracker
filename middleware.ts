@@ -1,10 +1,11 @@
-// middleware.ts
+// middleware.ts (project root)
 import { NextResponse, type NextRequest } from "next/server";
 import { createServerClient, type CookieOptions } from "@supabase/ssr";
 
 export async function middleware(req: NextRequest) {
   const res = NextResponse.next();
 
+  // Use createServerClient with a cookie shim compatible with Edge
   const supabase = createServerClient(
     process.env.NEXT_PUBLIC_SUPABASE_URL!,
     process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
@@ -15,16 +16,17 @@ export async function middleware(req: NextRequest) {
           res.cookies.set({ name, value, ...options });
         },
         remove: (name: string) => {
-          // ✅ proper delete so the browser actually clears it
+          // proper delete (don’t set empty value)
           res.cookies.delete(name);
         },
       },
     }
   );
 
-  // Refresh/seed session (sets cookies on `res` if needed)
+  // Seed/refresh session (writes refreshed cookies to `res` if needed)
   await supabase.auth.getSession();
 
+  // Protect selected routes
   const path = req.nextUrl.pathname;
   const isProtected =
     path === "/" ||
@@ -44,6 +46,7 @@ export async function middleware(req: NextRequest) {
   return res;
 }
 
+// DO NOT include /login or /auth/callback here
 export const config = {
   matcher: ["/", "/rounds/:path*", "/players/:path*", "/teams/:path*"],
 };

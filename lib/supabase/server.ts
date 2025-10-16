@@ -1,7 +1,11 @@
 // lib/supabase/server.ts
 import { cookies } from "next/headers";
-import { createServerClient, type CookieOptions } from "@supabase/ssr";
+import { createServerClient } from "@supabase/ssr";
 
+/**
+ * Use this in Server Components (pages, layouts, headers).
+ * It only READS cookies. set/remove are NO-OPs to avoid Next.js errors.
+ */
 export function createClient() {
   const cookieStore = cookies();
 
@@ -13,13 +17,9 @@ export function createClient() {
         get(name: string) {
           return cookieStore.get(name)?.value;
         },
-        set(name: string, value: string, options: CookieOptions) {
-          cookieStore.set({ name, value, ...options });
-        },
-        remove(name: string, options: CookieOptions) {
-          // ✅ use delete – avoids empty-value quirks
-          cookieStore.delete({ name, ...options });
-        },
+        // IMPORTANT: NO-OPs in Server Components
+        set() {},
+        remove() {},
       },
     }
   );

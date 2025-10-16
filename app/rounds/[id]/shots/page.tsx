@@ -1,96 +1,165 @@
 // app/rounds/[id]/shots/page.tsx
-import { notFound } from "next/navigation";
+import Link from "next/link";
 import { createClient } from "@/lib/supabase/server";
 import ShotEditor from "@/app/rounds/_components/ShotEditor";
 
-// HeaderInfo expected by ShotEditor
-export type HeaderInfo = {
+type HeaderInfo = {
   player_name: string;
   course_name: string;
   tee_name: string;
-  round_date: string;
+  round_date: string; // display string
 };
 
-type PageProps = {
+type ShotRowDB = {
+  id: string;
+  round_id: string;
+  hole_number: number;
+  shot_number: number;
+  club: string | null;
+  // enum lie_type (UPPERCASE): 'TEE'|'FAIRWAY'|'ROUGH'|'SAND'|'RECOVERY'|'GREEN'
+  start_lie: string | null;
+  end_lie: string | null;
+
+  // distances (yards/feet only)
+  start_dist_yards: number | null;
+  start_dist_feet: number | null;
+  end_dist_yards: number | null;
+  end_dist_feet: number | null;
+
+  // optional vectors
+  start_x: number | null;
+  start_y: number | null;
+  end_x: number | null;
+  end_y: number | null;
+
+  // compatibility text columns (ignored here, kept for reference)
+  // lie: string | null;
+  // result_lie: string | null;
+
+  putt: boolean | null;
+  penalty_strokes: number | null;
+};
+
+type ShotRowUI = {
+  hole_number: number;
+  shot_order: number;
+  club?: string | null;
+
+  start_lie?: "TEE" | "FAIRWAY" | "ROUGH" | "SAND" | "RECOVERY" | "GREEN";
+  end_lie?: "TEE" | "FAIRWAY" | "ROUGH" | "SAND" | "RECOVERY" | "GREEN";
+
+  start_dist_yards?: number | null;
+  start_dist_feet?: number | null;
+  end_dist_yards?: number | null;
+  end_dist_feet?: number | null;
+
+  start_x?: number | null;
+  start_y?: number | null;
+  end_x?: number | null;
+  end_y?: number | null;
+
+  putt?: boolean | null;
+  penalty_strokes?: number | null;
+};
+
+export default async function ShotsPage({
+  params,
+}: {
   params: { id: string };
-};
-
-export default async function ShotsPage({ params }: PageProps) {
-  const supabase = createClient();
+}) {
   const roundId = params.id;
+  const supabase = createClient();
 
-  // 1) Fetch round header info (player/course/tee names + date)
+  // ----- Load round basics
   const { data: round, error: roundErr } = await supabase
     .from("rounds")
-    .select(
-      `
-        id,
-        date,
-        player:players(full_name),
-        course:courses(name),
-        tee:tees(name)
-      `
-    )
+    .select("id, player_id, course_id, tee_id, date")
     .eq("id", roundId)
     .maybeSingle();
 
-  if (roundErr) throw roundErr;
-  if (!round) return notFound();
+  if (roundErr) {
+    throw new Error(`Failed to load round: ${roundErr.message}`);
+  }
+  if (!round) {
+    return (
+      <div className="mx-auto max-w-3xl p-6">
+        <h1 className="text-xl font-semibold">Round not found</h1>
+        <Link href="/rounds" className="text-blue-600 underline">
+          Back to rounds
+        </Link>
+      </div>
+    );
+  }
 
-  const playerName =
-    (round as any).player?.full_name ?? "Player";
-  const courseName =
-    (round as any).course?.name ?? "Course";
-  const teeName =
-    (round as any).tee?.name ?? "Tee";
-  const dateStr = round.date
-    ? new Date(round.date).toLocaleDateString(undefined, {
-        month: "short",
-        day: "numeric",
-        year: "numeric",
-      })
-    : "";
+  // ----- Load related header info (player, course, tee)
+  const [{ data: player }, { data: course }, { data: tee }] = await Promise.all([
+    supabase.from("players").select("full_name").eq("id", round.player_id).maybeSingle(),
+    supabase.from("courses").select("name").eq("id", round.course_id).maybeSingle(),
+    supabase.from("tees").select("name").eq("id", round.tee_id).maybeSingle(),
+  ]);
 
   const header: HeaderInfo = {
-    player_name: playerName,
-    course_name: courseName,
-    tee_name: teeName,
-    round_date: dateStr,
+    player_name: player?.full_name ?? "Player",
+    course_name: course?.name ?? "Course",
+    tee_name: tee?.name ?? "Tee",
+    round_date: (round.date as string) ?? "",
   };
 
-  // 2) Fetch existing shots for this round
-  //    (ShotEditor accepts this array; keep fields aligned with your Shot type)
-// app/rounds/[id]/shots/page.tsx  (only the shots query + mapping shown)
-const { data: shots, error: shotsErr } = await supabase
-  .from("shots")
-  .select(`
-    id, round_id, hole_number, shot_number,
-    club, start_lie, end_lie, lie, result_lie,
-    start_dist_yards, end_dist_yards,
-    start_dist_feet,  end_dist_feet,
-    start_x, start_y, end_x, end_y,
-    putt, penalty_strokes
-  `)
-  .eq("round_id", roundId)
-  .order("hole_number", { ascending: true })
-  .order("shot_number", { ascending: true });
+  // ----- Load shots and map to UI shape (shot_number -> shot_order)
+  const { data: shots, error: shotsErr } = await supabase
+    .from("shots")
+    .select(
+      `
+        id, round_id, hole_number, shot_number,
+        club,
+        start_lie, end_lie,
+        start_dist_yards, start_dist_feet,
+        end_dist_yards, end_dist_feet,
+        start_x, start_y, end_x, end_y,
+        putt, penalty_strokes
+      `
+    )
+    .eq("round_id", roundId)
+    .order("hole_number", { ascending: true })
+    .order("shot_number", { ascending: true });
 
-if (shotsErr) throw shotsErr;
+  if (shotsErr) {
+    throw new Error(`Failed to load shots: ${shotsErr.message}`);
+  }
 
-<ShotEditor
-  roundId={roundId}
-  header={header}
-  initialShots={(shots ?? []).map((s: any) => ({
-    ...s,
-    shot_order: s.shot_number, // UI sequence
-    // For convenience, expose a single distance field the editor can bind:
-    start_distance_ui:
-      s.start_lie === "Green" ? s.start_dist_feet : s.start_dist_yards,
-    end_distance_ui:
-      s.end_lie === "Green" ? s.end_dist_feet : s.end_dist_yards,
-  }))}
-/>
+  const initialShots: ShotRowUI[] = (shots ?? []).map((s: ShotRowDB) => ({
+    hole_number: s.hole_number,
+    shot_order: s.shot_number, // UI expects shot_order
+    club: s.club ?? null,
+    start_lie: (s.start_lie ?? undefined) as ShotRowUI["start_lie"],
+    end_lie: (s.end_lie ?? undefined) as ShotRowUI["end_lie"],
+    start_dist_yards: s.start_lie === "GREEN" ? null : s.start_dist_yards,
+    start_dist_feet: s.start_lie === "GREEN" ? s.start_dist_feet : null,
+    end_dist_yards: s.end_lie === "GREEN" ? null : s.end_dist_yards,
+    end_dist_feet: s.end_lie === "GREEN" ? s.end_dist_feet : null,
+    start_x: s.start_x ?? null,
+    start_y: s.start_y ?? null,
+    end_x: s.end_x ?? null,
+    end_y: s.end_y ?? null,
+    putt: s.putt ?? (s.start_lie === "GREEN"),
+    penalty_strokes: s.penalty_strokes ?? 0,
+  }));
 
+  return (
+    <div className="mx-auto max-w-[1100px] p-6 space-y-6">
+      <div className="flex items-center justify-between">
+        <div>
+          <h1 className="text-2xl font-semibold">
+            {header.player_name} — {header.course_name} ({header.tee_name})
+          </h1>
+          <p className="text-gray-600">Date: {header.round_date}</p>
+        </div>
+        <Link href={`/rounds/${roundId}`} className="rounded border px-4 py-2 hover:shadow">
+          Round Summary
+        </Link>
+      </div>
+
+      <ShotEditor roundId={roundId} header={header} initialShots={initialShots} />
     </div>
   );
 }

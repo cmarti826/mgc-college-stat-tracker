@@ -1,12 +1,11 @@
-// /lib/supabase/server.ts
-import { cookies, headers } from "next/headers";
+// lib/supabase/server.ts
+import { cookies } from "next/headers";
 import { createServerClient } from "@supabase/ssr";
 
 export function createClient() {
   const cookieStore = cookies();
-  const headerStore = headers();
 
-  const supabase = createServerClient(
+  return createServerClient(
     process.env.NEXT_PUBLIC_SUPABASE_URL!,
     process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
     {
@@ -14,26 +13,21 @@ export function createClient() {
         get(name: string) {
           return cookieStore.get(name)?.value;
         },
-        set(name: string, value: string, options: any) {
-          // Next.js RSC cookies are mutable in Route Handlers/Server Actions; no-op in pure RSC
+        set(name: string, value: string, options?: Parameters<typeof cookieStore.set>[0]) {
           try {
-            cookieStore.set({ name, value, ...options });
-          } catch {}
+            cookieStore.set(typeof options === "object" ? { ...options, name, value } : { name, value });
+          } catch {
+            // no-op in pure RSC where set/remove aren't available
+          }
         },
-        remove(name: string, options: any) {
+        remove(name: string, options?: Parameters<typeof cookieStore.set>[0]) {
           try {
-            cookieStore.set({ name, value: "", ...options });
-          } catch {}
-        },
-      },
-      headers: {
-        // forward auth helpers like Authorization if you use them
-        get(key: string) {
-          return headerStore.get(key) ?? undefined;
+            cookieStore.set(typeof options === "object" ? { ...options, name, value: "" } : { name, value: "" });
+          } catch {
+            // no-op in pure RSC
+          }
         },
       },
     }
   );
-
-  return supabase;
 }

@@ -7,7 +7,7 @@ type HeaderInfo = {
   player_name: string;
   course_name: string;
   tee_name: string;
-  round_date: string; // display string
+  round_date: string;
 };
 
 type ShotRowDB = {
@@ -16,26 +16,16 @@ type ShotRowDB = {
   hole_number: number;
   shot_number: number;
   club: string | null;
-  // enum lie_type (UPPERCASE): 'TEE'|'FAIRWAY'|'ROUGH'|'SAND'|'RECOVERY'|'GREEN'
-  start_lie: string | null;
-  end_lie: string | null;
-
-  // distances (yards/feet only)
+  start_lie: "TEE" | "FAIRWAY" | "ROUGH" | "SAND" | "RECOVERY" | "GREEN" | null;
+  end_lie: "TEE" | "FAIRWAY" | "ROUGH" | "SAND" | "RECOVERY" | "GREEN" | null;
   start_dist_yards: number | null;
   start_dist_feet: number | null;
   end_dist_yards: number | null;
   end_dist_feet: number | null;
-
-  // optional vectors
   start_x: number | null;
   start_y: number | null;
   end_x: number | null;
   end_y: number | null;
-
-  // compatibility text columns (ignored here, kept for reference)
-  // lie: string | null;
-  // result_lie: string | null;
-
   putt: boolean | null;
   penalty_strokes: number | null;
 };
@@ -45,8 +35,12 @@ type ShotRowUI = {
   shot_order: number;
   club?: string | null;
 
-  start_lie?: "TEE" | "FAIRWAY" | "ROUGH" | "SAND" | "RECOVERY" | "GREEN";
-  end_lie?: "TEE" | "FAIRWAY" | "ROUGH" | "SAND" | "RECOVERY" | "GREEN";
+  // what ShotEditor expects (keep start_/end_ too for clarity in the UI)
+  lie: "TEE" | "FAIRWAY" | "ROUGH" | "SAND" | "RECOVERY" | "GREEN";
+  result_lie: "TEE" | "FAIRWAY" | "ROUGH" | "SAND" | "RECOVERY" | "GREEN";
+
+  start_lie: "TEE" | "FAIRWAY" | "ROUGH" | "SAND" | "RECOVERY" | "GREEN";
+  end_lie: "TEE" | "FAIRWAY" | "ROUGH" | "SAND" | "RECOVERY" | "GREEN";
 
   start_dist_yards?: number | null;
   start_dist_feet?: number | null;
@@ -62,36 +56,28 @@ type ShotRowUI = {
   penalty_strokes?: number | null;
 };
 
-export default async function ShotsPage({
-  params,
-}: {
-  params: { id: string };
-}) {
+export default async function ShotsPage({ params }: { params: { id: string } }) {
   const roundId = params.id;
   const supabase = createClient();
 
-  // ----- Load round basics
+  // Round
   const { data: round, error: roundErr } = await supabase
     .from("rounds")
     .select("id, player_id, course_id, tee_id, date")
     .eq("id", roundId)
     .maybeSingle();
 
-  if (roundErr) {
-    throw new Error(`Failed to load round: ${roundErr.message}`);
-  }
+  if (roundErr) throw new Error(`Failed to load round: ${roundErr.message}`);
   if (!round) {
     return (
       <div className="mx-auto max-w-3xl p-6">
         <h1 className="text-xl font-semibold">Round not found</h1>
-        <Link href="/rounds" className="text-blue-600 underline">
-          Back to rounds
-        </Link>
+        <Link href="/rounds" className="text-blue-600 underline">Back to rounds</Link>
       </div>
     );
   }
 
-  // ----- Load related header info (player, course, tee)
+  // Header bits
   const [{ data: player }, { data: course }, { data: tee }] = await Promise.all([
     supabase.from("players").select("full_name").eq("id", round.player_id).maybeSingle(),
     supabase.from("courses").select("name").eq("id", round.course_id).maybeSingle(),
@@ -105,45 +91,55 @@ export default async function ShotsPage({
     round_date: (round.date as string) ?? "",
   };
 
-  // ----- Load shots and map to UI shape (shot_number -> shot_order)
+  // Shots
   const { data: shots, error: shotsErr } = await supabase
     .from("shots")
-    .select(
-      `
-        id, round_id, hole_number, shot_number,
-        club,
-        start_lie, end_lie,
-        start_dist_yards, start_dist_feet,
-        end_dist_yards, end_dist_feet,
-        start_x, start_y, end_x, end_y,
-        putt, penalty_strokes
-      `
-    )
+    .select(`
+      id, round_id, hole_number, shot_number,
+      club,
+      start_lie, end_lie,
+      start_dist_yards, start_dist_feet,
+      end_dist_yards, end_dist_feet,
+      start_x, start_y, end_x, end_y,
+      putt, penalty_strokes
+    `)
     .eq("round_id", roundId)
     .order("hole_number", { ascending: true })
     .order("shot_number", { ascending: true });
 
-  if (shotsErr) {
-    throw new Error(`Failed to load shots: ${shotsErr.message}`);
-  }
+  if (shotsErr) throw new Error(`Failed to load shots: ${shotsErr.message}`);
 
-  const initialShots: ShotRowUI[] = (shots ?? []).map((s: ShotRowDB) => ({
-    hole_number: s.hole_number,
-    shot_order: s.shot_number, // UI expects shot_order
-    club: s.club ?? null,
-    start_lie: (s.start_lie ?? undefined) as ShotRowUI["start_lie"],
-    end_lie: (s.end_lie ?? undefined) as ShotRowUI["end_lie"],
-    start_dist_yards: s.start_lie === "GREEN" ? null : s.start_dist_yards,
-    start_dist_feet: s.start_lie === "GREEN" ? s.start_dist_feet : null,
-    end_dist_yards: s.end_lie === "GREEN" ? null : s.end_dist_yards,
-    end_dist_feet: s.end_lie === "GREEN" ? s.end_dist_feet : null,
-    start_x: s.start_x ?? null,
-    start_y: s.start_y ?? null,
-    end_x: s.end_x ?? null,
-    end_y: s.end_y ?? null,
-    putt: s.putt ?? (s.start_lie === "GREEN"),
-    penalty_strokes: s.penalty_strokes ?? 0,
-  }));
+  const initialShots: ShotRowUI[] = (shots ?? []).map((s: ShotRowDB) => {
+    // default to FAIRWAY if somehow null (shouldn’t happen if UI writes correctly)
+    const sl = (s.start_lie ?? "FAIRWAY") as ShotRowUI["start_lie"];
+    const el = (s.end_lie ?? "FAIRWAY") as ShotRowUI["end_lie"];
+    return {
+      hole_number: s.hole_number,
+      shot_order: s.shot_number,
+      club: s.club ?? null,
+
+      // satisfy ShotEditor prop requirements
+      lie: sl,
+      result_lie: el,
+
+      // also expose explicit start_/end_ for clarity
+      start_lie: sl,
+      end_lie: el,
+
+      start_dist_yards: sl === "GREEN" ? null : s.start_dist_yards,
+      start_dist_feet:  sl === "GREEN" ? s.start_dist_feet : null,
+      end_dist_yards:   el === "GREEN" ? null : s.end_dist_yards,
+      end_dist_feet:    el === "GREEN" ? s.end_dist_feet : null,
+
+      start_x: s.start_x ?? null,
+      start_y: s.start_y ?? null,
+      end_x: s.end_x ?? null,
+      end_y: s.end_y ?? null,
+
+      putt: s.putt ?? (sl === "GREEN"),
+      penalty_strokes: s.penalty_strokes ?? 0,
+    };
+  });
 
   return (
     <div className="mx-auto max-w-[1100px] p-6 space-y-6">

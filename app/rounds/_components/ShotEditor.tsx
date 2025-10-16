@@ -164,21 +164,24 @@ export default function ShotEditor(props: {
   };
 
   // ---------- Persist ----------
-  async function saveShots() {
-    // POST to the server action/route you already have
-    // Expecting meters in payload; we already store meters in state.
-    const payload = shots;
-    const res = await fetch(`/api/rounds/${roundId}/shots`, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify(payload),
-    });
-    if (!res.ok) {
-      alert("Failed to save shots");
-    } else {
-      alert("Shots saved");
-    }
+async function saveShots() {
+  const res = await fetch(`/api/rounds/${roundId}/shots`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(shots),
+  });
+  if (!res.ok) {
+    let msg = "Failed to save shots";
+    try {
+      const j = await res.json();
+      if (j?.error) msg = j.error;
+    } catch {}
+    alert(msg);
+    return;
   }
+  alert("Shots saved");
+}
+
 
   // ---------- UI ----------
   return (

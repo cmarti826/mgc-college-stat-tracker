@@ -2,10 +2,8 @@
 import { cookies } from "next/headers";
 import { createServerClient, type CookieOptions } from "@supabase/ssr";
 
-/**
- * Use this ONLY in Route Handlers (app/**/route.ts) or "use server" actions.
- * It can set/delete cookies.
- */
+// Use this ONLY in Route Handlers (e.g. app/some/route.ts) or "use server" actions.
+// It can set/delete cookies.
 export function createRouteClient() {
   const cookieStore = cookies();
 

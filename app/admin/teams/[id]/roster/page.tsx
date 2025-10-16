@@ -5,6 +5,28 @@ import Link from "next/link";
 
 export const dynamic = "force-dynamic";
 
+/* ----------------------- RELATION HELPERS ----------------------- */
+type RelPlayer = { full_name?: string; grad_year?: number } | RelPlayer[] | null | undefined;
+type RelProfile = { full_name?: string } | RelProfile[] | null | undefined;
+
+function relString<T extends object>(x: T | T[] | null | undefined, key: keyof T): string | null {
+  if (!x) return null;
+  if (Array.isArray(x)) {
+    const v = x[0]?.[key];
+    return v != null ? String(v) : null;
+  }
+  const v = x[key];
+  return v != null ? String(v) : null;
+}
+
+function playerName(x: RelPlayer): string | null {
+  return relString(x as any, "full_name");
+}
+
+function profileName(x: RelProfile): string | null {
+  return relString(x as any, "full_name");
+}
+
 /* ----------------------- SERVER ACTIONS ----------------------- */
 async function addPlayerMember(formData: FormData) {
   "use server";
@@ -210,8 +232,8 @@ export default async function TeamRosterAdmin({
               {(roster ?? []).map((m) => {
                 const isPlayer = !!m.player_id;
                 const name = isPlayer
-                  ? (Array.isArray(m.players) ? m.players[0]?.full_name : m.players?.full_name) ?? m.player_id
-                  : (Array.isArray(m.user_profiles) ? m.user_profiles[0]?.full_name : m.user_profiles?.full_name) ?? m.user_id;
+                  ? playerName(m.players as RelPlayer) ?? String(m.player_id)
+                  : profileName(m.user_profiles as RelProfile) ?? String(m.user_id);
 
                 return (
                   <tr key={m.id} className="border-t">
@@ -233,9 +255,12 @@ export default async function TeamRosterAdmin({
                     </td>
                     <td className="p-3">{m.created_at ? new Date(m.created_at).toLocaleDateString() : "—"}</td>
                     <td className="p-3">
-                      <form action={removeMember} onSubmit={(e) => {
-                        if (!confirm(`Remove ${name} from ${team.name}?`)) e.preventDefault();
-                      }}>
+                      <form
+                        action={removeMember}
+                        onSubmit={(e) => {
+                          if (!confirm(`Remove ${name} from ${team.name}?`)) e.preventDefault();
+                        }}
+                      >
                         <input type="hidden" name="id" value={m.id} />
                         <input type="hidden" name="team_id" value={teamId} />
                         <button className="border rounded px-3 py-1 hover:bg-red-50 text-red-700 border-red-200">

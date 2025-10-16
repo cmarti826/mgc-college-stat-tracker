@@ -10,21 +10,23 @@ export function createClient() {
     process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
     {
       cookies: {
-        get(name: string) {
-          return cookieStore.get(name)?.value;
+        // @supabase/ssr expects getAll() on the server
+        getAll() {
+          // Next.js returns { name, value, ... } objects; we just pass them through
+          return cookieStore.getAll().map((c) => ({ name: c.name, value: c.value }));
         },
-        set(name: string, value: string, options?: Parameters<typeof cookieStore.set>[0]) {
+        set(name: string, value: string, options?: any) {
           try {
-            cookieStore.set(typeof options === "object" ? { ...options, name, value } : { name, value });
+            cookieStore.set({ name, value, ...(options ?? {}) });
           } catch {
-            // no-op in pure RSC where set/remove aren't available
+            // no-op in pure RSC contexts
           }
         },
-        remove(name: string, options?: Parameters<typeof cookieStore.set>[0]) {
+        remove(name: string, options?: any) {
           try {
-            cookieStore.set(typeof options === "object" ? { ...options, name, value: "" } : { name, value: "" });
+            cookieStore.set({ name, value: "", ...(options ?? {}) });
           } catch {
-            // no-op in pure RSC
+            // no-op in pure RSC contexts
           }
         },
       },

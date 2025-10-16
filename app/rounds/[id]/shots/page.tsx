@@ -60,46 +60,37 @@ export default async function ShotsPage({ params }: PageProps) {
 
   // 2) Fetch existing shots for this round
   //    (ShotEditor accepts this array; keep fields aligned with your Shot type)
-  const { data: shots, error: shotsErr } = await supabase
-    .from("shots")
-    .select(
-      `
-        id,
-        round_id,
-        hole_number,
-        shot_order,
-        club,
-        lie,
-        distance_to_hole_m,
-        start_x,
-        start_y,
-        end_x,
-        end_y,
-        result_lie,
-        result_distance_to_hole_m,
-        putt,
-        penalty_strokes
-      `
-    )
-    .eq("round_id", roundId)
-    .order("hole_number", { ascending: true })
-    .order("shot_order", { ascending: true });
+// app/rounds/[id]/shots/page.tsx  (only the shots query + mapping shown)
+const { data: shots, error: shotsErr } = await supabase
+  .from("shots")
+  .select(`
+    id, round_id, hole_number, shot_number,
+    club, start_lie, end_lie, lie, result_lie,
+    start_dist_yards, end_dist_yards,
+    start_dist_feet,  end_dist_feet,
+    start_x, start_y, end_x, end_y,
+    putt, penalty_strokes
+  `)
+  .eq("round_id", roundId)
+  .order("hole_number", { ascending: true })
+  .order("shot_number", { ascending: true });
 
-  if (shotsErr) throw shotsErr;
+if (shotsErr) throw shotsErr;
 
-  return (
-    <div className="mx-auto max-w-[1100px] p-6 space-y-6">
-      <div className="flex items-center justify-between">
-        <h1 className="text-2xl font-semibold">
-          Shot Entry — Strokes Gained
-        </h1>
-      </div>
+<ShotEditor
+  roundId={roundId}
+  header={header}
+  initialShots={(shots ?? []).map((s: any) => ({
+    ...s,
+    shot_order: s.shot_number, // UI sequence
+    // For convenience, expose a single distance field the editor can bind:
+    start_distance_ui:
+      s.start_lie === "Green" ? s.start_dist_feet : s.start_dist_yards,
+    end_distance_ui:
+      s.end_lie === "Green" ? s.end_dist_feet : s.end_dist_yards,
+  }))}
+/>
 
-      <ShotEditor
-        roundId={roundId}
-        header={header}
-        initialShots={(shots ?? []) as any}
-      />
     </div>
   );
 }

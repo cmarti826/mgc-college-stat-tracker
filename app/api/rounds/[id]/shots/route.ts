@@ -1,62 +1,65 @@
-// app/api/rounds/[id]/shots/route.ts
 import { NextResponse, NextRequest } from "next/server";
 import { createRouteClient } from "@/lib/supabase/server-route";
 
-// Minimal runtime validation
-type Lie =
-  | "Tee" | "Fairway" | "Rough" | "Sand" | "Recovery"
-  | "Green" | "Penalty" | "Other";
+// DB enum (UPPERCASE)
+type LieEnum = "TEE" | "FAIRWAY" | "ROUGH" | "SAND" | "RECOVERY" | "GREEN";
 
-type ShotRow = {
+// UI may send TitleCase or whatever; we normalize to LieEnum
+type UILie =
+  | "Tee" | "Fairway" | "Rough" | "Sand" | "Recovery" | "Green" | "Penalty" | "Other"
+  | string;
+
+type ShotRowUI = {
   hole_number: number;
   shot_order: number;
   club?: string | null;
-  lie: Lie;
-  distance_to_hole_m?: number | null;
+
+  start_lie?: UILie;   // or `lie`
+  end_lie?: UILie;     // or `result_lie`
+
+  // distances in yards/feet only
+  start_dist_yards?: number | null;
+  start_dist_feet?: number | null;
+  end_dist_yards?: number | null;
+  end_dist_feet?: number | null;
+
   start_x?: number | null;
   start_y?: number | null;
   end_x?: number | null;
   end_y?: number | null;
-  result_lie: Lie;
-  result_distance_to_hole_m?: number | null;
+
   putt?: boolean | null;
   penalty_strokes?: number | null;
+  lie?: UILie;          // back-compat
+  result_lie?: UILie;   // back-compat
 };
 
-export async function GET(
-  _req: NextRequest,
-  { params }: { params: { id: string } }
-) {
-  const supabase = createRouteClient();
-  const roundId = params.id;
-
-  const { data, error } = await supabase
-    .from("shots")
-    .select("*")
-    .eq("round_id", roundId)
-    .order("hole_number", { ascending: true })
-    .order("shot_order", { ascending: true });
-
-  if (error) {
-    return NextResponse.json({ error: error.message }, { status: 400 });
+function normalizeLie(s?: UILie): LieEnum {
+  const k = (s ?? "").toString().trim().toUpperCase();
+  switch (k) {
+    case "TEE":
+    case "FAIRWAY":
+    case "ROUGH":
+    case "SAND":
+    case "RECOVERY":
+    case "GREEN":
+      return k as LieEnum;
+    case "PENALTY":
+    case "OTHER":
+    default:
+      // map anything unknown/penalty to a valid enum bucket
+      return "ROUGH"; // or "FAIRWAY"/"RECOVERY" if you prefer; choose one bucket
   }
-  return NextResponse.json({ data });
 }
 
-export async function POST(
-  req: NextRequest,
-  { params }: { params: { id: string } }
-) {
-  const roundId = params.id;
+export async function POST(req: NextRequest, { params }: { params: { id: string } }) {
   const supabase = createRouteClient();
+  const roundId = params.id;
 
-  // Ensure user is authenticated (lets RLS do the rest)
-  const { data: { user }, error: userErr } = await supabase.auth.getUser();
-  if (userErr || !user) {
-    return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
-  }
+  const { data: { user } } = await supabase.auth.getUser();
+  if (!user) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
 
-  let payload: ShotRow[];
+  let payload: ShotRowUI[];
   try {
     payload = await req.json();
     if (!Array.isArray(payload)) throw new Error("Body must be an array of shots");
@@ -64,70 +67,79 @@ export async function POST(
     return NextResponse.json({ error: e?.message ?? "Invalid JSON" }, { status: 400 });
   }
 
-  // Basic validation + sanitize
-  const ALLOWED_LIES = new Set<Lie>([
-    "Tee","Fairway","Rough","Sand","Recovery","Green","Penalty","Other"
-  ]);
-
+  // Validate unit by lie (UPPERCASE)
   for (const s of payload) {
-    if (
-      typeof s.hole_number !== "number" ||
-      s.hole_number < 1 || s.hole_number > 18
-    ) return NextResponse.json({ error: `Invalid hole_number: ${s.hole_number}` }, { status: 400 });
+    if (!Number.isFinite(s.hole_number) || s.hole_number < 1 || s.hole_number > 18)
+      return NextResponse.json({ error: `Invalid hole_number '${s.hole_number}'` }, { status: 400 });
+    if (!Number.isFinite(s.shot_order) || s.shot_order < 1)
+      return NextResponse.json({ error: `Invalid shot_order on hole ${s.hole_number}` }, { status: 400 });
 
-    if (typeof s.shot_order !== "number" || s.shot_order < 1)
-      return NextResponse.json({ error: `Invalid shot_order for hole ${s.hole_number}` }, { status: 400 });
+    const startLie = normalizeLie(s.start_lie ?? s.lie);
+    const endLie   = normalizeLie(s.end_lie   ?? s.result_lie);
 
-    if (!ALLOWED_LIES.has(s.lie))
-      return NextResponse.json({ error: `Invalid lie '${s.lie}' on hole ${s.hole_number}` }, { status: 400 });
-
-    if (!ALLOWED_LIES.has(s.result_lie))
-      return NextResponse.json({ error: `Invalid result_lie '${s.result_lie}' on hole ${s.hole_number}` }, { status: 400 });
-
-    const numericOrNull = (v: any) =>
-      v === null || v === undefined || (typeof v === "number" && Number.isFinite(v));
-
-    if (!numericOrNull(s.distance_to_hole_m) ||
-        !numericOrNull(s.result_distance_to_hole_m) ||
-        !numericOrNull(s.start_x) || !numericOrNull(s.start_y) ||
-        !numericOrNull(s.end_x)   || !numericOrNull(s.end_y)) {
-      return NextResponse.json({ error: `Non-numeric distance/coord on hole ${s.hole_number}` }, { status: 400 });
+    if (startLie === "GREEN") {
+      if (s.start_dist_feet == null || s.start_dist_feet < 0)
+        return NextResponse.json({ error: `start_dist_feet required (>=0) on GREEN at hole ${s.hole_number}` }, { status: 400 });
+    } else {
+      if (s.start_dist_yards == null || s.start_dist_yards < 0)
+        return NextResponse.json({ error: `start_dist_yards required (>=0) off GREEN at hole ${s.hole_number}` }, { status: 400 });
     }
 
-    if (s.penalty_strokes != null && (typeof s.penalty_strokes !== "number" || s.penalty_strokes < 0))
-      return NextResponse.json({ error: `Invalid penalty_strokes on hole ${s.hole_number}` }, { status: 400 });
+    if (endLie === "GREEN") {
+      if (s.end_dist_feet == null || s.end_dist_feet < 0)
+        return NextResponse.json({ error: `end_dist_feet required (>=0) on GREEN at hole ${s.hole_number}` }, { status: 400 });
+    } else {
+      if (s.end_dist_yards == null || s.end_dist_yards < 0)
+        return NextResponse.json({ error: `end_dist_yards required (>=0) off GREEN at hole ${s.hole_number}` }, { status: 400 });
+    }
   }
 
-  // Strategy: replace all shots for this round with the provided set.
-  // (Simpler + avoids ordering conflicts.)
-  // If you prefer upsert, comment the delete and use .upsert below.
+  // Replace-all existing shots
   const del = await supabase.from("shots").delete().eq("round_id", roundId);
-  if (del.error) {
-    return NextResponse.json({ error: del.error.message }, { status: 400 });
-  }
+  if (del.error) return NextResponse.json({ error: del.error.message }, { status: 400 });
 
-  // Insert new set
-  const rows = payload.map((s) => ({
-    round_id: roundId,
-    hole_number: s.hole_number,
-    shot_order: s.shot_order,
-    club: s.club ?? null,
-    lie: s.lie,
-    distance_to_hole_m: s.distance_to_hole_m ?? null,
-    start_x: s.start_x ?? null,
-    start_y: s.start_y ?? null,
-    end_x: s.end_x ?? null,
-    end_y: s.end_y ?? null,
-    result_lie: s.result_lie,
-    result_distance_to_hole_m: s.result_distance_to_hole_m ?? null,
-    putt: s.putt ?? false,
-    penalty_strokes: s.penalty_strokes ?? 0,
-  }));
+  const rows = payload.map((s) => {
+    const startLie = normalizeLie(s.start_lie ?? s.lie);
+    const endLie   = normalizeLie(s.end_lie   ?? s.result_lie);
+
+    // treat any "Penalty" indicator as penalty=true
+    const rawStart = (s.start_lie ?? s.lie)?.toString().toUpperCase();
+    const rawEnd   = (s.end_lie ?? s.result_lie)?.toString().toUpperCase();
+    const isPenalty = rawStart === "PENALTY" || rawEnd === "PENALTY" || (s.penalty_strokes ?? 0) > 0;
+
+    return {
+      round_id: roundId,
+      hole_number: s.hole_number,
+      shot_number: s.shot_order,
+      club: s.club ?? null,
+
+      // enum columns expect UPPERCASE lie_type
+      start_lie: startLie,  // e.g. 'TEE'|'FAIRWAY'|...|'GREEN'
+      end_lie: endLie,
+
+      // yards/feet only
+      start_dist_yards: startLie === "GREEN" ? null : (s.start_dist_yards ?? null),
+      start_dist_feet:  startLie === "GREEN" ? (s.start_dist_feet ?? null) : null,
+      end_dist_yards:   endLie   === "GREEN" ? null : (s.end_dist_yards ?? null),
+      end_dist_feet:    endLie   === "GREEN" ? (s.end_dist_feet ?? null) : null,
+
+      start_x: s.start_x ?? null,
+      start_y: s.start_y ?? null,
+      end_x:   s.end_x ?? null,
+      end_y:   s.end_y ?? null,
+
+      // legacy text columns exist in your table; keep them consistent
+      lie: startLie,        // your CHECK accepts specific strings; if needed, cast server-side
+      result_lie: endLie,
+
+      putt: s.putt ?? (startLie === "GREEN"),
+      penalty_strokes: s.penalty_strokes ?? 0,
+      penalty: isPenalty,
+    };
+  });
 
   const ins = await supabase.from("shots").insert(rows).select("id");
-  if (ins.error) {
-    return NextResponse.json({ error: ins.error.message }, { status: 400 });
-  }
+  if (ins.error) return NextResponse.json({ error: ins.error.message }, { status: 400 });
 
   return NextResponse.json({ ok: true, inserted: ins.data?.length ?? 0 });
 }

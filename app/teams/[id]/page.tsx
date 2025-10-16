@@ -1,13 +1,15 @@
+// app/teams/[id]/page.tsx
 import Link from "next/link";
 import { createClient } from "@/lib/supabase/server";
 
 export const dynamic = "force-dynamic";
 
-type RelName = { name?: string } | { name?: string }[] | null;
-function relName(x: RelName): string {
+// Normalize relation shapes (object | array | null) and safely read a key.
+type Rel = Record<string, any> | Record<string, any>[] | null | undefined;
+function rel(x: Rel, key: "name" | "full_name"): string {
   if (!x) return "—";
-  if (Array.isArray(x)) return x[0]?.name ?? "—";
-  return x.name ?? "—";
+  if (Array.isArray(x)) return (x[0] && x[0][key]) ? String(x[0][key]) : "—";
+  return (key in x && x[key] != null) ? String(x[key]) : "—";
 }
 
 export default async function TeamDetail({ params }: { params: { id: string } }) {
@@ -91,10 +93,8 @@ export default async function TeamDetail({ params }: { params: { id: string } })
                       {r.date ? new Date(r.date).toLocaleDateString() : "—"}
                     </Link>
                   </td>
-                  <td className="p-3">
-                    {Array.isArray(r.players) ? r.players[0]?.full_name ?? "—" : r.players?.full_name ?? "—"}
-                  </td>
-                  <td className="p-3">{relName(r.courses as RelName)}</td>
+                  <td className="p-3">{rel(r.players as Rel, "full_name")}</td>
+                  <td className="p-3">{rel(r.courses as Rel, "name")}</td>
                 </tr>
               ))}
               {(!rounds || rounds.length === 0) && (

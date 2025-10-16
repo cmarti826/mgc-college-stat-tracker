@@ -10,6 +10,7 @@ type HeaderInfo = {
   round_date: string;
 };
 
+// DB row shape (subset)
 type ShotRowDB = {
   id: string;
   round_id: string;
@@ -30,17 +31,21 @@ type ShotRowDB = {
   penalty_strokes: number | null;
 };
 
+// UI Lie that ShotEditor expects (TitleCase)
+type LieUI = "Tee" | "Fairway" | "Rough" | "Sand" | "Recovery" | "Green";
+
+// What ShotEditor expects for each row (it needs `lie` and `result_lie`)
 type ShotRowUI = {
   hole_number: number;
   shot_order: number;
   club?: string | null;
 
-  // what ShotEditor expects (keep start_/end_ too for clarity in the UI)
-  lie: "TEE" | "FAIRWAY" | "ROUGH" | "SAND" | "RECOVERY" | "GREEN";
-  result_lie: "TEE" | "FAIRWAY" | "ROUGH" | "SAND" | "RECOVERY" | "GREEN";
+  lie: LieUI;
+  result_lie: LieUI;
 
-  start_lie: "TEE" | "FAIRWAY" | "ROUGH" | "SAND" | "RECOVERY" | "GREEN";
-  end_lie: "TEE" | "FAIRWAY" | "ROUGH" | "SAND" | "RECOVERY" | "GREEN";
+  // keep explicit start_/end_ too (your editor likely reads these)
+  start_lie: LieUI;
+  end_lie: LieUI;
 
   start_dist_yards?: number | null;
   start_dist_feet?: number | null;
@@ -56,11 +61,23 @@ type ShotRowUI = {
   penalty_strokes?: number | null;
 };
 
+function enumToTitle(l: ShotRowDB["start_lie"]): LieUI {
+  switch (l) {
+    case "TEE": return "Tee";
+    case "FAIRWAY": return "Fairway";
+    case "ROUGH": return "Rough";
+    case "SAND": return "Sand";
+    case "RECOVERY": return "Recovery";
+    case "GREEN": return "Green";
+    default: return "Fairway";
+  }
+}
+
 export default async function ShotsPage({ params }: { params: { id: string } }) {
   const roundId = params.id;
   const supabase = createClient();
 
-  // Round
+  // Load round
   const { data: round, error: roundErr } = await supabase
     .from("rounds")
     .select("id, player_id, course_id, tee_id, date")
@@ -77,7 +94,7 @@ export default async function ShotsPage({ params }: { params: { id: string } }) 
     );
   }
 
-  // Header bits
+  // Header info
   const [{ data: player }, { data: course }, { data: tee }] = await Promise.all([
     supabase.from("players").select("full_name").eq("id", round.player_id).maybeSingle(),
     supabase.from("courses").select("name").eq("id", round.course_id).maybeSingle(),
@@ -110,33 +127,32 @@ export default async function ShotsPage({ params }: { params: { id: string } }) 
   if (shotsErr) throw new Error(`Failed to load shots: ${shotsErr.message}`);
 
   const initialShots: ShotRowUI[] = (shots ?? []).map((s: ShotRowDB) => {
-    // default to FAIRWAY if somehow null (shouldn’t happen if UI writes correctly)
-    const sl = (s.start_lie ?? "FAIRWAY") as ShotRowUI["start_lie"];
-    const el = (s.end_lie ?? "FAIRWAY") as ShotRowUI["end_lie"];
+    const sl = enumToTitle(s.start_lie);
+    const el = enumToTitle(s.end_lie);
     return {
       hole_number: s.hole_number,
       shot_order: s.shot_number,
       club: s.club ?? null,
 
-      // satisfy ShotEditor prop requirements
+      // ShotEditor requires these TitleCase fields
       lie: sl,
       result_lie: el,
 
-      // also expose explicit start_/end_ for clarity
+      // Also pass explicit start_/end_ (TitleCase)
       start_lie: sl,
       end_lie: el,
 
-      start_dist_yards: sl === "GREEN" ? null : s.start_dist_yards,
-      start_dist_feet:  sl === "GREEN" ? s.start_dist_feet : null,
-      end_dist_yards:   el === "GREEN" ? null : s.end_dist_yards,
-      end_dist_feet:    el === "GREEN" ? s.end_dist_feet : null,
+      start_dist_yards: sl === "Green" ? null : s.start_dist_yards,
+      start_dist_feet:  sl === "Green" ? s.start_dist_feet : null,
+      end_dist_yards:   el === "Green" ? null : s.end_dist_yards,
+      end_dist_feet:    el === "Green" ? s.end_dist_feet : null,
 
       start_x: s.start_x ?? null,
       start_y: s.start_y ?? null,
       end_x: s.end_x ?? null,
       end_y: s.end_y ?? null,
 
-      putt: s.putt ?? (sl === "GREEN"),
+      putt: s.putt ?? (sl === "Green"),
       penalty_strokes: s.penalty_strokes ?? 0,
     };
   });

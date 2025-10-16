@@ -1,7 +1,14 @@
 import Link from "next/link";
-import { createClient } from '@/lib/supabase/server';
+import { createClient } from "@/lib/supabase/server";
 
 export const dynamic = "force-dynamic";
+
+type RelName = { name?: string } | { name?: string }[] | null;
+function relName(x: RelName): string {
+  if (!x) return "—";
+  if (Array.isArray(x)) return x[0]?.name ?? "—";
+  return x.name ?? "—";
+}
 
 export default async function TeamDetail({ params }: { params: { id: string } }) {
   const supabase = createClient();
@@ -10,13 +17,17 @@ export default async function TeamDetail({ params }: { params: { id: string } })
   const [{ data: team }, { data: roster }, { data: rounds }] = await Promise.all([
     supabase.from("teams").select("*").eq("id", teamId).single(),
     supabase
-      .from("v_team_roster") // created in the SQL script I gave you
+      .from("v_team_roster")
       .select("*")
       .eq("team_id", teamId)
       .order("full_name", { ascending: true }),
     supabase
       .from("rounds")
-      .select("id, date, player_id, course_id, courses(name), players(full_name)")
+      .select(`
+        id, date,
+        players:player_id ( full_name ),
+        courses:course_id ( name )
+      `)
       .eq("team_id", teamId)
       .order("date", { ascending: false }),
   ]);
@@ -77,11 +88,13 @@ export default async function TeamDetail({ params }: { params: { id: string } })
                 <tr key={r.id} className="border-t">
                   <td className="p-3">
                     <Link href={`/rounds/${r.id}`} className="underline">
-                      {new Date(r.date).toLocaleDateString()}
+                      {r.date ? new Date(r.date).toLocaleDateString() : "—"}
                     </Link>
                   </td>
-                  <td className="p-3">{r.players?.full_name ?? r.player_id}</td>
-                  <td className="p-3">{r.courses?.name ?? r.course_id}</td>
+                  <td className="p-3">
+                    {Array.isArray(r.players) ? r.players[0]?.full_name ?? "—" : r.players?.full_name ?? "—"}
+                  </td>
+                  <td className="p-3">{relName(r.courses as RelName)}</td>
                 </tr>
               ))}
               {(!rounds || rounds.length === 0) && (

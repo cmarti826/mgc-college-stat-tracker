@@ -1,31 +1,47 @@
 import Link from "next/link";
-import { createClient } from '@/lib/supabase/server';
+import { createClient } from "@/lib/supabase/server";
 
 export const dynamic = "force-dynamic";
+
+type RelName = { name?: string } | { name?: string }[] | null;
+function relName(x: RelName): string {
+  if (!x) return "—";
+  if (Array.isArray(x)) return x[0]?.name ?? "—";
+  return x.name ?? "—";
+}
 
 export default async function PlayerDetail({ params }: { params: { id: string } }) {
   const supabase = createClient();
   const playerId = params.id;
 
-  const [{ data: player }, { data: memberships }, { data: rounds }] = await Promise.all([
-    supabase.from("players").select("*").eq("id", playerId).single(),
+  const { data: player, error: playerErr } = await supabase
+    .from("players").select("*").eq("id", playerId).single();
+
+  if (playerErr || !player) return <div className="text-red-600">Player not found.</div>;
+
+  const [{ data: memberships }, { data: rounds }] = await Promise.all([
     supabase
       .from("team_members")
-      .select("team_id, role, teams(name)")
+      .select(`
+        team_id, role,
+        teams:team_id ( name )
+      `)
       .eq("player_id", playerId),
     supabase
       .from("rounds")
-      .select("id, date, course_id, team_id, tee_id, status, type, courses(name), teams(name)")
+      .select(`
+        id, date, status, type,
+        teams:team_id ( name ),
+        courses:course_id ( name )
+      `)
       .eq("player_id", playerId)
       .order("date", { ascending: false }),
   ]);
 
-  if (!player) return <div className="text-red-600">Player not found.</div>;
-
   return (
     <div className="space-y-6">
       <div>
-        <h1 className="text-xl font-semibold">{player.full_name}</h1>
+        <h1 className="text-xl font-semibold">{player.full_name ?? "Player"}</h1>
         <p className="text-sm text-neutral-600">Grad Year: {player.grad_year ?? "-"}</p>
       </div>
 
@@ -40,19 +56,19 @@ export default async function PlayerDetail({ params }: { params: { id: string } 
               </tr>
             </thead>
             <tbody>
+              {(memberships ?? []).length === 0 && (
+                <tr><td className="p-3" colSpan={2}>No team memberships.</td></tr>
+              )}
               {(memberships ?? []).map((m) => (
                 <tr key={m.team_id} className="border-t">
                   <td className="p-3">
                     <Link href={`/teams/${m.team_id}`} className="underline">
-                      {m.teams?.name ?? m.team_id}
+                      {relName(m.teams as RelName) || m.team_id}
                     </Link>
                   </td>
                   <td className="p-3">{m.role}</td>
                 </tr>
               ))}
-              {(!memberships || memberships.length === 0) && (
-                <tr><td className="p-3" colSpan={2}>No team memberships.</td></tr>
-              )}
             </tbody>
           </table>
         </div>
@@ -72,22 +88,22 @@ export default async function PlayerDetail({ params }: { params: { id: string } 
               </tr>
             </thead>
             <tbody>
+              {(rounds ?? []).length === 0 && (
+                <tr><td className="p-3" colSpan={5}>No rounds yet.</td></tr>
+              )}
               {(rounds ?? []).map((r) => (
                 <tr key={r.id} className="border-t">
                   <td className="p-3">
                     <Link href={`/rounds/${r.id}`} className="underline">
-                      {new Date(r.date).toLocaleDateString()}
+                      {r.date ? new Date(r.date).toLocaleDateString() : "—"}
                     </Link>
                   </td>
-                  <td className="p-3">{r.teams?.name ?? r.team_id}</td>
-                  <td className="p-3">{r.courses?.name ?? r.course_id}</td>
+                  <td className="p-3">{relName(r.teams as RelName)}</td>
+                  <td className="p-3">{relName(r.courses as RelName)}</td>
                   <td className="p-3">{r.status}</td>
                   <td className="p-3">{r.type}</td>
                 </tr>
               ))}
-              {(!rounds || rounds.length === 0) && (
-                <tr><td className="p-3" colSpan={5}>No rounds yet.</td></tr>
-              )}
             </tbody>
           </table>
         </div>

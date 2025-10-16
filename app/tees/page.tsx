@@ -1,12 +1,22 @@
-import { createClient } from '@/lib/supabase/server';
+import { createClient } from "@/lib/supabase/server";
 
 export const dynamic = "force-dynamic";
+
+type RelName = { name?: string } | { name?: string }[] | null;
+function relName(x: RelName): string {
+  if (!x) return "—";
+  if (Array.isArray(x)) return x[0]?.name ?? "—";
+  return x.name ?? "—";
+}
 
 export default async function TeesPage() {
   const supabase = createClient();
   const { data: tees, error } = await supabase
     .from("tees")
-    .select("id, name, course_id, courses(name), rating, slope, par, created_at")
+    .select(`
+      id, name, rating, slope, par, created_at,
+      courses:course_id ( name )
+    `)
     .order("name", { ascending: true });
 
   if (error) return <div className="text-red-600">Error loading tees: {error.message}</div>;
@@ -30,7 +40,7 @@ export default async function TeesPage() {
             {(tees ?? []).map((t) => (
               <tr key={t.id} className="border-t">
                 <td className="p-3">{t.name}</td>
-                <td className="p-3">{t.courses?.name ?? t.course_id}</td>
+                <td className="p-3">{relName(t.courses as RelName)}</td>
                 <td className="p-3">{t.par ?? "—"}</td>
                 <td className="p-3">{t.rating ?? "—"}</td>
                 <td className="p-3">{t.slope ?? "—"}</td>

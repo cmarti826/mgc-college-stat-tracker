@@ -1,8 +1,12 @@
-// app/rounds/[id]/page.tsx
-import { createClient } from '@/lib/supabase/server';
-
+import { createClient } from "@/lib/supabase/server";
 
 export const dynamic = "force-dynamic";
+
+function rel(x: any, key: "name" | "full_name"): string {
+  if (!x) return "—";
+  if (Array.isArray(x)) return x[0]?.[key] ?? "—";
+  return x[key] ?? "—";
+}
 
 export default async function RoundDetail({ params }: { params: { id: string } }) {
   const supabase = createClient();
@@ -13,10 +17,10 @@ export default async function RoundDetail({ params }: { params: { id: string } }
       .from("rounds")
       .select(`
         id, date, status, type, notes,
-        players:player_id(full_name),
-        teams:team_id(name),
-        courses:course_id(name),
-        tees:tee_id(name)
+        players:player_id ( full_name ),
+        teams:team_id ( name ),
+        courses:course_id ( name ),
+        tees:tee_id ( name )
       `)
       .eq("id", roundId)
       .single(),
@@ -41,10 +45,10 @@ export default async function RoundDetail({ params }: { params: { id: string } }
     <div className="space-y-6">
       <div>
         <h1 className="text-xl font-semibold">
-          {round.players?.full_name ?? "Player"} — {new Date(round.date).toLocaleDateString()}
+          {rel(round.players, "full_name")} — {round.date ? new Date(round.date).toLocaleDateString() : "—"}
         </h1>
         <p className="text-sm text-neutral-600">
-          Team: {round.teams?.name ?? "-"} • Course: {round.courses?.name ?? "-"} • Tee: {round.tees?.name ?? "-"}
+          Team: {rel(round.teams, "name")} • Course: {rel(round.courses, "name")} • Tee: {rel(round.tees, "name")}
         </p>
         <p className="text-sm text-neutral-600">
           Status: {round.status} • Type: {round.type}
@@ -79,6 +83,8 @@ export default async function RoundDetail({ params }: { params: { id: string } }
                 const n = i + 1;
                 const h = holesMap.get(n);
                 const s = (scores ?? []).find((x) => x.hole_number === n);
+                const penaltyDot =
+                  h?.penalty || (typeof s?.penalties === "number" ? s.penalties > 0 : false);
                 return (
                   <tr key={n} className="border-t">
                     <td className="p-3">{n}</td>
@@ -90,7 +96,7 @@ export default async function RoundDetail({ params }: { params: { id: string } }
                     <td className="p-3">{(h?.gir ?? s?.gir) ? "✓" : ""}</td>
                     <td className="p-3">{(h?.up_down ?? s?.up_down) ? "✓" : ""}</td>
                     <td className="p-3">{(h?.sand_save ?? s?.sand_save) ? "✓" : ""}</td>
-                    <td className="p-3">{(h?.penalty ?? (s?.penalties ? s.penalties > 0 : false)) ? "•" : ""}</td>
+                    <td className="p-3">{penaltyDot ? "•" : ""}</td>
                     <td className="p-3">{s?.sg_ott ?? "-"}</td>
                     <td className="p-3">{s?.sg_app ?? "-"}</td>
                     <td className="p-3">{s?.sg_arg ?? "-"}</td>

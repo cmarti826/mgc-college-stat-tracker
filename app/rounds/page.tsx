@@ -1,25 +1,29 @@
 import Link from "next/link";
-import { createClient } from '@/lib/supabase/server';
+import { createClient } from "@/lib/supabase/server";
 
 export const dynamic = "force-dynamic";
+
+type RelName = { name?: string; full_name?: string } | RelName[] | null;
+function rel(x: any, key: "name" | "full_name"): string {
+  if (!x) return "—";
+  if (Array.isArray(x)) return x[0]?.[key] ?? "—";
+  return x[key] ?? "—";
+}
 
 export default async function RoundsPage() {
   const supabase = createClient();
 
-  // We could use v_rounds_enriched, but we can join inline to avoid relying on that view.
   const { data: rounds, error } = await supabase
     .from("rounds")
     .select(`
       id, date, status, type,
-      players:player_id(full_name),
-      teams:team_id(name),
-      courses:course_id(name)
+      players:player_id ( full_name ),
+      teams:team_id ( name ),
+      courses:course_id ( name )
     `)
     .order("date", { ascending: false });
 
-  if (error) {
-    return <div className="text-red-600">Error loading rounds: {error.message}</div>;
-  }
+  if (error) return <div className="text-red-600">Error loading rounds: {error.message}</div>;
 
   return (
     <div>
@@ -41,12 +45,12 @@ export default async function RoundsPage() {
               <tr key={r.id} className="border-t">
                 <td className="p-3">
                   <Link href={`/rounds/${r.id}`} className="underline">
-                    {new Date(r.date).toLocaleDateString()}
+                    {r.date ? new Date(r.date).toLocaleDateString() : "—"}
                   </Link>
                 </td>
-                <td className="p-3">{r.players?.full_name ?? "-"}</td>
-                <td className="p-3">{r.teams?.name ?? "-"}</td>
-                <td className="p-3">{r.courses?.name ?? "-"}</td>
+                <td className="p-3">{rel(r.players, "full_name")}</td>
+                <td className="p-3">{rel(r.teams, "name")}</td>
+                <td className="p-3">{rel(r.courses, "name")}</td>
                 <td className="p-3">{r.status}</td>
                 <td className="p-3">{r.type}</td>
               </tr>

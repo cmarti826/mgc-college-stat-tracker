@@ -52,14 +52,12 @@ async function addShot(formData: FormData) {
 
   if (!round_id || !hole_number) return;
 
-  // Get round to inherit player_id (optional) and sanity
   const { data: rnd } = await supabase
     .from("rounds")
     .select("id, player_id")
     .eq("id", round_id)
     .single();
 
-  // Compute next shot_number for this hole in this round
   const { data: maxShot } = await supabase
     .from("shots")
     .select("shot_number")
@@ -75,8 +73,8 @@ async function addShot(formData: FormData) {
     round_id,
     hole_number,
     shot_number: nextShotNumber,
-    putt,                         // REQUIRED (bool, not null)
-    penalty_strokes,              // REQUIRED (int, not null)
+    putt,
+    penalty_strokes,
     player_id: rnd?.player_id ?? null,
     start_lie,
     end_lie,
@@ -85,12 +83,6 @@ async function addShot(formData: FormData) {
     club,
     note,
     holed,
-    // Optional convenience flags (if your schema uses them)
-    // start_dist_yards: null,
-    // end_dist_yards: null,
-    // start_distance: null,
-    // end_distance: null,
-    // penalty: penalty_strokes > 0,
   });
 
   if (error) throw new Error(error.message);
@@ -118,47 +110,84 @@ export default async function RoundDetail({
   const roundId = params.id;
   const supabase = createClient();
 
-  const [{ data: round, error: roundErr }, { data: shots, error: shotsErr }] =
-    await Promise.all([
-      supabase
-        .from("rounds")
-        .select(`
-          id, name, date, notes,
-          players:player_id ( full_name ),
-          teams:team_id ( name ),
-          courses:course_id ( name ),
-          tees:tee_id ( name )
-        `)
-        .eq("id", roundId)
-        .single(),
-      supabase
-        .from("shots")
-        .select(`
-          id, hole_number, shot_number, putt, penalty_strokes,
-          club, note, holed,
-          start_lie, end_lie,
-          start_dist_feet, end_dist_feet
-        `)
-        .eq("round_id", roundId)
-        .order("hole_number", { ascending: true })
-        .order("shot_number", { ascending: true }),
-    ]);
+  const [
+    { data: round, error: roundErr },
+    { data: shots, error: shotsErr },
+    { data: scores, error: scoresErr },
+  ] = await Promise.all([
+    supabase
+      .from("rounds")
+      .select(`
+        id, name, date, notes,
+        players:player_id ( full_name ),
+        teams:team_id ( name ),
+        courses:course_id ( name ),
+        tees:tee_id ( name )
+      `)
+      .eq("id", roundId)
+      .single(),
+    supabase
+      .from("shots")
+      .select(`
+        id, hole_number, shot_number, putt, penalty_strokes,
+        club, note, holed,
+        start_lie, end_lie,
+        start_dist_feet, end_dist_feet
+      `)
+      .eq("round_id", roundId)
+      .order("hole_number", { ascending: true })
+      .order("shot_number", { ascending: true }),
+    supabase
+      .from("scores")
+      .select(`
+        id, user_id, hole_number, strokes, putts, fir, gir, up_down, sand_save, penalties,
+        sg_ott, sg_app, sg_arg, sg_putt, notes
+      `)
+      .eq("round_id", roundId)
+      .order("hole_number", { ascending: true }),
+  ]);
 
   if (roundErr || !round) {
-    return (
-      <div className="text-red-600">
-        {roundErr?.message ?? "Round not found."}
-      </div>
-    );
+    return <div className="text-red-600">{roundErr?.message ?? "Round not found."}</div>;
   }
 
   // Group shots by hole for display
-  const byHole = new Map<number, typeof shots>();
+  const shotsByHole = new Map<number, typeof shots>();
   (shots ?? []).forEach((s) => {
-    const arr = byHole.get(s.hole_number) ?? [];
+    const arr = shotsByHole.get(s.hole_number) ?? [];
     arr.push(s);
-    byHole.set(s.hole_number, arr);
+    shotsByHole.set(s.hole_number, arr);
   });
+
+  // Normalize scores by hole (if multiple scorers exist, show first; you can expand later)
+  type ScoreRow = NonNullable<typeof scores>[number];
+  const scoreByHole = new Map<number, ScoreRow>();
+  (scores ?? []).forEach((row) => {
+    if (!scoreByHole.has(row.hole_number)) scoreByHole.set(row.hole_number, row);
+  });
+
+  // Totals
+  const totals = (scores ?? []).reduce(
+    (acc, r) => {
+      acc.strokes += r.strokes ?? 0;
+      acc.putts += r.putts ?? 0;
+      acc.penalties += r.penalties ?? 0;
+      acc.sg_ott += Number(r.sg_ott ?? 0);
+      acc.sg_app += Number(r.sg_app ?? 0);
+      acc.sg_arg += Number(r.sg_arg ?? 0);
+      acc.sg_putt += Number(r.sg_putt ?? 0);
+      return acc;
+    },
+    {
+      strokes: 0,
+      putts: 0,
+      penalties: 0,
+      sg_ott: 0,
+      sg_app: 0,
+      sg_arg: 0,
+      sg_putt: 0,
+    }
+  );
 
   return (
     <div className="space-y-8">
@@ -213,6 +242,78 @@ export default async function RoundDetail({
             </button>
           </div>
         </form>
+      </section>
+
+      {/* Scores & Stats */}
+      <section className="space-y-2">
+        <h2 className="font-medium">Scores & Stats</h2>
+        {scoresErr && <p className="text-red-600 text-sm">Error loading scores: {scoresErr.message}</p>}
+
+        <div className="rounded-lg border bg-white overflow-x-auto">
+          <table className="w-full text-sm">
+            <thead className="bg-neutral-50">
+              <tr>
+                <th className="text-left p-3">Hole</th>
+                <th className="text-left p-3">Strokes</th>
+                <th className="text-left p-3">Putts</th>
+                <th className="text-left p-3">FIR</th>
+                <th className="text-left p-3">GIR</th>
+                <th className="text-left p-3">Up &amp; Down</th>
+                <th className="text-left p-3">Sand Save</th>
+                <th className="text-left p-3">Penalties</th>
+                <th className="text-left p-3">SG OTT</th>
+                <th className="text-left p-3">SG APP</th>
+                <th className="text-left p-3">SG ARG</th>
+                <th className="text-left p-3">SG PUTT</th>
+                <th className="text-left p-3">Notes</th>
+              </tr>
+            </thead>
+            <tbody>
+              {Array.from({ length: 18 }).map((_, idx) => {
+                const hole = idx + 1;
+                const r = scoreByHole.get(hole);
+                return (
+                  <tr key={hole} className="border-t">
+                    <td className="p-3">{hole}</td>
+                    <td className="p-3">{r?.strokes ?? "—"}</td>
+                    <td className="p-3">{r?.putts ?? "—"}</td>
+                    <td className="p-3">{r?.fir === true ? "✓" : r?.fir === false ? "✗" : "—"}</td>
+                    <td className="p-3">{r?.gir === true ? "✓" : r?.gir === false ? "✗" : "—"}</td>
+                    <td className="p-3">{r?.up_down === true ? "✓" : r?.up_down === false ? "✗" : "—"}</td>
+                    <td className="p-3">{r?.sand_save === true ? "✓" : r?.sand_save === false ? "✗" : "—"}</td>
+                    <td className="p-3">{r?.penalties ?? "—"}</td>
+                    <td className="p-3">{r?.sg_ott ?? "—"}</td>
+                    <td className="p-3">{r?.sg_app ?? "—"}</td>
+                    <td className="p-3">{r?.sg_arg ?? "—"}</td>
+                    <td className="p-3">{r?.sg_putt ?? "—"}</td>
+                    <td className="p-3">{r?.notes ?? "—"}</td>
+                  </tr>
+                );
+              })}
+
+              {/* Totals row */}
+              <tr className="border-t bg-neutral-50 font-medium">
+                <td className="p-3">Totals</td>
+                <td className="p-3">{totals.strokes || "—"}</td>
+                <td className="p-3">{totals.putts || "—"}</td>
+                <td className="p-3">—</td>
+                <td className="p-3">—</td>
+                <td className="p-3">—</td>
+                <td className="p-3">—</td>
+                <td className="p-3">{totals.penalties || "—"}</td>
+                <td className="p-3">{totals.sg_ott.toFixed(2)}</td>
+                <td className="p-3">{totals.sg_app.toFixed(2)}</td>
+                <td className="p-3">{totals.sg_arg.toFixed(2)}</td>
+                <td className="p-3">{totals.sg_putt.toFixed(2)}</td>
+                <td className="p-3">—</td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+
+        <p className="text-xs text-neutral-500">
+          Showing first scorer row per hole. If you want multi-scorer support (e.g., multiple users on same round), I can expand this to group by user as well.
+        </p>
       </section>
 
       {/* Add Shot */}
@@ -315,10 +416,11 @@ export default async function RoundDetail({
       {/* Shots List */}
       <section className="space-y-2">
         <h2 className="font-medium">Shots</h2>
+        {shotsErr && <p className="text-red-600 text-sm">Error loading shots: {shotsErr.message}</p>}
         <div className="space-y-4">
           {Array.from({ length: 18 }).map((_, i) => {
             const hole = i + 1;
-            const items = byHole.get(hole) ?? [];
+            const items = shotsByHole.get(hole) ?? [];
             return (
               <div key={hole} className="rounded-lg border bg-white overflow-hidden">
                 <div className="px-4 py-2 bg-neutral-50 font-medium">Hole {hole}</div>

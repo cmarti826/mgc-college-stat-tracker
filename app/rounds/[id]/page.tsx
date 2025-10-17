@@ -1,7 +1,7 @@
-// app/rounds/[id]/page.tsx
 import { createClient } from "@/lib/supabase/server";
 import { revalidatePath } from "next/cache";
 import Link from "next/link";
+import AddShotForm from "@/components/AddShotForm";
 
 export const dynamic = "force-dynamic";
 
@@ -25,84 +25,9 @@ async function updateRound(formData: FormData) {
   const date = (formData.get("date") as string | null) || null;
   const notes = (formData.get("notes") as string | null)?.trim() || null;
 
-  const { error } = await supabase
-    .from("rounds")
-    .update({ name, date, notes })
-    .eq("id", id);
-
+  const { error } = await supabase.from("rounds").update({ name, date, notes }).eq("id", id);
   if (error) throw new Error(error.message);
   revalidatePath(`/rounds/${id}`);
-}
-
-async function addShot(formData: FormData) {
-  "use server";
-  const supabase = createClient();
-
-  const round_id = String(formData.get("round_id") || "");
-  const hole_number = Number(formData.get("hole_number") || 0);
-  const putt = formData.get("putt") === "on";
-  const penalty_strokes = Number(formData.get("penalty_strokes") || 0);
-  const start_lie = (formData.get("start_lie") as string) || null;
-  const end_lie = (formData.get("end_lie") as string) || null;
-
-  // NEW: capture both yards & feet
-  const start_dist_yards = formData.get("start_dist_yards")
-    ? Number(formData.get("start_dist_yards"))
-    : null;
-  const end_dist_yards = formData.get("end_dist_yards")
-    ? Number(formData.get("end_dist_yards"))
-    : null;
-  const start_dist_feet = formData.get("start_dist_feet")
-    ? Number(formData.get("start_dist_feet"))
-    : null;
-  const end_dist_feet = formData.get("end_dist_feet")
-    ? Number(formData.get("end_dist_feet"))
-    : null;
-
-  const club = (formData.get("club") as string) || null;
-  const note = (formData.get("note") as string) || null;
-  const holed = formData.get("holed") === "on";
-
-  if (!round_id || !hole_number) return;
-
-  const { data: rnd } = await supabase
-    .from("rounds")
-    .select("id, player_id")
-    .eq("id", round_id)
-    .single();
-
-  const { data: maxShot } = await supabase
-    .from("shots")
-    .select("shot_number")
-    .eq("round_id", round_id)
-    .eq("hole_number", hole_number)
-    .order("shot_number", { ascending: false })
-    .limit(1)
-    .maybeSingle();
-
-  const nextShotNumber = (maxShot?.shot_number ?? 0) + 1;
-
-  const { error } = await supabase.from("shots").insert({
-    round_id,
-    hole_number,
-    shot_number: nextShotNumber,
-    putt,
-    penalty_strokes,
-    player_id: rnd?.player_id ?? null,
-    start_lie,
-    end_lie,
-    // store BOTH units (schema supports both)
-    start_dist_yards,
-    end_dist_yards,
-    start_dist_feet,
-    end_dist_feet,
-    club,
-    note,
-    holed,
-  });
-
-  if (error) throw new Error(error.message);
-  revalidatePath(`/rounds/${round_id}`);
 }
 
 async function deleteShot(formData: FormData) {
@@ -118,23 +43,20 @@ async function deleteShot(formData: FormData) {
 }
 
 /* ----------------------------- PAGE ---------------------------- */
-export default async function RoundDetail({
-  params,
-}: {
-  params: { id: string };
-}) {
+export default async function RoundDetail({ params }: { params: { id: string } }) {
   const roundId = params.id;
   const supabase = createClient();
 
   const [
     { data: round, error: roundErr },
-    { data: shots, error: shotsErr },
-    { data: scores, error: scoresErr },
+    { data: shots },
+    { data: scores },
   ] = await Promise.all([
     supabase
       .from("rounds")
       .select(`
         id, name, date, notes,
+        player_id, team_id, course_id, tee_id,
         players:player_id ( full_name ),
         teams:team_id ( name ),
         courses:course_id ( name ),
@@ -168,22 +90,59 @@ export default async function RoundDetail({
     return <div className="text-red-600">{roundErr?.message ?? "Round not found."}</div>;
   }
 
-  // Group shots by hole
-  const shotsByHole = new Map<number, typeof shots>();
+  // Yardages for 1..18 from tee_set_holes if tee_id refers to tee_sets; fallback to holes.yards
+  const [{ data: teeHoles }, { data: courseHoles }] = await Promise.all([
+    supabase.from("tee_set_holes").select("hole_number, yardage").eq("tee_set_id", round.tee_id).order("hole_number"),
+    supabase.from("holes").select("number, yards").eq("course_id", round.course_id).order("number"),
+  ]);
+
+  const yardages: (number | null)[] = Array.from({ length: 18 }, (_, i) => {
+    const y = teeHoles?.find((t) => t.hole_number === i + 1)?.yardage ?? null;
+    if (y != null) return Number(y);
+    const fallback = courseHoles?.find((h) => h.number === i + 1)?.yards ?? null;
+    return fallback != null ? Number(fallback) : null;
+  });
+
+  // Build "last shot on each hole" snapshot to drive defaults
+  type ShotRow = NonNullable<typeof shots>[number];
+  const lastShotByHole: Record<
+    number,
+    | {
+        end_lie: string | null;
+        end_dist_yards: number | null;
+        end_dist_feet: number | null;
+        shot_number: number;
+      }
+    | undefined
+  > = {};
+  (shots ?? []).forEach((s) => {
+    const prev = lastShotByHole[s.hole_number];
+    if (!prev || s.shot_number > prev.shot_number) {
+      lastShotByHole[s.hole_number] = {
+        end_lie: s.end_lie ?? null,
+        end_dist_yards: (s.end_dist_yards as any) ?? null,
+        end_dist_feet: (s.end_dist_feet as any) ?? null,
+        shot_number: s.shot_number,
+      };
+    }
+  });
+
+  // Group shots by hole for the table
+  const shotsByHole = new Map<number, ShotRow[]>();
   (shots ?? []).forEach((s) => {
     const arr = shotsByHole.get(s.hole_number) ?? [];
     arr.push(s);
     shotsByHole.set(s.hole_number, arr);
   });
 
-  // Map first score row per hole
+  // Map first score row per hole (if multiple scorers exist)
   type ScoreRow = NonNullable<typeof scores>[number];
   const scoreByHole = new Map<number, ScoreRow>();
   (scores ?? []).forEach((row) => {
     if (!scoreByHole.has(row.hole_number)) scoreByHole.set(row.hole_number, row);
   });
 
-  // Totals
+  // Totals (scores)
   const totals = (scores ?? []).reduce(
     (acc, r) => {
       acc.strokes += r.strokes ?? 0;
@@ -198,9 +157,7 @@ export default async function RoundDetail({
     { strokes: 0, putts: 0, penalties: 0, sg_ott: 0, sg_app: 0, sg_arg: 0, sg_putt: 0 }
   );
 
-  // helper to render distance w/ preferred unit
-  const fmtDist = (val: number | null | undefined) =>
-    val == null ? "—" : Number(val).toString();
+  const fmtDist = (val: number | null | undefined) => (val == null ? "—" : Number(val).toString());
 
   return (
     <div className="space-y-8">
@@ -210,10 +167,13 @@ export default async function RoundDetail({
           <h1 className="text-xl font-semibold">{round.name ?? `Round ${round.id.slice(0, 8)}`}</h1>
           <p className="text-sm text-neutral-600">
             {round.date ? new Date(round.date).toLocaleDateString() : "—"} ·{" "}
-            Player: {rel(round.players as RelObj, "full_name")} · Team: {rel(round.teams as RelObj, "name")} · Course: {rel(round.courses as RelObj, "name")} · Tee: {rel(round.tees as RelObj, "name")}
+            Player: {rel(round.players as RelObj, "full_name")} · Team: {rel(round.teams as RelObj, "name")} · Course:{" "}
+            {rel(round.courses as RelObj, "name")} · Tee: {rel(round.tees as RelObj, "name")}
           </p>
         </div>
-        <Link href="/rounds" className="underline text-sm">Back to Rounds</Link>
+        <Link href="/rounds" className="underline text-sm">
+          Back to Rounds
+        </Link>
       </div>
 
       {/* Edit Round */}
@@ -223,36 +183,18 @@ export default async function RoundDetail({
           <input type="hidden" name="id" value={roundId} />
           <label className="text-sm">
             <div className="text-neutral-700 mb-1">Name</div>
-            <input
-              name="name"
-              defaultValue={round.name ?? ""}
-              className="w-full border rounded px-2 py-1"
-              placeholder="Optional round name"
-            />
+            <input name="name" defaultValue={round.name ?? ""} className="w-full border rounded px-2 py-1" placeholder="Optional round name" />
           </label>
           <label className="text-sm">
             <div className="text-neutral-700 mb-1">Date</div>
-            <input
-              type="date"
-              name="date"
-              defaultValue={round.date ? new Date(round.date).toISOString().slice(0, 10) : ""}
-              className="w-full border rounded px-2 py-1"
-            />
+            <input type="date" name="date" defaultValue={round.date ? new Date(round.date).toISOString().slice(0, 10) : ""} className="w-full border rounded px-2 py-1" />
           </label>
           <label className="sm:col-span-3 text-sm">
             <div className="text-neutral-700 mb-1">Notes</div>
-            <textarea
-              name="notes"
-              defaultValue={round.notes ?? ""}
-              className="w-full border rounded px-2 py-2"
-              rows={3}
-              placeholder="Any notes about this round…"
-            />
+            <textarea name="notes" defaultValue={round.notes ?? ""} className="w-full border rounded px-2 py-2" rows={3} placeholder="Any notes about this round…" />
           </label>
           <div className="sm:col-span-3">
-            <button className="border rounded px-3 py-2 bg-neutral-900 text-white hover:bg-neutral-800">
-              Save Changes
-            </button>
+            <button className="border rounded px-3 py-2 bg-neutral-900 text-white hover:bg-neutral-800">Save Changes</button>
           </div>
         </form>
       </section>
@@ -260,7 +202,6 @@ export default async function RoundDetail({
       {/* Scores & Stats */}
       <section className="space-y-2">
         <h2 className="font-medium">Scores & Stats</h2>
-        {scoresErr && <p className="text-red-600 text-sm">Error loading scores: {scoresErr.message}</p>}
 
         <div className="rounded-lg border bg-white overflow-x-auto">
           <table className="w-full text-sm">
@@ -320,111 +261,24 @@ export default async function RoundDetail({
         </div>
       </section>
 
-      {/* Add Shot */}
+      {/* Add Shot (smart defaults from tee yardage or last shot) */}
       <section className="space-y-2">
         <h2 className="font-medium">Add Shot</h2>
-        <form action={addShot} className="bg-white border rounded-lg p-4 grid sm:grid-cols-6 gap-3">
-          <input type="hidden" name="round_id" value={roundId} />
-          <label className="text-sm sm:col-span-2">
-            <div className="text-neutral-700 mb-1">Hole</div>
-            <select name="hole_number" required className="w-full border rounded px-2 py-1">
-              <option value="">Select hole…</option>
-              {Array.from({ length: 18 }).map((_, i) => (
-                <option key={i + 1} value={i + 1}>{i + 1}</option>
-              ))}
-            </select>
-          </label>
 
-          <label className="text-sm">
-            <div className="text-neutral-700 mb-1">Putt?</div>
-            <input type="checkbox" name="putt" className="h-4 w-4" />
-          </label>
-
-          <label className="text-sm">
-            <div className="text-neutral-700 mb-1">Penalty Strokes</div>
-            <input type="number" name="penalty_strokes" min={0} defaultValue={0} className="w-full border rounded px-2 py-1" />
-          </label>
-
-          {/* LIES */}
-          <label className="text-sm">
-            <div className="text-neutral-700 mb-1">Start Lie</div>
-            <select name="start_lie" className="w-full border rounded px-2 py-1">
-              <option value="">—</option>
-              <option value="Tee">Tee</option>
-              <option value="Fairway">Fairway</option>
-              <option value="Rough">Rough</option>
-              <option value="Sand">Sand</option>
-              <option value="Recovery">Recovery</option>
-              <option value="Green">Green</option>
-              <option value="Penalty">Penalty</option>
-              <option value="Other">Other</option>
-            </select>
-          </label>
-
-          <label className="text-sm">
-            <div className="text-neutral-700 mb-1">End Lie</div>
-            <select name="end_lie" className="w-full border rounded px-2 py-1">
-              <option value="">—</option>
-              <option value="Fairway">Fairway</option>
-              <option value="Rough">Rough</option>
-              <option value="Sand">Sand</option>
-              <option value="Green">Green</option>
-              <option value="Hole">Hole</option>
-              <option value="Penalty">Penalty</option>
-              <option value="Other">Other</option>
-            </select>
-          </label>
-
-          {/* DISTANCES: both units */}
-          <label className="text-sm">
-            <div className="text-neutral-700 mb-1">Start Dist (yd)</div>
-            <input type="number" name="start_dist_yards" min={0} step="0.1" className="w-full border rounded px-2 py-1" />
-          </label>
-          <label className="text-sm">
-            <div className="text-neutral-700 mb-1">Start Dist (ft)</div>
-            <input type="number" name="start_dist_feet" min={0} step="0.1" className="w-full border rounded px-2 py-1" />
-          </label>
-
-          <label className="text-sm">
-            <div className="text-neutral-700 mb-1">End Dist (yd)</div>
-            <input type="number" name="end_dist_yards" min={0} step="0.1" className="w-full border rounded px-2 py-1" />
-          </label>
-          <label className="text-sm">
-            <div className="text-neutral-700 mb-1">End Dist (ft)</div>
-            <input type="number" name="end_dist_feet" min={0} step="0.1" className="w-full border rounded px-2 py-1" />
-          </label>
-
-          <label className="text-sm">
-            <div className="text-neutral-700 mb-1">Club</div>
-            <input name="club" className="w-full border rounded px-2 py-1" placeholder="e.g. 7i, PW, Driver" />
-          </label>
-
-          <label className="text-sm">
-            <div className="text-neutral-700 mb-1">Holed?</div>
-            <input type="checkbox" name="holed" className="h-4 w-4" />
-          </label>
-
-          <label className="text-sm sm:col-span-3">
-            <div className="text-neutral-700 mb-1">Note</div>
-            <input name="note" className="w-full border rounded px-2 py-1" placeholder="Optional note…" />
-          </label>
-
-          <div className="sm:col-span-6">
-            <button className="border rounded px-3 py-2 bg-neutral-900 text-white hover:bg-neutral-800">
-              Add Shot
-            </button>
-          </div>
-        </form>
+        <AddShotForm
+          roundId={roundId}
+          yardages={yardages}
+          lastShotByHole={lastShotByHole}
+        />
 
         <p className="text-xs text-neutral-500">
-          Enter yards for full shots; enter feet when on the green. Both are stored.
+          If a hole has no shots yet, start distance defaults to tee yardage. Otherwise, it uses the previous shot’s end distance and lie.
         </p>
       </section>
 
       {/* Shots List */}
       <section className="space-y-2">
         <h2 className="font-medium">Shots</h2>
-        {shotsErr && <p className="text-red-600 text-sm">Error loading shots: {shotsErr.message}</p>}
         <div className="space-y-4">
           {Array.from({ length: 18 }).map((_, i) => {
             const hole = i + 1;
@@ -449,19 +303,10 @@ export default async function RoundDetail({
                     </tr>
                   </thead>
                   <tbody>
-                    {items.length === 0 && (
-                      <tr><td className="p-3" colSpan={11}>No shots yet.</td></tr>
-                    )}
+                    {items.length === 0 && <tr><td className="p-3" colSpan={11}>No shots yet.</td></tr>}
                     {items.map((s) => {
-                      const startPref =
-                        s.start_lie === "Green"
-                          ? `${fmtDist(s.start_dist_feet)} ft`
-                          : `${fmtDist(s.start_dist_yards)} yd`;
-                      const endPref =
-                        s.end_lie === "Green" || s.end_lie === "Hole"
-                          ? `${fmtDist(s.end_dist_feet)} ft`
-                          : `${fmtDist(s.end_dist_yards)} yd`;
-
+                      const startPref = s.start_lie === "Green" ? `${fmtDist(s.start_dist_feet)} ft` : `${fmtDist(s.start_dist_yards)} yd`;
+                      const endPref = (s.end_lie === "Green" || s.end_lie === "Hole") ? `${fmtDist(s.end_dist_feet)} ft` : `${fmtDist(s.end_dist_yards)} yd`;
                       return (
                         <tr key={s.id} className="border-t">
                           <td className="p-3">{s.shot_number}</td>
@@ -469,15 +314,11 @@ export default async function RoundDetail({
                           <td className="p-3">{s.penalty_strokes ?? 0}</td>
                           <td className="p-3">{s.start_lie ?? "—"}</td>
                           <td className="p-3">{s.end_lie ?? "—"}</td>
-
-                          {/* show preferred + the other if present */}
                           <td className="p-3">
                             <div className="flex flex-col">
                               <span className="font-medium">{startPref}</span>
                               <span className="text-xs text-neutral-500">
-                                {s.start_lie === "Green"
-                                  ? `${fmtDist(s.start_dist_yards)} yd`
-                                  : `${fmtDist(s.start_dist_feet)} ft`}
+                                {s.start_lie === "Green" ? `${fmtDist(s.start_dist_yards)} yd` : `${fmtDist(s.start_dist_feet)} ft`}
                               </span>
                             </div>
                           </td>
@@ -485,28 +326,18 @@ export default async function RoundDetail({
                             <div className="flex flex-col">
                               <span className="font-medium">{endPref}</span>
                               <span className="text-xs text-neutral-500">
-                                {s.end_lie === "Green" || s.end_lie === "Hole"
-                                  ? `${fmtDist(s.end_dist_yards)} yd`
-                                  : `${fmtDist(s.end_dist_feet)} ft`}
+                                {s.end_lie === "Green" || s.end_lie === "Hole" ? `${fmtDist(s.end_dist_yards)} yd` : `${fmtDist(s.end_dist_feet)} ft`}
                               </span>
                             </div>
                           </td>
-
                           <td className="p-3">{s.club ?? "—"}</td>
                           <td className="p-3">{s.note ?? "—"}</td>
                           <td className="p-3">{s.holed ? "Yes" : "No"}</td>
                           <td className="p-3">
-                            <form
-                              action={deleteShot}
-                              onSubmit={(e) => {
-                                if (!confirm(`Delete shot #${s.shot_number} on hole ${hole}?`)) e.preventDefault();
-                              }}
-                            >
+                            <form action={deleteShot} onSubmit={(e) => { if (!confirm(`Delete shot #${s.shot_number} on hole ${hole}?`)) e.preventDefault(); }}>
                               <input type="hidden" name="id" value={s.id} />
                               <input type="hidden" name="round_id" value={roundId} />
-                              <button className="border rounded px-2 py-1 hover:bg-red-50 text-red-700 border-red-200">
-                                Delete
-                              </button>
+                              <button className="border rounded px-2 py-1 hover:bg-red-50 text-red-700 border-red-200">Delete</button>
                             </form>
                           </td>
                         </tr>

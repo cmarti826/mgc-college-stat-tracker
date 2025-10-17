@@ -44,8 +44,21 @@ async function addShot(formData: FormData) {
   const penalty_strokes = Number(formData.get("penalty_strokes") || 0);
   const start_lie = (formData.get("start_lie") as string) || null;
   const end_lie = (formData.get("end_lie") as string) || null;
-  const start_dist_feet = formData.get("start_dist_feet") ? Number(formData.get("start_dist_feet")) : null;
-  const end_dist_feet = formData.get("end_dist_feet") ? Number(formData.get("end_dist_feet")) : null;
+
+  // NEW: capture both yards & feet
+  const start_dist_yards = formData.get("start_dist_yards")
+    ? Number(formData.get("start_dist_yards"))
+    : null;
+  const end_dist_yards = formData.get("end_dist_yards")
+    ? Number(formData.get("end_dist_yards"))
+    : null;
+  const start_dist_feet = formData.get("start_dist_feet")
+    ? Number(formData.get("start_dist_feet"))
+    : null;
+  const end_dist_feet = formData.get("end_dist_feet")
+    ? Number(formData.get("end_dist_feet"))
+    : null;
+
   const club = (formData.get("club") as string) || null;
   const note = (formData.get("note") as string) || null;
   const holed = formData.get("holed") === "on";
@@ -78,6 +91,9 @@ async function addShot(formData: FormData) {
     player_id: rnd?.player_id ?? null,
     start_lie,
     end_lie,
+    // store BOTH units (schema supports both)
+    start_dist_yards,
+    end_dist_yards,
     start_dist_feet,
     end_dist_feet,
     club,
@@ -132,7 +148,8 @@ export default async function RoundDetail({
         id, hole_number, shot_number, putt, penalty_strokes,
         club, note, holed,
         start_lie, end_lie,
-        start_dist_feet, end_dist_feet
+        start_dist_feet, end_dist_feet,
+        start_dist_yards, end_dist_yards
       `)
       .eq("round_id", roundId)
       .order("hole_number", { ascending: true })
@@ -151,7 +168,7 @@ export default async function RoundDetail({
     return <div className="text-red-600">{roundErr?.message ?? "Round not found."}</div>;
   }
 
-  // Group shots by hole for display
+  // Group shots by hole
   const shotsByHole = new Map<number, typeof shots>();
   (shots ?? []).forEach((s) => {
     const arr = shotsByHole.get(s.hole_number) ?? [];
@@ -159,7 +176,7 @@ export default async function RoundDetail({
     shotsByHole.set(s.hole_number, arr);
   });
 
-  // Normalize scores by hole (if multiple scorers exist, show first; you can expand later)
+  // Map first score row per hole
   type ScoreRow = NonNullable<typeof scores>[number];
   const scoreByHole = new Map<number, ScoreRow>();
   (scores ?? []).forEach((row) => {
@@ -178,16 +195,12 @@ export default async function RoundDetail({
       acc.sg_putt += Number(r.sg_putt ?? 0);
       return acc;
     },
-    {
-      strokes: 0,
-      putts: 0,
-      penalties: 0,
-      sg_ott: 0,
-      sg_app: 0,
-      sg_arg: 0,
-      sg_putt: 0,
-    }
+    { strokes: 0, putts: 0, penalties: 0, sg_ott: 0, sg_app: 0, sg_arg: 0, sg_putt: 0 }
   );
+
+  // helper to render distance w/ preferred unit
+  const fmtDist = (val: number | null | undefined) =>
+    val == null ? "—" : Number(val).toString();
 
   return (
     <div className="space-y-8">
@@ -290,16 +303,11 @@ export default async function RoundDetail({
                   </tr>
                 );
               })}
-
-              {/* Totals row */}
               <tr className="border-t bg-neutral-50 font-medium">
                 <td className="p-3">Totals</td>
                 <td className="p-3">{totals.strokes || "—"}</td>
                 <td className="p-3">{totals.putts || "—"}</td>
-                <td className="p-3">—</td>
-                <td className="p-3">—</td>
-                <td className="p-3">—</td>
-                <td className="p-3">—</td>
+                <td className="p-3">—</td><td className="p-3">—</td><td className="p-3">—</td><td className="p-3">—</td>
                 <td className="p-3">{totals.penalties || "—"}</td>
                 <td className="p-3">{totals.sg_ott.toFixed(2)}</td>
                 <td className="p-3">{totals.sg_app.toFixed(2)}</td>
@@ -310,10 +318,6 @@ export default async function RoundDetail({
             </tbody>
           </table>
         </div>
-
-        <p className="text-xs text-neutral-500">
-          Showing first scorer row per hole. If you want multi-scorer support (e.g., multiple users on same round), I can expand this to group by user as well.
-        </p>
       </section>
 
       {/* Add Shot */}
@@ -338,15 +342,10 @@ export default async function RoundDetail({
 
           <label className="text-sm">
             <div className="text-neutral-700 mb-1">Penalty Strokes</div>
-            <input
-              type="number"
-              name="penalty_strokes"
-              min={0}
-              defaultValue={0}
-              className="w-full border rounded px-2 py-1"
-            />
+            <input type="number" name="penalty_strokes" min={0} defaultValue={0} className="w-full border rounded px-2 py-1" />
           </label>
 
+          {/* LIES */}
           <label className="text-sm">
             <div className="text-neutral-700 mb-1">Start Lie</div>
             <select name="start_lie" className="w-full border rounded px-2 py-1">
@@ -376,19 +375,28 @@ export default async function RoundDetail({
             </select>
           </label>
 
+          {/* DISTANCES: both units */}
           <label className="text-sm">
-            <div className="text-neutral-700 mb-1">Club</div>
-            <input name="club" className="w-full border rounded px-2 py-1" placeholder="e.g. 7i, PW, Driver" />
+            <div className="text-neutral-700 mb-1">Start Dist (yd)</div>
+            <input type="number" name="start_dist_yards" min={0} step="0.1" className="w-full border rounded px-2 py-1" />
           </label>
-
           <label className="text-sm">
             <div className="text-neutral-700 mb-1">Start Dist (ft)</div>
             <input type="number" name="start_dist_feet" min={0} step="0.1" className="w-full border rounded px-2 py-1" />
           </label>
 
           <label className="text-sm">
+            <div className="text-neutral-700 mb-1">End Dist (yd)</div>
+            <input type="number" name="end_dist_yards" min={0} step="0.1" className="w-full border rounded px-2 py-1" />
+          </label>
+          <label className="text-sm">
             <div className="text-neutral-700 mb-1">End Dist (ft)</div>
             <input type="number" name="end_dist_feet" min={0} step="0.1" className="w-full border rounded px-2 py-1" />
+          </label>
+
+          <label className="text-sm">
+            <div className="text-neutral-700 mb-1">Club</div>
+            <input name="club" className="w-full border rounded px-2 py-1" placeholder="e.g. 7i, PW, Driver" />
           </label>
 
           <label className="text-sm">
@@ -409,7 +417,7 @@ export default async function RoundDetail({
         </form>
 
         <p className="text-xs text-neutral-500">
-          Shot number is set automatically per hole (next available).
+          Enter yards for full shots; enter feet when on the green. Both are stored.
         </p>
       </section>
 
@@ -432,8 +440,8 @@ export default async function RoundDetail({
                       <th className="p-3">Penalty</th>
                       <th className="p-3">Start Lie</th>
                       <th className="p-3">End Lie</th>
-                      <th className="p-3">Start (ft)</th>
-                      <th className="p-3">End (ft)</th>
+                      <th className="p-3">Start (yd / ft)</th>
+                      <th className="p-3">End (yd / ft)</th>
                       <th className="p-3">Club</th>
                       <th className="p-3">Note</th>
                       <th className="p-3">Holed</th>
@@ -444,34 +452,66 @@ export default async function RoundDetail({
                     {items.length === 0 && (
                       <tr><td className="p-3" colSpan={11}>No shots yet.</td></tr>
                     )}
-                    {items.map((s) => (
-                      <tr key={s.id} className="border-t">
-                        <td className="p-3">{s.shot_number}</td>
-                        <td className="p-3">{s.putt ? "Yes" : "No"}</td>
-                        <td className="p-3">{s.penalty_strokes ?? 0}</td>
-                        <td className="p-3">{s.start_lie ?? "—"}</td>
-                        <td className="p-3">{s.end_lie ?? "—"}</td>
-                        <td className="p-3">{s.start_dist_feet ?? "—"}</td>
-                        <td className="p-3">{s.end_dist_feet ?? "—"}</td>
-                        <td className="p-3">{s.club ?? "—"}</td>
-                        <td className="p-3">{s.note ?? "—"}</td>
-                        <td className="p-3">{s.holed ? "Yes" : "No"}</td>
-                        <td className="p-3">
-                          <form
-                            action={deleteShot}
-                            onSubmit={(e) => {
-                              if (!confirm(`Delete shot #${s.shot_number} on hole ${hole}?`)) e.preventDefault();
-                            }}
-                          >
-                            <input type="hidden" name="id" value={s.id} />
-                            <input type="hidden" name="round_id" value={roundId} />
-                            <button className="border rounded px-2 py-1 hover:bg-red-50 text-red-700 border-red-200">
-                              Delete
-                            </button>
-                          </form>
-                        </td>
-                      </tr>
-                    ))}
+                    {items.map((s) => {
+                      const startPref =
+                        s.start_lie === "Green"
+                          ? `${fmtDist(s.start_dist_feet)} ft`
+                          : `${fmtDist(s.start_dist_yards)} yd`;
+                      const endPref =
+                        s.end_lie === "Green" || s.end_lie === "Hole"
+                          ? `${fmtDist(s.end_dist_feet)} ft`
+                          : `${fmtDist(s.end_dist_yards)} yd`;
+
+                      return (
+                        <tr key={s.id} className="border-t">
+                          <td className="p-3">{s.shot_number}</td>
+                          <td className="p-3">{s.putt ? "Yes" : "No"}</td>
+                          <td className="p-3">{s.penalty_strokes ?? 0}</td>
+                          <td className="p-3">{s.start_lie ?? "—"}</td>
+                          <td className="p-3">{s.end_lie ?? "—"}</td>
+
+                          {/* show preferred + the other if present */}
+                          <td className="p-3">
+                            <div className="flex flex-col">
+                              <span className="font-medium">{startPref}</span>
+                              <span className="text-xs text-neutral-500">
+                                {s.start_lie === "Green"
+                                  ? `${fmtDist(s.start_dist_yards)} yd`
+                                  : `${fmtDist(s.start_dist_feet)} ft`}
+                              </span>
+                            </div>
+                          </td>
+                          <td className="p-3">
+                            <div className="flex flex-col">
+                              <span className="font-medium">{endPref}</span>
+                              <span className="text-xs text-neutral-500">
+                                {s.end_lie === "Green" || s.end_lie === "Hole"
+                                  ? `${fmtDist(s.end_dist_yards)} yd`
+                                  : `${fmtDist(s.end_dist_feet)} ft`}
+                              </span>
+                            </div>
+                          </td>
+
+                          <td className="p-3">{s.club ?? "—"}</td>
+                          <td className="p-3">{s.note ?? "—"}</td>
+                          <td className="p-3">{s.holed ? "Yes" : "No"}</td>
+                          <td className="p-3">
+                            <form
+                              action={deleteShot}
+                              onSubmit={(e) => {
+                                if (!confirm(`Delete shot #${s.shot_number} on hole ${hole}?`)) e.preventDefault();
+                              }}
+                            >
+                              <input type="hidden" name="id" value={s.id} />
+                              <input type="hidden" name="round_id" value={roundId} />
+                              <button className="border rounded px-2 py-1 hover:bg-red-50 text-red-700 border-red-200">
+                                Delete
+                              </button>
+                            </form>
+                          </td>
+                        </tr>
+                      );
+                    })}
                   </tbody>
                 </table>
               </div>

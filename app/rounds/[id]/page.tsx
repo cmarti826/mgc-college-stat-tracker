@@ -18,12 +18,6 @@ function sum<T extends keyof HoleAgg>(rows: HoleAgg[], key: T) {
   return rows.reduce((acc, r) => acc + (Number(r[key] ?? 0) || 0), 0);
 }
 
-// Safely read either an embedded object or single-element array
-function firstOr<T>(val: T | T[] | null | undefined): T | null {
-  if (Array.isArray(val)) return (val[0] ?? null) as T | null;
-  return (val as T) ?? null;
-}
-
 export default async function RoundSummaryPage({
   params,
 }: {
@@ -32,35 +26,47 @@ export default async function RoundSummaryPage({
   const supabase = createClient();
   const roundId = params.id;
 
-  // Get round info
+  // 1) Load the round (NO embedded relations)
   const { data: round, error: roundErr } = await supabase
     .from("rounds")
     .select(
       `
         id, date, type, status, notes,
-        player_id, team_id, course_id, tee_set_id,
-        player:players(full_name),
-        course:courses(name),
-        tee_set:tee_sets(name)
+        player_id, team_id, course_id, tee_set_id
       `
     )
     .eq("id", roundId)
     .maybeSingle();
 
-  if (roundErr) throw new Error(`Failed to load round: ${roundErr.message}`);
+  if (roundErr) {
+    console.error("[rounds/[id]] load round error:", roundErr);
+  }
   if (!round) return notFound();
 
-  // Handle array vs object results
-  const playerEmb = firstOr<{ full_name?: string }>(round.player);
-  const courseEmb = firstOr<{ name?: string }>(round.course);
-  const teeEmb = firstOr<{ name?: string }>(round.tee_set);
+  // 2) Independently fetch related names by ID (works even without FK relationships in Supabase cache)
+  const [{ data: player, error: pErr }, { data: course, error: cErr }, { data: tee, error: tErr }] =
+    await Promise.all([
+      round.player_id
+        ? supabase.from("players").select("full_name").eq("id", round.player_id).maybeSingle()
+        : Promise.resolve({ data: null, error: null } as any),
+      round.course_id
+        ? supabase.from("courses").select("name").eq("id", round.course_id).maybeSingle()
+        : Promise.resolve({ data: null, error: null } as any),
+      round.tee_set_id
+        ? supabase.from("tee_sets").select("name").eq("id", round.tee_set_id).maybeSingle()
+        : Promise.resolve({ data: null, error: null } as any),
+    ]);
 
-  const playerName = playerEmb?.full_name ?? "Player";
-  const courseName = courseEmb?.name ?? "Course";
-  const teeName = teeEmb?.name ?? "Tee";
+  if (pErr) console.error("[rounds/[id]] players error:", pErr);
+  if (cErr) console.error("[rounds/[id]] courses error:", cErr);
+  if (tErr) console.error("[rounds/[id]] tee_sets error:", tErr);
 
-  // Totals for header
-  const { data: totals } = await supabase
+  const playerName = player?.full_name ?? "Player";
+  const courseName = course?.name ?? "Course";
+  const teeName = tee?.name ?? "Tee";
+
+  // 3) Totals for header (don’t throw on error)
+  const { data: totals, error: totalsErr } = await supabase
     .from("v_round_totals")
     .select(
       `
@@ -70,8 +76,9 @@ export default async function RoundSummaryPage({
     )
     .eq("round_id", roundId)
     .maybeSingle();
+  if (totalsErr) console.error("[rounds/[id]] v_round_totals error:", totalsErr);
 
-  // Hole-by-hole
+  // 4) Hole-by-hole
   const { data: holes, error: holesErr } = await supabase
     .from("v_hole_totals")
     .select(
@@ -83,8 +90,7 @@ export default async function RoundSummaryPage({
     )
     .eq("round_id", roundId)
     .order("hole_number", { ascending: true });
-
-  if (holesErr) throw new Error(`Failed to load hole totals: ${holesErr.message}`);
+  if (holesErr) console.error("[rounds/[id]] v_hole_totals error:", holesErr);
 
   const holeRows: HoleAgg[] = (holes ?? []).map((h) => ({
     hole_number: h.hole_number,
@@ -116,7 +122,7 @@ export default async function RoundSummaryPage({
     sg: sum(holeRows, "sg_total"),
   };
 
-  // ✅ Precompute using nullish coalescing only
+  // Precompute using nullish coalescing only
   const strokesValue: number | string = (totals?.strokes ?? allSum.strokes) ?? "—";
   const puttsValue: number | string = (totals?.putts ?? allSum.putts) ?? "—";
   const penaltiesValue: number | string =

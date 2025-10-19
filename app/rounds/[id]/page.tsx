@@ -26,79 +26,56 @@ export default async function RoundSummaryPage({
   const supabase = createClient();
   const roundId = params.id;
 
-  // 1) Load the round (NO embedded relations)
-  const { data: round, error: roundErr } = await supabase
+  // 1) Load round (NO embedded relations)
+  const { data: round } = await supabase
     .from("rounds")
-    .select(
-      `
-        id, date, type, status, notes,
-        player_id, team_id, course_id, tee_set_id
-      `
-    )
+    .select("id, date, type, status, notes, player_id, course_id, tee_set_id")
     .eq("id", roundId)
     .maybeSingle();
 
-  if (roundErr) {
-    console.error("[rounds/[id]] load round error:", roundErr);
-  }
   if (!round) return notFound();
 
-  // 2) Independently fetch related names by ID (works even without FK relationships in Supabase cache)
-  const [{ data: player, error: pErr }, { data: course, error: cErr }, { data: tee, error: tErr }] =
-    await Promise.all([
-      round.player_id
-        ? supabase.from("players").select("full_name").eq("id", round.player_id).maybeSingle()
-        : Promise.resolve({ data: null, error: null } as any),
-      round.course_id
-        ? supabase.from("courses").select("name").eq("id", round.course_id).maybeSingle()
-        : Promise.resolve({ data: null, error: null } as any),
-      round.tee_set_id
-        ? supabase.from("tee_sets").select("name").eq("id", round.tee_set_id).maybeSingle()
-        : Promise.resolve({ data: null, error: null } as any),
-    ]);
-
-  if (pErr) console.error("[rounds/[id]] players error:", pErr);
-  if (cErr) console.error("[rounds/[id]] courses error:", cErr);
-  if (tErr) console.error("[rounds/[id]] tee_sets error:", tErr);
+  // 2) Related names by ID (no schema-relationship cache needed)
+  const [{ data: player }, { data: course }, { data: tee }] = await Promise.all([
+    round.player_id
+      ? supabase.from("players").select("full_name").eq("id", round.player_id).maybeSingle()
+      : Promise.resolve({ data: null } as any),
+    round.course_id
+      ? supabase.from("courses").select("name").eq("id", round.course_id).maybeSingle()
+      : Promise.resolve({ data: null } as any),
+    round.tee_set_id
+      ? supabase.from("tee_sets").select("name").eq("id", round.tee_set_id).maybeSingle()
+      : Promise.resolve({ data: null } as any),
+  ]);
 
   const playerName = player?.full_name ?? "Player";
   const courseName = course?.name ?? "Course";
   const teeName = tee?.name ?? "Tee";
 
-  // 3) Totals for header (don’t throw on error)
-  const { data: totals, error: totalsErr } = await supabase
+  // 3) Totals (graceful if null)
+  const { data: totals } = await supabase
     .from("v_round_totals")
     .select(
-      `
-        round_id, strokes, putts, penalty_strokes,
-        sg_total, sg_ott, sg_app, sg_arg, sg_putt
-      `
+      "round_id, strokes, putts, penalty_strokes, sg_total, sg_ott, sg_app, sg_arg, sg_putt"
     )
     .eq("round_id", roundId)
     .maybeSingle();
-  if (totalsErr) console.error("[rounds/[id]] v_round_totals error:", totalsErr);
 
   // 4) Hole-by-hole
-  const { data: holes, error: holesErr } = await supabase
+  const { data: holes } = await supabase
     .from("v_hole_totals")
-    .select(
-      `
-        hole_number,
-        strokes, putts, penalty_strokes,
-        sg_total
-      `
-    )
+    .select("hole_number, strokes, putts, penalty_strokes, sg_total")
     .eq("round_id", roundId)
     .order("hole_number", { ascending: true });
-  if (holesErr) console.error("[rounds/[id]] v_hole_totals error:", holesErr);
 
-  const holeRows: HoleAgg[] = (holes ?? []).map((h) => ({
-    hole_number: h.hole_number,
-    strokes: h.strokes,
-    putts: h.putts,
-    penalty_strokes: h.penalty_strokes,
-    sg_total: h.sg_total,
-  }));
+  const holeRows: HoleAgg[] =
+    (holes ?? []).map((h) => ({
+      hole_number: h.hole_number,
+      strokes: h.strokes,
+      putts: h.putts,
+      penalty_strokes: h.penalty_strokes,
+      sg_total: h.sg_total,
+    })) ?? [];
 
   const front = holeRows.filter((h) => h.hole_number <= 9);
   const back = holeRows.filter((h) => h.hole_number >= 10);
@@ -122,7 +99,7 @@ export default async function RoundSummaryPage({
     sg: sum(holeRows, "sg_total"),
   };
 
-  // Precompute using nullish coalescing only
+  // Null-safe card values (0 stays 0)
   const strokesValue: number | string = (totals?.strokes ?? allSum.strokes) ?? "—";
   const puttsValue: number | string = (totals?.putts ?? allSum.putts) ?? "—";
   const penaltiesValue: number | string =
@@ -153,10 +130,7 @@ export default async function RoundSummaryPage({
           >
             Edit Shots
           </Link>
-          <Link
-            href={`/rounds`}
-            className="rounded border px-3 py-2 hover:shadow"
-          >
+          <Link href={`/rounds`} className="rounded border px-3 py-2 hover:shadow">
             All Rounds
           </Link>
         </div>
@@ -239,23 +213,9 @@ function Card({ label, value }: { label: string; value: number | string }) {
     </div>
   );
 }
-
-function Th({
-  children,
-  className = "",
-}: {
-  children: React.ReactNode;
-  className?: string;
-}) {
+function Th({ children, className = "" }: { children: React.ReactNode; className?: string }) {
   return <th className={`px-2 py-2 text-left ${className}`}>{children}</th>;
 }
-
-function Td({
-  children,
-  className = "",
-}: {
-  children: React.ReactNode;
-  className?: string;
-}) {
+function Td({ children, className = "" }: { children: React.ReactNode; className?: string }) {
   return <td className={`px-2 py-2 ${className}`}>{children}</td>;
 }

@@ -18,172 +18,109 @@ type DBShot = {
   round_id: string;
   hole_number: number | null;
   shot_number: number | null;
-
-  start_lie:
-    | "tee"
-    | "fairway"
-    | "rough"
-    | "sand"
-    | "recovery"
-    | "other"
-    | "green"
-    | "penalty"
-    | null;
-  end_lie:
-    | "tee"
-    | "fairway"
-    | "rough"
-    | "sand"
-    | "recovery"
-    | "other"
-    | "green"
-    | "penalty"
-    | null;
-
+  start_lie: "tee" | "fairway" | "rough" | "sand" | "recovery" | "other" | "green" | "penalty" | null;
+  end_lie: "tee" | "fairway" | "rough" | "sand" | "recovery" | "other" | "green" | "penalty" | null;
   start_dist_yards: number | null;
   start_dist_feet: number | null;
   end_dist_yards: number | null;
   end_dist_feet: number | null;
-
   start_x: number | null;
   start_y: number | null;
   end_x: number | null;
   end_y: number | null;
-
   club: string | null;
   note: string | null;
   putt: boolean | null;
   penalty_strokes: number | null;
 };
 
-type LieUI =
-  | "Tee"
-  | "Fairway"
-  | "Rough"
-  | "Sand"
-  | "Recovery"
-  | "Green"
-  | "Penalty"
-  | "Other";
-
+type LieUI = "Tee" | "Fairway" | "Rough" | "Sand" | "Recovery" | "Green" | "Penalty" | "Other";
 type UISHot = {
+  id?: string;
   hole_number: number;
-  shot_order: number; // ShotEditor expects shot_order (we map to shot_number for DB)
+  shot_order: number; // UI name -> DB shot_number
   club?: string | null;
-
+  note?: string | null;
   lie: LieUI;
   result_lie: LieUI;
-
   start_lie: LieUI;
   end_lie: LieUI;
-
   start_dist_yards?: number | null;
   start_dist_feet?: number | null;
   end_dist_yards?: number | null;
   end_dist_feet?: number | null;
-
   start_x?: number | null;
   start_y?: number | null;
   end_x?: number | null;
   end_y?: number | null;
-
   putt?: boolean | null;
   penalty_strokes?: number | null;
-  note?: string | null;
-
-  // for edits/deletes
-  id?: string;
 };
 
-function toUI(lie: DBShot["start_lie"]): LieUI {
-  switch (lie) {
-    case "tee":
-      return "Tee";
-    case "fairway":
-      return "Fairway";
-    case "rough":
-      return "Rough";
-    case "sand":
-      return "Sand";
-    case "recovery":
-      return "Recovery";
-    case "green":
-      return "Green";
-    case "penalty":
-      return "Penalty";
-    default:
-      return "Other";
-  }
-}
+const toUI = (lie: DBShot["start_lie"]): LieUI =>
+  lie === "tee" ? "Tee"
+  : lie === "fairway" ? "Fairway"
+  : lie === "rough" ? "Rough"
+  : lie === "sand" ? "Sand"
+  : lie === "recovery" ? "Recovery"
+  : lie === "green" ? "Green"
+  : lie === "penalty" ? "Penalty"
+  : "Other";
 
 export default async function ShotsPage({ params }: { params: { id: string } }) {
   const supabase = createClient();
   const roundId = params.id;
 
-  // Canonical round
-  const { data: round, error: roundErr } = await supabase
+  // Round (canonical cols only)
+  const { data: round } = await supabase
     .from("rounds")
     .select("id, player_id, course_id, tee_set_id, date")
     .eq("id", roundId)
     .maybeSingle();
 
-  if (roundErr) throw new Error(`Failed to load round: ${roundErr.message}`);
   if (!round) {
     return (
       <div className="mx-auto max-w-3xl p-6">
         <h1 className="text-xl font-semibold">Round not found</h1>
-        <Link href="/rounds" className="text-blue-600 underline">
-          Back to rounds
-        </Link>
+        <Link href="/rounds" className="text-blue-600 underline">Back to rounds</Link>
       </div>
     );
   }
 
-  // Header info (tee comes from tee_sets)
-  const [{ data: player }, { data: course }, { data: teeSet }] =
-    await Promise.all([
-      supabase
-        .from("players")
-        .select("full_name")
-        .eq("id", round.player_id)
-        .maybeSingle(),
-      supabase
-        .from("courses")
-        .select("name")
-        .eq("id", round.course_id)
-        .maybeSingle(),
-      supabase
-        .from("tee_sets")
-        .select("name")
-        .eq("id", round.tee_set_id)
-        .maybeSingle(),
-    ]);
+  // Header names (by ID)
+  const [{ data: player }, { data: course }, { data: tee }] = await Promise.all([
+    round.player_id
+      ? supabase.from("players").select("full_name").eq("id", round.player_id).maybeSingle()
+      : Promise.resolve({ data: null } as any),
+    round.course_id
+      ? supabase.from("courses").select("name").eq("id", round.course_id).maybeSingle()
+      : Promise.resolve({ data: null } as any),
+    round.tee_set_id
+      ? supabase.from("tee_sets").select("name").eq("id", round.tee_set_id).maybeSingle()
+      : Promise.resolve({ data: null } as any),
+  ]);
 
   const header: HeaderInfo = {
     player_name: player?.full_name ?? "Player",
     course_name: course?.name ?? "Course",
-    tee_name: teeSet?.name ?? "Tee",
+    tee_name: tee?.name ?? "Tee",
     round_date: (round.date as string) ?? "",
   };
 
   // Shots
-  const { data: shots, error: shotsErr } = await supabase
+  const { data: shots } = await supabase
     .from("shots")
-    .select(
-      `
+    .select(`
       id, round_id, hole_number, shot_number,
       start_lie, end_lie,
       start_dist_yards, start_dist_feet,
       end_dist_yards, end_dist_feet,
       start_x, start_y, end_x, end_y,
       club, note, putt, penalty_strokes
-    `
-    )
+    `)
     .eq("round_id", roundId)
     .order("hole_number", { ascending: true })
     .order("shot_number", { ascending: true });
-
-  if (shotsErr) throw new Error(`Failed to load shots: ${shotsErr.message}`);
 
   const initialShots: UISHot[] = (shots ?? [])
     .filter((s): s is DBShot => !!s.hole_number && !!s.shot_number)
@@ -193,7 +130,7 @@ export default async function ShotsPage({ params }: { params: { id: string } }) 
       return {
         id: s.id,
         hole_number: s.hole_number!,
-        shot_order: s.shot_number!, // UI uses shot_order; DB uses shot_number
+        shot_order: s.shot_number!,
         club: s.club ?? undefined,
         note: s.note ?? undefined,
         lie: start,
@@ -222,16 +159,11 @@ export default async function ShotsPage({ params }: { params: { id: string } }) 
           </h1>
           <p className="text-gray-600">Date: {header.round_date}</p>
         </div>
-        <Link
-          href={`/rounds/${roundId}`}
-          className="rounded border px-4 py-2 hover:shadow"
-        >
+        <Link href={`/rounds/${roundId}`} className="rounded border px-4 py-2 hover:shadow">
           Round Summary
         </Link>
       </div>
 
-      {/* Your existing ShotEditor should accept these props. If it uses server actions,
-          wire them to /app/rounds/[id]/shots/actions.ts from below. */}
       <ShotEditor roundId={roundId} header={header} initialShots={initialShots} />
     </div>
   );

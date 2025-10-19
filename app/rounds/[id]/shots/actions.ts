@@ -4,29 +4,25 @@
 import { revalidatePath } from "next/cache";
 import { createClient } from "@/lib/supabase/server";
 
-type UpsertShot = {
+type LieUI = "Tee" | "Fairway" | "Rough" | "Sand" | "Recovery" | "Other" | "Green" | "Penalty";
+const toDbLie = (ui?: LieUI | null) =>
+  (ui ?? "Other").toLowerCase() as
+    | "tee"
+    | "fairway"
+    | "rough"
+    | "sand"
+    | "recovery"
+    | "other"
+    | "green"
+    | "penalty";
+
+export type UpsertShot = {
   id?: string;
   round_id: string;
   hole_number: number;
-  shot_order: number; // UI field -> map to DB shot_number
-  start_lie?:
-    | "Tee"
-    | "Fairway"
-    | "Rough"
-    | "Sand"
-    | "Recovery"
-    | "Other"
-    | "Green"
-    | "Penalty";
-  end_lie?:
-    | "Tee"
-    | "Fairway"
-    | "Rough"
-    | "Sand"
-    | "Recovery"
-    | "Other"
-    | "Green"
-    | "Penalty";
+  shot_order: number; // UI -> DB shot_number
+  start_lie?: LieUI | null;
+  end_lie?: LieUI | null;
   start_dist_yards?: number | null;
   start_dist_feet?: number | null;
   end_dist_yards?: number | null;
@@ -41,29 +37,17 @@ type UpsertShot = {
   penalty_strokes?: number | null;
 };
 
-const toDbLie = (ui?: string | null) =>
-  (ui ?? "Other").toLowerCase() as
-    | "tee"
-    | "fairway"
-    | "rough"
-    | "sand"
-    | "recovery"
-    | "other"
-    | "green"
-    | "penalty";
-
 export async function upsertShots(roundId: string, rows: UpsertShot[]) {
   const supabase = createClient();
   if (!rows?.length) return { ok: true };
 
-  // Map UI => DB shape
   const payload = rows.map((r) => ({
-    id: r.id, // allow update by id if present
+    id: r.id,
     round_id: roundId,
     hole_number: r.hole_number,
-    shot_number: r.shot_order, // DB expects shot_number
-    start_lie: toDbLie(r.start_lie),
-    end_lie: toDbLie(r.end_lie),
+    shot_number: r.shot_order,
+    start_lie: toDbLie(r.start_lie ?? null),
+    end_lie: toDbLie(r.end_lie ?? null),
     start_dist_yards: r.start_dist_yards ?? null,
     start_dist_feet: r.start_dist_feet ?? null,
     end_dist_yards: r.end_dist_yards ?? null,
@@ -78,14 +62,10 @@ export async function upsertShots(roundId: string, rows: UpsertShot[]) {
     penalty_strokes: r.penalty_strokes ?? 0,
   }));
 
-  // Upsert by (id) if present; else unique (round_id, hole_number, shot_number)
   const { error } = await supabase.from("shots").upsert(payload, {
     onConflict: "id,round_id,hole_number,shot_number",
   });
-
-  if (error) {
-    return { ok: false, error: error.message };
-  }
+  if (error) return { ok: false, error: error.message };
 
   revalidatePath(`/rounds/${roundId}/shots`);
   revalidatePath(`/rounds/${roundId}`);
@@ -96,6 +76,7 @@ export async function deleteShot(roundId: string, shotId: string) {
   const supabase = createClient();
   const { error } = await supabase.from("shots").delete().eq("id", shotId);
   if (error) return { ok: false, error: error.message };
+
   revalidatePath(`/rounds/${roundId}/shots`);
   revalidatePath(`/rounds/${roundId}`);
   return { ok: true };

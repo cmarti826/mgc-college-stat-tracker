@@ -25,11 +25,10 @@ export async function saveRoundWithHoles(formData: FormData) {
     p_course_key: courseKey,
     p_tee_id: teeSetId,
     p_date: playedAt,
-    p_holes: holes, // plain JS array -> jsonb
+    p_holes: holes,
   });
 
   if (error) {
-    // Surface a helpful error; you can catch this in the client and toast it
     throw new Error(error.message);
   }
 

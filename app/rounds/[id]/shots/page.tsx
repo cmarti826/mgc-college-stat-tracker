@@ -3,6 +3,9 @@ import Link from "next/link";
 import { createClient } from "@/lib/supabase/server";
 import ShotEditor from "@/app/rounds/_components/ShotEditor";
 
+export const dynamic = "force-dynamic";
+export const revalidate = 0;
+
 type HeaderInfo = {
   player_name: string;
   course_name: string;
@@ -10,40 +13,67 @@ type HeaderInfo = {
   round_date: string;
 };
 
-// DB row shape (subset)
-type ShotRowDB = {
+type DBShot = {
   id: string;
   round_id: string;
-  hole_number: number;
-  shot_number: number;
-  club: string | null;
-  start_lie: "TEE" | "FAIRWAY" | "ROUGH" | "SAND" | "RECOVERY" | "GREEN" | null;
-  end_lie: "TEE" | "FAIRWAY" | "ROUGH" | "SAND" | "RECOVERY" | "GREEN" | null;
+  hole_number: number | null;
+  shot_number: number | null;
+
+  start_lie:
+    | "tee"
+    | "fairway"
+    | "rough"
+    | "sand"
+    | "recovery"
+    | "other"
+    | "green"
+    | "penalty"
+    | null;
+  end_lie:
+    | "tee"
+    | "fairway"
+    | "rough"
+    | "sand"
+    | "recovery"
+    | "other"
+    | "green"
+    | "penalty"
+    | null;
+
   start_dist_yards: number | null;
   start_dist_feet: number | null;
   end_dist_yards: number | null;
   end_dist_feet: number | null;
+
   start_x: number | null;
   start_y: number | null;
   end_x: number | null;
   end_y: number | null;
+
+  club: string | null;
+  note: string | null;
   putt: boolean | null;
   penalty_strokes: number | null;
 };
 
-// UI Lie that ShotEditor expects (TitleCase)
-type LieUI = "Tee" | "Fairway" | "Rough" | "Sand" | "Recovery" | "Green";
+type LieUI =
+  | "Tee"
+  | "Fairway"
+  | "Rough"
+  | "Sand"
+  | "Recovery"
+  | "Green"
+  | "Penalty"
+  | "Other";
 
-// What ShotEditor expects for each row (it needs `lie` and `result_lie`)
-type ShotRowUI = {
+type UISHot = {
   hole_number: number;
-  shot_order: number;
+  shot_order: number; // ShotEditor expects shot_order (we map to shot_number for DB)
   club?: string | null;
 
   lie: LieUI;
   result_lie: LieUI;
 
-  // keep explicit start_/end_ too (your editor likely reads these)
   start_lie: LieUI;
   end_lie: LieUI;
 
@@ -59,28 +89,41 @@ type ShotRowUI = {
 
   putt?: boolean | null;
   penalty_strokes?: number | null;
+  note?: string | null;
+
+  // for edits/deletes
+  id?: string;
 };
 
-function enumToTitle(l: ShotRowDB["start_lie"]): LieUI {
-  switch (l) {
-    case "TEE": return "Tee";
-    case "FAIRWAY": return "Fairway";
-    case "ROUGH": return "Rough";
-    case "SAND": return "Sand";
-    case "RECOVERY": return "Recovery";
-    case "GREEN": return "Green";
-    default: return "Fairway";
+function toUI(lie: DBShot["start_lie"]): LieUI {
+  switch (lie) {
+    case "tee":
+      return "Tee";
+    case "fairway":
+      return "Fairway";
+    case "rough":
+      return "Rough";
+    case "sand":
+      return "Sand";
+    case "recovery":
+      return "Recovery";
+    case "green":
+      return "Green";
+    case "penalty":
+      return "Penalty";
+    default:
+      return "Other";
   }
 }
 
 export default async function ShotsPage({ params }: { params: { id: string } }) {
-  const roundId = params.id;
   const supabase = createClient();
+  const roundId = params.id;
 
-  // Load round
+  // Canonical round
   const { data: round, error: roundErr } = await supabase
     .from("rounds")
-    .select("id, player_id, course_id, tee_id, date")
+    .select("id, player_id, course_id, tee_set_id, date")
     .eq("id", roundId)
     .maybeSingle();
 
@@ -89,73 +132,86 @@ export default async function ShotsPage({ params }: { params: { id: string } }) 
     return (
       <div className="mx-auto max-w-3xl p-6">
         <h1 className="text-xl font-semibold">Round not found</h1>
-        <Link href="/rounds" className="text-blue-600 underline">Back to rounds</Link>
+        <Link href="/rounds" className="text-blue-600 underline">
+          Back to rounds
+        </Link>
       </div>
     );
   }
 
-  // Header info
-  const [{ data: player }, { data: course }, { data: tee }] = await Promise.all([
-    supabase.from("players").select("full_name").eq("id", round.player_id).maybeSingle(),
-    supabase.from("courses").select("name").eq("id", round.course_id).maybeSingle(),
-    supabase.from("tees").select("name").eq("id", round.tee_id).maybeSingle(),
-  ]);
+  // Header info (tee comes from tee_sets)
+  const [{ data: player }, { data: course }, { data: teeSet }] =
+    await Promise.all([
+      supabase
+        .from("players")
+        .select("full_name")
+        .eq("id", round.player_id)
+        .maybeSingle(),
+      supabase
+        .from("courses")
+        .select("name")
+        .eq("id", round.course_id)
+        .maybeSingle(),
+      supabase
+        .from("tee_sets")
+        .select("name")
+        .eq("id", round.tee_set_id)
+        .maybeSingle(),
+    ]);
 
   const header: HeaderInfo = {
     player_name: player?.full_name ?? "Player",
     course_name: course?.name ?? "Course",
-    tee_name: tee?.name ?? "Tee",
+    tee_name: teeSet?.name ?? "Tee",
     round_date: (round.date as string) ?? "",
   };
 
   // Shots
   const { data: shots, error: shotsErr } = await supabase
     .from("shots")
-    .select(`
+    .select(
+      `
       id, round_id, hole_number, shot_number,
-      club,
       start_lie, end_lie,
       start_dist_yards, start_dist_feet,
       end_dist_yards, end_dist_feet,
       start_x, start_y, end_x, end_y,
-      putt, penalty_strokes
-    `)
+      club, note, putt, penalty_strokes
+    `
+    )
     .eq("round_id", roundId)
     .order("hole_number", { ascending: true })
     .order("shot_number", { ascending: true });
 
   if (shotsErr) throw new Error(`Failed to load shots: ${shotsErr.message}`);
 
-  const initialShots: ShotRowUI[] = (shots ?? []).map((s: ShotRowDB) => {
-    const sl = enumToTitle(s.start_lie);
-    const el = enumToTitle(s.end_lie);
-    return {
-      hole_number: s.hole_number,
-      shot_order: s.shot_number,
-      club: s.club ?? null,
-
-      // ShotEditor requires these TitleCase fields
-      lie: sl,
-      result_lie: el,
-
-      // Also pass explicit start_/end_ (TitleCase)
-      start_lie: sl,
-      end_lie: el,
-
-      start_dist_yards: sl === "Green" ? null : s.start_dist_yards,
-      start_dist_feet:  sl === "Green" ? s.start_dist_feet : null,
-      end_dist_yards:   el === "Green" ? null : s.end_dist_yards,
-      end_dist_feet:    el === "Green" ? s.end_dist_feet : null,
-
-      start_x: s.start_x ?? null,
-      start_y: s.start_y ?? null,
-      end_x: s.end_x ?? null,
-      end_y: s.end_y ?? null,
-
-      putt: s.putt ?? (sl === "Green"),
-      penalty_strokes: s.penalty_strokes ?? 0,
-    };
-  });
+  const initialShots: UISHot[] = (shots ?? [])
+    .filter((s): s is DBShot => !!s.hole_number && !!s.shot_number)
+    .map((s) => {
+      const start = toUI(s.start_lie);
+      const end = toUI(s.end_lie);
+      return {
+        id: s.id,
+        hole_number: s.hole_number!,
+        shot_order: s.shot_number!, // UI uses shot_order; DB uses shot_number
+        club: s.club ?? undefined,
+        note: s.note ?? undefined,
+        lie: start,
+        result_lie: end,
+        start_lie: start,
+        end_lie: end,
+        start_dist_yards: s.start_dist_yards,
+        start_dist_feet: s.start_dist_feet,
+        end_dist_yards: s.end_dist_yards,
+        end_dist_feet: s.end_dist_feet,
+        start_x: s.start_x,
+        start_y: s.start_y,
+        end_x: s.end_x,
+        end_y: s.end_y,
+        putt: s.putt,
+        penalty_strokes: s.penalty_strokes,
+      };
+    });
 
   return (
     <div className="mx-auto max-w-[1100px] p-6 space-y-6">
@@ -166,11 +222,16 @@ export default async function ShotsPage({ params }: { params: { id: string } }) 
           </h1>
           <p className="text-gray-600">Date: {header.round_date}</p>
         </div>
-        <Link href={`/rounds/${roundId}`} className="rounded border px-4 py-2 hover:shadow">
+        <Link
+          href={`/rounds/${roundId}`}
+          className="rounded border px-4 py-2 hover:shadow"
+        >
           Round Summary
         </Link>
       </div>
 
+      {/* Your existing ShotEditor should accept these props. If it uses server actions,
+          wire them to /app/rounds/[id]/shots/actions.ts from below. */}
       <ShotEditor roundId={roundId} header={header} initialShots={initialShots} />
     </div>
   );

@@ -6,313 +6,232 @@ import { createClient } from "@/lib/supabase/server";
 export const dynamic = "force-dynamic";
 export const revalidate = 0;
 
-type Shot = {
-  id: string;
-  round_id: string;
-  hole?: number | null;
-  hole_number?: number | null;
-  hole_id?: string | null;
-  shot_number?: number | null;
-  start_lie?: string | null;
-  end_lie?: string | null;
-  start_distance?: number | null;
-  end_distance?: number | null;
-  club?: string | null;
-  penalty?: boolean | number | null;
-  strokes_gained?: number | null;
-};
-
-type RoundRow = {
-  id: string;
-  player_id?: string | null;
-  course_id?: string | null;
-  tee_set_id?: string | null;
-  started_at?: string | null;
-  completed_at?: string | null;
-  created_at?: string | null;
-  played_at?: string | null;
-  status?: string | null;
-  course?: { name?: string | null } | null;
-  player?: { name?: string | null; full_name?: string | null } | null;
-  tee_set?: { name?: string | null } | null;
-};
-
 type HoleAgg = {
-  hole: number;
-  strokes: number;
-  putts: number;
-  penalties: number;
-  sg: number;
+  hole_number: number;
+  strokes: number | null;
+  putts: number | null;
+  penalty_strokes: number | null;
+  sg_total: number | null;
 };
 
-function normalizeHoleNumber(s: Shot): number | null {
-  if (typeof s.hole === "number") return s.hole || null;
-  if (typeof s.hole_number === "number") return s.hole_number || null;
-  return null; // if only hole_id is stored, we’ll need a join later
+function sum<T extends keyof HoleAgg>(rows: HoleAgg[], key: T) {
+  return rows.reduce((acc, r) => acc + (Number(r[key] ?? 0) || 0), 0);
 }
 
-function coercePenalty(v: Shot["penalty"]): boolean {
-  if (typeof v === "boolean") return v;
-  if (typeof v === "number") return v !== 0;
-  return false;
-}
+export default async function RoundSummaryPage({
+  params,
+}: {
+  params: { id: string };
+}) {
+  const supabase = createClient();
+  const roundId = params.id;
 
-function isPutt(s: Shot): boolean {
-  if (s.start_lie?.toLowerCase() === "green") return true;
-  // Heuristics in case lie wasn’t stored consistently:
-  const sd = s.start_distance ?? undefined;
-  const ed = s.end_distance ?? undefined;
-  if (typeof sd === "number" && sd <= 10) return true; // <= 10 ft
-  if (typeof sd === "number" && typeof ed === "number" && sd <= 15 && ed <= 15) return true;
-  return false;
-}
-
-function aggregateByHole(shots: Shot[]) {
-  const nums = new Set<number>();
-  for (const s of shots) {
-    const h = normalizeHoleNumber(s);
-    if (h && h > 0) nums.add(h);
-  }
-
-  const maxHole = nums.size ? Math.max(...nums) : 18;
-  const minHole = nums.size ? Math.min(...nums) : 1;
-
-  const idx: Record<number, HoleAgg> = {};
-  for (let h = minHole; h <= maxHole; h++) {
-    idx[h] = { hole: h, strokes: 0, putts: 0, penalties: 0, sg: 0 };
-  }
-
-  for (const s of shots) {
-    const h = normalizeHoleNumber(s);
-    if (!h || !idx[h]) continue;
-    idx[h].strokes += 1;
-    if (isPutt(s)) idx[h].putts += 1;
-    if (coercePenalty(s.penalty)) idx[h].penalties += 1;
-    idx[h].sg += s.strokes_gained ?? 0;
-  }
-
-  const holes = Object.values(idx).sort((a, b) => a.hole - b.hole);
-  const totals = holes.reduce(
-    (a, h) => ({
-      hole: 0,
-      strokes: a.strokes + h.strokes,
-      putts: a.putts + h.putts,
-      penalties: a.penalties + h.penalties,
-      sg: a.sg + h.sg,
-    }),
-    { hole: 0, strokes: 0, putts: 0, penalties: 0, sg: 0 }
-  );
-
-  return { holes, totals };
-}
-
-function sumRange(holes: HoleAgg[], start: number, end: number) {
-  const slice = holes.filter((h) => h.hole >= start && h.hole <= end);
-  return slice.reduce(
-    (a, h) => ({
-      strokes: a.strokes + h.strokes,
-      putts: a.putts + h.putts,
-      penalties: a.penalties + h.penalties,
-      sg: a.sg + h.sg,
-    }),
-    { strokes: 0, putts: 0, penalties: 0, sg: 0 }
-  );
-}
-
-async function fetchRoundAndShots(id: string) {
-  const supabase = await createClient();
-
+  // Round meta (canonical columns + friendly names)
   const { data: round, error: roundErr } = await supabase
     .from("rounds")
     .select(
       `
-      id, player_id, course_id, tee_set_id,
-      started_at, completed_at, created_at, played_at, status,
-      course:courses(name),
-      player:players(name, full_name),
-      tee_set:tee_sets(name)
+        id, date, type, status, notes,
+        player_id, team_id, course_id, tee_set_id,
+        player:players(full_name),
+        course:courses(name),
+        tee_set:tee_sets(name)
       `
     )
-    .eq("id", id)
-    .single();
+    .eq("id", roundId)
+    .maybeSingle();
 
-  if (roundErr || !round) {
-    return { round: null as any, shots: [] as Shot[], err: roundErr ?? new Error("Round not found") };
-  }
+  if (roundErr) throw new Error(`Failed to load round: ${roundErr.message}`);
+  if (!round) return notFound();
 
-  const { data: shots, error: shotsErr } = await supabase
-    .from("shots")
+  // Totals for header (safe if no shots exist)
+  const { data: totals } = await supabase
+    .from("v_round_totals")
     .select(
       `
-      id, round_id,
-      hole, hole_number, hole_id,
-      shot_number,
-      start_lie, end_lie,
-      start_distance, end_distance,
-      club, penalty, strokes_gained
+        round_id, strokes, putts, penalty_strokes,
+        sg_total, sg_ott, sg_app, sg_arg, sg_putt
       `
     )
-    .eq("round_id", id)
-    .order("hole_number", { ascending: true, nullsFirst: false })
-    .order("shot_number", { ascending: true, nullsFirst: false });
+    .eq("round_id", roundId)
+    .maybeSingle();
 
-  if (shotsErr) return { round, shots: [], err: shotsErr };
+  // Hole-by-hole (derived)
+  const { data: holes, error: holesErr } = await supabase
+    .from("v_hole_totals")
+    .select(
+      `
+        hole_number,
+        strokes, putts, penalty_strokes,
+        sg_total
+      `
+    )
+    .eq("round_id", roundId)
+    .order("hole_number", { ascending: true });
 
-  return { round: round as RoundRow, shots: (shots ?? []) as Shot[], err: null };
-}
+  if (holesErr) throw new Error(`Failed to load hole totals: ${holesErr.message}`);
 
-function TitleBar({ round }: { round: RoundRow }) {
-  const date =
-    round.played_at ??
-    round.started_at ??
-    round.created_at ??
-    round.completed_at ??
-    null;
+  const holeRows: HoleAgg[] = (holes ?? []).map((h) => ({
+    hole_number: h.hole_number,
+    strokes: h.strokes,
+    putts: h.putts,
+    penalty_strokes: h.penalty_strokes,
+    sg_total: h.sg_total,
+  }));
 
-  const playerName = round.player?.full_name ?? round.player?.name ?? "Player";
-  const courseName = round.course?.name ?? "Course";
-  const teeName = round.tee_set?.name ? ` • ${round.tee_set?.name}` : "";
+  const front = holeRows.filter((h) => h.hole_number <= 9);
+  const back = holeRows.filter((h) => h.hole_number >= 10);
+
+  const frontSum = {
+    strokes: sum(front, "strokes"),
+    putts: sum(front, "putts"),
+    pens: sum(front, "penalty_strokes"),
+    sg: sum(front, "sg_total"),
+  };
+  const backSum = {
+    strokes: sum(back, "strokes"),
+    putts: sum(back, "putts"),
+    pens: sum(back, "penalty_strokes"),
+    sg: sum(back, "sg_total"),
+  };
+  const allSum = {
+    strokes: sum(holeRows, "strokes"),
+    putts: sum(holeRows, "putts"),
+    pens: sum(holeRows, "penalty_strokes"),
+    sg: sum(holeRows, "sg_total"),
+  };
 
   return (
-    <div className="flex flex-col gap-1">
-      <h1 className="text-2xl font-semibold">Round Summary</h1>
-      <div className="text-sm text-muted-foreground">
-        <span>{playerName}</span> • <span>{courseName}</span>
-        {teeName} {date ? ` • ${new Date(date).toLocaleDateString()}` : ""}
-      </div>
-    </div>
-  );
-}
-
-export default async function RoundPage({ params }: { params: { id: string } }) {
-  const { id } = params;
-  const { round, shots, err } = await fetchRoundAndShots(id);
-  if (err || !round) notFound();
-
-  const { holes, totals } = aggregateByHole(shots);
-  const front = sumRange(holes, 1, 9);
-  const back = sumRange(holes, 10, 18);
-
-  return (
-    <div className="p-4 md:p-6 lg:p-8 max-w-5xl mx-auto">
-      <div className="flex items-start justify-between">
-        <TitleBar round={round as RoundRow} />
-        <Link
-          href={`/rounds/${id}/edit`}
-          className="inline-flex items-center rounded-xl border px-3 py-2 text-sm hover:bg-accent"
-        >
-          Edit Round / Shots
-        </Link>
+    <div className="mx-auto max-w-5xl p-6 space-y-6">
+      <div className="flex items-start justify-between gap-4">
+        <div>
+          <h1 className="text-2xl font-semibold">
+            {round.player?.full_name ?? "Player"} —{" "}
+            {round.course?.name ?? "Course"} ({round.tee_set?.name ?? "Tee"})
+          </h1>
+          <p className="text-gray-600">
+            Date: {String(round.date)} · Type: {String(round.type)} · Status:{" "}
+            {String(round.status)}
+          </p>
+          {round.notes ? <p className="mt-1 text-gray-700">{round.notes}</p> : null}
+        </div>
+        <div className="flex gap-2">
+          <Link
+            href={`/rounds/${roundId}/shots`}
+            className="rounded border px-3 py-2 hover:shadow"
+          >
+            Edit Shots
+          </Link>
+          <Link
+            href={`/rounds`}
+            className="rounded border px-3 py-2 hover:shadow"
+          >
+            All Rounds
+          </Link>
+        </div>
       </div>
 
-      <div className="mt-6 overflow-x-auto">
-        <table className="w-full text-sm border-separate border-spacing-y-1">
-          <thead>
-            <tr className="text-left text-xs uppercase text-muted-foreground">
-              <th className="px-2 py-1">Hole</th>
-              <th className="px-2 py-1 text-right">Strokes</th>
-              <th className="px-2 py-1 text-right">Putts</th>
-              <th className="px-2 py-1 text-right">Pen</th>
-              <th className="px-2 py-1 text-right">SG (hole)</th>
+      <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+        <Card label="Strokes" value={totals?.strokes ?? allSum.strokes || "—"} />
+        <Card label="Putts" value={totals?.putts ?? allSum.putts || "—"} />
+        <Card
+          label="Penalties"
+          value={totals?.penalty_strokes ?? allSum.pens || "—"}
+        />
+        <Card
+          label="Strokes Gained"
+          value={
+            typeof (totals?.sg_total ?? allSum.sg) === "number"
+              ? (totals?.sg_total ?? allSum.sg).toFixed(2)
+              : "—"
+          }
+        />
+      </div>
+
+      <div className="overflow-x-auto rounded border">
+        <table className="min-w-full text-sm">
+          <thead className="bg-gray-50">
+            <tr>
+              <Th>Hole</Th>
+              <Th className="text-right">Strokes</Th>
+              <Th className="text-right">Putts</Th>
+              <Th className="text-right">Pen</Th>
+              <Th className="text-right">SG</Th>
             </tr>
           </thead>
           <tbody>
-            {holes.map((h) => (
-              <tr key={h.hole} className="bg-card rounded-lg">
-                <td className="px-2 py-2 font-medium">{h.hole}</td>
-                <td className="px-2 py-2 text-right">{h.strokes || ""}</td>
-                <td className="px-2 py-2 text-right">{h.putts || ""}</td>
-                <td className="px-2 py-2 text-right">{h.penalties || ""}</td>
-                <td className="px-2 py-2 text-right">
-                  {h.sg ? h.sg.toFixed(2) : ""}
-                </td>
+            {holeRows.map((h) => (
+              <tr key={h.hole_number} className="border-t">
+                <Td>{h.hole_number}</Td>
+                <Td className="text-right">{h.strokes ?? "—"}</Td>
+                <Td className="text-right">{h.putts ?? "—"}</Td>
+                <Td className="text-right">{h.penalty_strokes ?? "—"}</Td>
+                <Td className="text-right">
+                  {typeof h.sg_total === "number" ? h.sg_total.toFixed(2) : "—"}
+                </Td>
               </tr>
             ))}
           </tbody>
-          <tfoot>
+          <tfoot className="bg-gray-50">
             <tr className="border-t">
-              <td className="px-2 py-2 font-semibold">Front 9</td>
-              <td className="px-2 py-2 text-right">{front.strokes || "—"}</td>
-              <td className="px-2 py-2 text-right">{front.putts || "—"}</td>
-              <td className="px-2 py-2 text-right">{front.penalties || "—"}</td>
-              <td className="px-2 py-2 text-right">
-                {front.sg ? front.sg.toFixed(2) : "—"}
-              </td>
+              <Td className="font-semibold">Front 9</Td>
+              <Td className="text-right">{frontSum.strokes || "—"}</Td>
+              <Td className="text-right">{frontSum.putts || "—"}</Td>
+              <Td className="text-right">{frontSum.pens || "—"}</Td>
+              <Td className="text-right">
+                {frontSum.sg ? frontSum.sg.toFixed(2) : "—"}
+              </Td>
             </tr>
             <tr>
-              <td className="px-2 py-2 font-semibold">Back 9</td>
-              <td className="px-2 py-2 text-right">{back.strokes || "—"}</td>
-              <td className="px-2 py-2 text-right">{back.putts || "—"}</td>
-              <td className="px-2 py-2 text-right">{back.penalties || "—"}</td>
-              <td className="px-2 py-2 text-right">
-                {back.sg ? back.sg.toFixed(2) : "—"}
-              </td>
+              <Td className="font-semibold">Back 9</Td>
+              <Td className="text-right">{backSum.strokes || "—"}</Td>
+              <Td className="text-right">{backSum.putts || "—"}</Td>
+              <Td className="text-right">{backSum.pens || "—"}</Td>
+              <Td className="text-right">
+                {backSum.sg ? backSum.sg.toFixed(2) : "—"}
+              </Td>
             </tr>
-            <tr>
-              <td className="px-2 py-2 font-semibold">Total</td>
-              <td className="px-2 py-2 text-right">{totals.strokes || "—"}</td>
-              <td className="px-2 py-2 text-right">{totals.putts || "—"}</td>
-              <td className="px-2 py-2 text-right">{totals.penalties || "—"}</td>
-              <td className="px-2 py-2 text-right">
-                {totals.sg ? totals.sg.toFixed(2) : "—"}
-              </td>
+            <tr className="border-t-2">
+              <Td className="font-semibold">Total</Td>
+              <Td className="text-right">{allSum.strokes || "—"}</Td>
+              <Td className="text-right">{allSum.putts || "—"}</Td>
+              <Td className="text-right">{allSum.pens || "—"}</Td>
+              <Td className="text-right">
+                {allSum.sg ? allSum.sg.toFixed(2) : "—"}
+              </Td>
             </tr>
           </tfoot>
         </table>
       </div>
-
-      {/* Raw shots list (debug/verification) */}
-      <div className="mt-8">
-        <h2 className="text-lg font-semibold mb-2">Shots (debug)</h2>
-        <div className="rounded-xl border">
-          <div className="grid grid-cols-12 text-xs uppercase text-muted-foreground border-b">
-            <div className="p-2 col-span-1">Hole</div>
-            <div className="p-2 col-span-1">#</div>
-            <div className="p-2 col-span-2">Start</div>
-            <div className="p-2 col-span-2">End</div>
-            <div className="p-2 col-span-2">Distances</div>
-            <div className="p-2 col-span-2">Penalty</div>
-            <div className="p-2 col-span-2">SG</div>
-          </div>
-          {shots.length === 0 ? (
-            <div className="p-3 text-sm text-muted-foreground">
-              No shots recorded for this round yet.
-            </div>
-          ) : (
-            shots.map((s) => {
-              const hole = normalizeHoleNumber(s) ?? "—";
-              const startUnit =
-                s.start_lie?.toLowerCase() === "green" ? "ft" : "yds";
-              const endUnit =
-                s.end_lie?.toLowerCase() === "green" ? "ft" : "yds";
-              return (
-                <div key={s.id} className="grid grid-cols-12 border-b last:border-none">
-                  <div className="p-2 col-span-1">{hole}</div>
-                  <div className="p-2 col-span-1">{s.shot_number ?? ""}</div>
-                  <div className="p-2 col-span-2">
-                    {s.start_lie ?? ""}{" "}
-                    {s.start_distance != null ? `(${s.start_distance} ${startUnit})` : ""}
-                  </div>
-                  <div className="p-2 col-span-2">
-                    {s.end_lie ?? ""}{" "}
-                    {s.end_distance != null ? `(${s.end_distance} ${endUnit})` : ""}
-                  </div>
-                  <div className="p-2 col-span-2">
-                    {s.start_distance != null ? `${s.start_distance}` : ""} →{" "}
-                    {s.end_distance != null ? `${s.end_distance}` : ""}
-                  </div>
-                  <div className="p-2 col-span-2">
-                    {coercePenalty(s.penalty) ? "Yes" : ""}
-                  </div>
-                  <div className="p-2 col-span-2">
-                    {s.strokes_gained != null ? s.strokes_gained.toFixed(2) : ""}
-                  </div>
-                </div>
-              );
-            })
-          )}
-        </div>
-      </div>
     </div>
   );
+}
+
+function Card({ label, value }: { label: string; value: number | string }) {
+  return (
+    <div className="rounded-lg border bg-white p-4">
+      <div className="text-xs uppercase text-gray-500">{label}</div>
+      <div className="text-2xl font-semibold">{value}</div>
+    </div>
+  );
+}
+
+function Th({
+  children,
+  className = "",
+}: {
+  children: React.ReactNode;
+  className?: string;
+}) {
+  return <th className={`px-2 py-2 text-left ${className}`}>{children}</th>;
+}
+
+function Td({
+  children,
+  className = "",
+}: {
+  children: React.ReactNode;
+  className?: string;
+}) {
+  return <td className={`px-2 py-2 ${className}`}>{children}</td>;
 }

@@ -18,6 +18,12 @@ function sum<T extends keyof HoleAgg>(rows: HoleAgg[], key: T) {
   return rows.reduce((acc, r) => acc + (Number(r[key] ?? 0) || 0), 0);
 }
 
+// Safely read either an embedded object or a single-element array
+function firstOr<T>(val: T | T[] | null | undefined): T | null {
+  if (Array.isArray(val)) return (val[0] ?? null) as T | null;
+  return (val as T) ?? null;
+}
+
 export default async function RoundSummaryPage({
   params,
 }: {
@@ -26,7 +32,7 @@ export default async function RoundSummaryPage({
   const supabase = createClient();
   const roundId = params.id;
 
-  // Round meta (canonical columns + friendly names)
+  // Round meta (canonical cols + embedded relations)
   const { data: round, error: roundErr } = await supabase
     .from("rounds")
     .select(
@@ -44,7 +50,16 @@ export default async function RoundSummaryPage({
   if (roundErr) throw new Error(`Failed to load round: ${roundErr.message}`);
   if (!round) return notFound();
 
-  // Totals for header (safe if no shots exist)
+  // Handle embedded object-or-array shapes
+  const playerEmb = firstOr<{ full_name?: string }>(round.player);
+  const courseEmb = firstOr<{ name?: string }>(round.course);
+  const teeEmb = firstOr<{ name?: string }>(round.tee_set);
+
+  const playerName = playerEmb?.full_name ?? "Player";
+  const courseName = courseEmb?.name ?? "Course";
+  const teeName = teeEmb?.name ?? "Tee";
+
+  // Derived totals for the header (safe even when no shots yet)
   const { data: totals } = await supabase
     .from("v_round_totals")
     .select(
@@ -56,7 +71,7 @@ export default async function RoundSummaryPage({
     .eq("round_id", roundId)
     .maybeSingle();
 
-  // Hole-by-hole (derived)
+  // Hole-by-hole (front/back)
   const { data: holes, error: holesErr } = await supabase
     .from("v_hole_totals")
     .select(
@@ -79,8 +94,8 @@ export default async function RoundSummaryPage({
     sg_total: h.sg_total,
   }));
 
-  const front = holeRows.filter((h) => h.hole_number <= 9);
-  const back = holeRows.filter((h) => h.hole_number >= 10);
+  const front = holeRows.filter((h) => h.hole_number >= 1 && h.hole_number <= 9);
+  const back = holeRows.filter((h) => h.hole_number >= 10 && h.hole_number <= 18);
 
   const frontSum = {
     strokes: sum(front, "strokes"),
@@ -106,8 +121,7 @@ export default async function RoundSummaryPage({
       <div className="flex items-start justify-between gap-4">
         <div>
           <h1 className="text-2xl font-semibold">
-            {round.player?.full_name ?? "Player"} —{" "}
-            {round.course?.name ?? "Course"} ({round.tee_set?.name ?? "Tee"})
+            {playerName} — {courseName} ({teeName})
           </h1>
           <p className="text-gray-600">
             Date: {String(round.date)} · Type: {String(round.type)} · Status:{" "}
@@ -131,13 +145,11 @@ export default async function RoundSummaryPage({
         </div>
       </div>
 
+      {/* Round totals quick cards */}
       <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
         <Card label="Strokes" value={totals?.strokes ?? allSum.strokes || "—"} />
         <Card label="Putts" value={totals?.putts ?? allSum.putts || "—"} />
-        <Card
-          label="Penalties"
-          value={totals?.penalty_strokes ?? allSum.pens || "—"}
-        />
+        <Card label="Penalties" value={totals?.penalty_strokes ?? allSum.pens || "—"} />
         <Card
           label="Strokes Gained"
           value={
@@ -148,6 +160,7 @@ export default async function RoundSummaryPage({
         />
       </div>
 
+      {/* Hole-by-hole table */}
       <div className="overflow-x-auto rounded border">
         <table className="min-w-full text-sm">
           <thead className="bg-gray-50">

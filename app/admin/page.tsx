@@ -12,6 +12,7 @@ async function getDashboardData() {
     teamsRes,
     playersRes,
     coursesRes,
+    teesRes,
     roundsRes,
   ] = await Promise.all([
     supabase
@@ -22,20 +23,21 @@ async function getDashboardData() {
     supabase.from("teams").select("id", { count: "exact", head: true }),
     supabase.from("players").select("id", { count: "exact", head: true }),
     supabase.from("courses").select("id", { count: "exact", head: true }),
+    supabase.from("tees").select("id", { count: "exact", head: true }),
     supabase.from("rounds").select("id", { count: "exact", head: true }),
   ]);
 
   if (evErr) throw evErr;
 
-  // Supabase count with { head: true } returns `count` on the response object (not on data)
-  const teams = (teamsRes as unknown as CountResp).count ?? 0;
-  const players = (playersRes as unknown as CountResp).count ?? 0;
-  const courses = (coursesRes as unknown as CountResp).count ?? 0;
-  const rounds = (roundsRes as unknown as CountResp).count ?? 0;
+  const teams  = (teamsRes   as unknown as CountResp).count ?? 0;
+  const players= (playersRes as unknown as CountResp).count ?? 0;
+  const courses= (coursesRes as unknown as CountResp).count ?? 0;
+  const tees   = (teesRes    as unknown as CountResp).count ?? 0;
+  const rounds = (roundsRes  as unknown as CountResp).count ?? 0;
 
   return {
     events: events ?? [],
-    counts: { teams, players, courses, rounds },
+    counts: { teams, players, courses, tees, rounds },
   };
 }
 
@@ -46,18 +48,34 @@ export default async function AdminHomePage() {
     { href: "/admin/players", label: "Players", sub: `${counts.players} total` },
     { href: "/admin/teams", label: "Teams", sub: `${counts.teams} total` },
     { href: "/admin/courses", label: "Courses", sub: `${counts.courses} total` },
+    { href: "/admin/tees", label: "Tees", sub: `${counts.tees} total` },
     { href: "/admin/rounds", label: "Rounds", sub: `${counts.rounds} total` },
-    { href: "/admin/events", label: "Events", sub: "Create & manage" }, // NEW
+    { href: "/admin/events", label: "Events", sub: "Create & manage" },
+  ];
+
+  const quickActions = [
+    { href: "/admin/players/new", label: "➕ New Player" },
+    { href: "/admin/teams/new", label: "➕ New Team" },
+    { href: "/admin/courses/new", label: "➕ New Course" },
+    { href: "/admin/tees/new", label: "➕ New Tee" },
+    { href: "/admin/rounds/new", label: "➕ New Round" },
+    { href: "/admin/events", label: "➕ New Event" }, // event create is on /admin/events
   ];
 
   return (
     <div className="space-y-8">
       <header className="flex items-center justify-between">
         <h1 className="text-2xl font-bold">Admin Dashboard</h1>
+        <Link
+          href="/admin/events"
+          className="text-sm px-3 py-1 rounded-lg border hover:bg-gray-50"
+        >
+          Manage Events →
+        </Link>
       </header>
 
-      {/* Quick nav tiles */}
-      <section className="grid sm:grid-cols-2 lg:grid-cols-5 gap-4">
+      {/* Management tiles */}
+      <section className="grid sm:grid-cols-2 lg:grid-cols-6 gap-4">
         {tiles.map((t) => (
           <Link
             key={t.href}
@@ -70,6 +88,24 @@ export default async function AdminHomePage() {
         ))}
       </section>
 
+      {/* Quick actions */}
+      <section className="rounded-2xl border bg-white">
+        <div className="px-4 py-3 border-b">
+          <h2 className="font-semibold">Quick Actions</h2>
+        </div>
+        <div className="p-4 flex flex-wrap gap-2">
+          {quickActions.map((a) => (
+            <Link
+              key={a.href}
+              href={a.href}
+              className="px-3 py-2 rounded-lg border bg-white hover:bg-gray-50 text-sm"
+            >
+              {a.label}
+            </Link>
+          ))}
+        </div>
+      </section>
+
       {/* Recent events snapshot */}
       <section className="rounded-2xl border bg-white overflow-hidden">
         <div className="px-4 py-3 border-b flex items-center justify-between">
@@ -78,7 +114,7 @@ export default async function AdminHomePage() {
             href="/admin/events"
             className="text-sm px-3 py-1 rounded-lg border hover:bg-gray-50"
           >
-            Manage Events →
+            Go to Events →
           </Link>
         </div>
 

@@ -2,30 +2,40 @@
 import Link from "next/link";
 import { createClient } from "@/lib/supabase/server";
 
+type CountResp = { count: number | null };
+
 async function getDashboardData() {
   const supabase = await createClient();
 
-  const [{ data: events }, { data: teamCount }, { data: playerCount }, { data: courseCount }, { data: roundCount }] =
-    await Promise.all([
-      supabase
-        .from("v_admin_events")
-        .select("*")
-        .order("start_date", { ascending: false })
-        .limit(5),
-      supabase.from("teams").select("id", { count: "exact", head: true }),
-      supabase.from("players").select("id", { count: "exact", head: true }),
-      supabase.from("courses").select("id", { count: "exact", head: true }),
-      supabase.from("rounds").select("id", { count: "exact", head: true }),
-    ]);
+  const [
+    { data: events, error: evErr },
+    teamsRes,
+    playersRes,
+    coursesRes,
+    roundsRes,
+  ] = await Promise.all([
+    supabase
+      .from("v_admin_events")
+      .select("*")
+      .order("start_date", { ascending: false })
+      .limit(5),
+    supabase.from("teams").select("id", { count: "exact", head: true }),
+    supabase.from("players").select("id", { count: "exact", head: true }),
+    supabase.from("courses").select("id", { count: "exact", head: true }),
+    supabase.from("rounds").select("id", { count: "exact", head: true }),
+  ]);
+
+  if (evErr) throw evErr;
+
+  // Supabase count with { head: true } returns `count` on the response object (not on data)
+  const teams = (teamsRes as unknown as CountResp).count ?? 0;
+  const players = (playersRes as unknown as CountResp).count ?? 0;
+  const courses = (coursesRes as unknown as CountResp).count ?? 0;
+  const rounds = (roundsRes as unknown as CountResp).count ?? 0;
 
   return {
     events: events ?? [],
-    counts: {
-      teams: teamCount?.length ?? teamCount?.count ?? 0,
-      players: playerCount?.length ?? playerCount?.count ?? 0,
-      courses: courseCount?.length ?? courseCount?.count ?? 0,
-      rounds: roundCount?.length ?? roundCount?.count ?? 0,
-    },
+    counts: { teams, players, courses, rounds },
   };
 }
 
@@ -36,8 +46,8 @@ export default async function AdminHomePage() {
     { href: "/admin/players", label: "Players", sub: `${counts.players} total` },
     { href: "/admin/teams", label: "Teams", sub: `${counts.teams} total` },
     { href: "/admin/courses", label: "Courses", sub: `${counts.courses} total` },
-    { href: "/admin/rounds", label: "Rounds", sub: `${counts.rounds} total"}`.replace('"', "") },
-    { href: "/admin/events", label: "Events", sub: "Create & manage" }, // <— NEW TILE
+    { href: "/admin/rounds", label: "Rounds", sub: `${counts.rounds} total` },
+    { href: "/admin/events", label: "Events", sub: "Create & manage" }, // NEW
   ];
 
   return (

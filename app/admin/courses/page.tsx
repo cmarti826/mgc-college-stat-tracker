@@ -4,10 +4,7 @@ import NavAdmin from "../NavAdmin";
 
 async function loadData() {
   const supabase = await createClient();
-  const { data: courses } = await supabase
-    .from("courses")
-    .select("id, name, city, state, created_at")
-    .order("name");
+  const { data: courses } = await supabase.from("courses").select("id, name, city, state, created_at").order("name");
   return { courses: courses ?? [] };
 }
 
@@ -26,7 +23,6 @@ async function createCourse(formData: FormData) {
 async function deleteCourse(courseId: string) {
   "use server";
   const supabase = await createClient();
-  // If FKs restrict, this will error until dependent tees/holes are removed.
   const { error } = await supabase.from("courses").delete().eq("id", courseId);
   if (error) throw error;
   revalidatePath("/admin/courses");
@@ -41,7 +37,6 @@ export default async function AdminCoursesPage() {
       <h1 className="text-2xl font-bold">Manage Courses</h1>
 
       <section className="grid md:grid-cols-2 gap-6">
-        {/* Create */}
         <div className="rounded-2xl border p-4 bg-white">
           <h2 className="font-semibold mb-3">Create Course</h2>
           <form action={createCourse} className="space-y-3">
@@ -63,7 +58,6 @@ export default async function AdminCoursesPage() {
           </form>
         </div>
 
-        {/* List */}
         <div className="rounded-2xl border p-0 bg-white overflow-hidden">
           <div className="px-4 py-3 border-b font-semibold">All Courses</div>
           <div className="divide-y">
@@ -71,11 +65,9 @@ export default async function AdminCoursesPage() {
               <div key={c.id} className="px-4 py-3 flex items-center justify-between">
                 <div>
                   <div className="font-medium">{c.name}</div>
-                  <div className="text-xs text-gray-500">
-                    {c.city ?? "—"}, {c.state ?? "—"}
-                  </div>
+                  <div className="text-xs text-gray-500">{c.city ?? "—"}, {c.state ?? "—"}</div>
                 </div>
-                <form action={async () => deleteCourse(c.id)}>
+                <form action={deleteCourse.bind(null, c.id)}>
                   <button className="text-red-600">Delete</button>
                 </form>
               </div>

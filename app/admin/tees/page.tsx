@@ -48,7 +48,6 @@ export default async function AdminTeesPage() {
       <h1 className="text-2xl font-bold">Manage Tees</h1>
 
       <section className="grid md:grid-cols-2 gap-6">
-        {/* Create */}
         <div className="rounded-2xl border p-4 bg-white">
           <h2 className="font-semibold mb-3">Create Tee</h2>
           <form action={createTee} className="space-y-3">
@@ -60,9 +59,7 @@ export default async function AdminTeesPage() {
               <label className="block text-sm">Course</label>
               <select name="course_id" className="w-full border rounded p-2" required>
                 <option value="">Select course…</option>
-                {courses.map((c: any) => (
-                  <option key={c.id} value={c.id}>{c.name}</option>
-                ))}
+                {courses.map((c: any) => <option key={c.id} value={c.id}>{c.name}</option>)}
               </select>
             </div>
             <div className="grid grid-cols-3 gap-3">
@@ -83,7 +80,6 @@ export default async function AdminTeesPage() {
           </form>
         </div>
 
-        {/* List */}
         <div className="rounded-2xl border p-0 bg-white overflow-hidden">
           <div className="px-4 py-3 border-b font-semibold">All Tees</div>
           <div className="divide-y">
@@ -97,7 +93,7 @@ export default async function AdminTeesPage() {
                     Rating {t.rating ?? "—"} • Slope {t.slope ?? "—"} • Par {t.par ?? "—"}
                   </div>
                 </div>
-                <form action={async () => deleteTee(t.id)}>
+                <form action={deleteTee.bind(null, t.id)}>
                   <button className="text-red-600">Delete</button>
                 </form>
               </div>

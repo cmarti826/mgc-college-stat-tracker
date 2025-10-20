@@ -42,7 +42,6 @@ export default async function AdminTeamsPage() {
       <h1 className="text-2xl font-bold">Manage Teams</h1>
 
       <section className="grid md:grid-cols-2 gap-6">
-        {/* Create */}
         <div className="rounded-2xl border p-4 bg-white">
           <h2 className="font-semibold mb-3">Create Team</h2>
           <form action={createTeam} className="space-y-3">
@@ -58,7 +57,6 @@ export default async function AdminTeamsPage() {
           </form>
         </div>
 
-        {/* List */}
         <div className="rounded-2xl border p-0 bg-white overflow-hidden">
           <div className="px-4 py-3 border-b font-semibold">All Teams</div>
           <div className="divide-y">
@@ -66,11 +64,9 @@ export default async function AdminTeamsPage() {
               <div key={t.id} className="px-4 py-3 flex items-center justify-between">
                 <div>
                   <div className="font-medium">{t.name}</div>
-                  <div className="text-xs text-gray-500">
-                    {t.school ?? "—"} • {counts.get(t.id) ?? 0} players
-                  </div>
+                  <div className="text-xs text-gray-500">{t.school ?? "—"} • {counts.get(t.id) ?? 0} players</div>
                 </div>
-                <form action={async () => deleteTeam(t.id)}>
+                <form action={deleteTeam.bind(null, t.id)}>
                   <button className="text-red-600">Delete</button>
                 </form>
               </div>

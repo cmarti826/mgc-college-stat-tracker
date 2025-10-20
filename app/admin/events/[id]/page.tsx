@@ -13,43 +13,27 @@ async function fetchAll(id: string) {
     supabase.from("teams").select("id, name").order("name"),
   ]);
 
-  // Players filtered by event.team_id if set
   let players: any[] = [];
   if (event?.team_id) {
-    const { data } = await supabase
-      .from("players")
-      .select("id, first_name, last_name, team_id")
-      .eq("team_id", event.team_id)
-      .order("last_name");
+    const { data } = await supabase.from("players").select("id, first_name, last_name, team_id").eq("team_id", event.team_id).order("last_name");
     players = data ?? [];
   } else {
-    const { data } = await supabase
-      .from("players")
-      .select("id, first_name, last_name, team_id")
-      .order("last_name");
+    const { data } = await supabase.from("players").select("id, first_name, last_name, team_id").order("last_name");
     players = data ?? [];
   }
 
-  // Roster
   const { data: roster } = await supabase
     .from("event_players")
     .select("id, player_id, players(first_name, last_name)")
     .eq("event_id", id)
     .order("created_at");
 
-  // Linked rounds via event_rounds -> rounds
   const { data: linked } = await supabase
     .from("event_rounds")
-    .select(`
-      id, round_id, round_number, day,
-      rounds!inner(
-        id, player_id, name, round_date, date, course_id, tee_id
-      )
-    `)
+    .select(`id, round_id, round_number, day, rounds!inner(id, player_id, name, round_date, date, course_id, tee_id)`)
     .eq("event_id", id)
     .order("day", { ascending: true });
 
-  // Eligible rounds to link: no event yet, within event date range, and (optionally) same team
   let q = supabase
     .from("rounds")
     .select("id, player_id, name, round_date, date, course_id, tee_id, team_id, event_id")
@@ -67,17 +51,7 @@ async function fetchAll(id: string) {
     supabase.from("courses").select("id, name"),
   ]);
 
-  return {
-    event,
-    courses: courses ?? [],
-    teams: teams ?? [],
-    players,
-    roster: roster ?? [],
-    linked: linked ?? [],
-    eligible: eligible ?? [],
-    tees: tees ?? [],
-    courseList: courseList ?? [],
-  };
+  return { event, courses: courses ?? [], teams: teams ?? [], players, roster: roster ?? [], linked: linked ?? [], eligible: eligible ?? [], tees: tees ?? [], courseList: courseList ?? [] };
 }
 
 async function updateEvent(id: string, formData: FormData) {
@@ -128,16 +102,9 @@ async function linkRound(eventId: string, formData: FormData) {
   const round_id = String(formData.get("round_id") || "");
   const round_number = formData.get("round_number") ? Number(formData.get("round_number")) : null;
   const day = String(formData.get("day") || "") || null;
-
   if (!round_id) throw new Error("Select a round to link.");
-
-  // Insert into event_rounds (there is a UNIQUE on round_id in your schema)
-  const { error } = await supabase
-    .from("event_rounds")
-    .insert({ event_id: eventId, round_id, round_number, day });
-
+  const { error } = await supabase.from("event_rounds").insert({ event_id: eventId, round_id, round_number, day });
   if (error) throw error;
-  // DB trigger should sync rounds.event_id; if you used my trigger, it will.
   revalidatePath(`/admin/events/${eventId}`);
 }
 
@@ -153,18 +120,16 @@ export default async function AdminEventDetail({ params }: { params: { id: strin
   const { id } = params;
   const { event, courses, teams, players, roster, linked, eligible, tees, courseList } = await fetchAll(id);
 
-  const courseName = (cid: string | null | undefined) =>
-    courseList.find((c: any) => c.id === cid)?.name ?? "—";
-  const teeName = (tid: string | null | undefined) =>
-    tees.find((t: any) => t.id === tid)?.name ?? "—";
+  const courseName = (cid: string | null | undefined) => courseList.find((c: any) => c.id === cid)?.name ?? "—";
+  const teeName = (tid: string | null | undefined) => tees.find((t: any) => t.id === tid)?.name ?? "—";
 
   return (
-    <div className="space-y-6">
+    <div className="p-6 space-y-6">
       <NavAdmin />
 
       <div className="flex items-center justify-between">
         <h1 className="text-2xl font-bold">{event.name}</h1>
-        <form action={async () => deleteEvent(id)}>
+        <form action={deleteEvent.bind(null, id)}>
           <button className="px-3 py-2 rounded-lg border text-red-600 hover:bg-red-50" type="submit">
             Delete Event
           </button>
@@ -172,10 +137,9 @@ export default async function AdminEventDetail({ params }: { params: { id: strin
       </div>
 
       <section className="grid md:grid-cols-2 gap-6">
-        {/* Edit event */}
         <div className="rounded-2xl border p-4 bg-white">
           <h2 className="font-semibold mb-3">Edit Event</h2>
-          <form action={async (fd) => updateEvent(id, fd)} className="space-y-3">
+          <form action={updateEvent.bind(null, id)} className="space-y-3">
             <div>
               <label className="block text-sm">Name</label>
               <input name="name" defaultValue={event.name} className="w-full border rounded p-2" required />
@@ -183,21 +147,12 @@ export default async function AdminEventDetail({ params }: { params: { id: strin
             <div className="grid grid-cols-2 gap-3">
               <div>
                 <label className="block text-sm">Type</label>
-                <input
-                  name="event_type"
-                  defaultValue={event.event_type ?? ""}
-                  className="w-full border rounded p-2"
-                  placeholder="TOURNAMENT / QUALIFYING / PRACTICE"
-                />
+                <input name="event_type" defaultValue={event.event_type ?? ""} className="w-full border rounded p-2" />
               </div>
               <div>
                 <label className="block text-sm">Course</label>
                 <select name="course_id" defaultValue={event.course_id ?? ""} className="w-full border rounded p-2">
-                  {courses?.map((c: any) => (
-                    <option key={c.id} value={c.id}>
-                      {c.name}
-                    </option>
-                  ))}
+                  {courses?.map((c: any) => <option key={c.id} value={c.id}>{c.name}</option>)}
                 </select>
               </div>
               <div>
@@ -211,11 +166,7 @@ export default async function AdminEventDetail({ params }: { params: { id: strin
               <div>
                 <label className="block text-sm">Team</label>
                 <select name="team_id" defaultValue={event.team_id ?? ""} className="w-full border rounded p-2">
-                  {teams?.map((t: any) => (
-                    <option key={t.id} value={t.id}>
-                      {t.name}
-                    </option>
-                  ))}
+                  {teams?.map((t: any) => <option key={t.id} value={t.id}>{t.name}</option>)}
                 </select>
               </div>
             </div>
@@ -223,12 +174,11 @@ export default async function AdminEventDetail({ params }: { params: { id: strin
           </form>
         </div>
 
-        {/* Roster */}
         <div className="rounded-2xl border p-4 bg-white">
           <h2 className="font-semibold mb-3">Event Roster</h2>
           <div className="flex flex-wrap gap-2 mb-3">
             {roster.map((ep: any) => (
-              <form key={ep.id} action={async () => removeEventPlayer(id, ep.id)}>
+              <form key={ep.id} action={removeEventPlayer.bind(null, id, ep.id)}>
                 <button className="px-3 py-1 rounded-full border">
                   {(ep.players?.first_name ?? "") + " " + (ep.players?.last_name ?? "")}
                   <span className="ml-2 text-red-600">×</span>
@@ -238,23 +188,18 @@ export default async function AdminEventDetail({ params }: { params: { id: strin
             {roster.length === 0 && <div className="text-sm text-gray-500">No players added.</div>}
           </div>
 
-          <form action={async (fd) => addEventPlayer(id, fd)} className="flex gap-2">
+          <form action={addEventPlayer.bind(null, id)} className="flex gap-2">
             <select name="player_id" className="border rounded p-2 flex-1">
               {players.map((p: any) => (
-                <option key={p.id} value={p.id}>
-                  {p.last_name}, {p.first_name}
-                </option>
+                <option key={p.id} value={p.id}>{p.last_name}, {p.first_name}</option>
               ))}
             </select>
             <button className="px-3 py-2 rounded-lg border bg-white">Add Player</button>
           </form>
-          <p className="text-xs text-gray-500 mt-2">
-            Player list is filtered to the event’s team if set.
-          </p>
+          <p className="text-xs text-gray-500 mt-2">List is filtered to the event’s team if set.</p>
         </div>
       </section>
 
-      {/* Linked rounds */}
       <section className="rounded-2xl border p-4 bg-white">
         <h2 className="font-semibold mb-3">Linked Rounds</h2>
 
@@ -283,31 +228,28 @@ export default async function AdminEventDetail({ params }: { params: { id: strin
                   <td className="py-2 pr-3">{teeName(er.rounds?.tee_id)}</td>
                   <td className="py-2 pr-3">{er.rounds?.player_id ?? "—"}</td>
                   <td className="py-2 pr-3">
-                    <form action={async () => unlinkRound(id, er.id)}>
+                    <form action={unlinkRound.bind(null, id, er.id)}>
                       <button className="text-red-600">Unlink</button>
                     </form>
                   </td>
                 </tr>
               ))}
               {linked.length === 0 && (
-                <tr>
-                  <td colSpan={8} className="py-6 text-gray-500">No rounds linked yet.</td>
-                </tr>
+                <tr><td colSpan={8} className="py-6 text-gray-500">No rounds linked yet.</td></tr>
               )}
             </tbody>
           </table>
         </div>
 
-        {/* Link existing round */}
         <div className="mt-6">
           <h3 className="font-medium mb-2">Link Existing Round</h3>
-          <form action={async (fd) => linkRound(id, fd)} className="grid md:grid-cols-6 gap-3">
+          <form action={linkRound.bind(null, id)} className="grid md:grid-cols-6 gap-3">
             <div className="md:col-span-3">
               <label className="block text-xs">Round</label>
               <select name="round_id" className="w-full border rounded p-2" required>
                 {eligible.map((r: any) => (
                   <option key={r.id} value={r.id}>
-                    {(r.round_date ?? r.date) ?? ""} • {r.name ?? "Round"} • {courseName(r.course_id)} • {teeName(r.tee_id)}
+                    {(r.round_date ?? r.date) ?? ""} • {r.name ?? "Round"}
                   </option>
                 ))}
               </select>
@@ -324,9 +266,6 @@ export default async function AdminEventDetail({ params }: { params: { id: strin
               <button className="px-4 py-2 rounded-xl bg-blue-600 text-white">Link Round</button>
             </div>
           </form>
-          <p className="text-xs text-gray-500 mt-2">
-            Shows unlinked rounds within the event’s date range (and same team, if set).
-          </p>
         </div>
       </section>
     </div>

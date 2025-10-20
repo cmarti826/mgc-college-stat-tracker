@@ -13,6 +13,8 @@ import {
   removeTeamMember,
   linkUserToPlayer,
   setDefaultTeam,
+  createRound,
+  deleteRound,
 } from "./actions";
 
 export const dynamic = "force-dynamic";
@@ -21,21 +23,30 @@ export const revalidate = 0;
 export default async function AdminPage() {
   const supabase = createClient();
 
-  // pull lists (avoid embedded relations to keep it robust)
+  // Pull lists needed for dropdowns and summaries (no embedded relations).
   const [
     { data: players },
     { data: courses },
     { data: teeSets },
     { data: teams },
     { data: teamMembers },
-    { data: profiles }, // users to pick from (via profiles)
+    { data: profiles },
+    { data: rounds },
   ] = await Promise.all([
     supabase.from("players").select("id, full_name, grad_year").order("full_name"),
     supabase.from("courses").select("id, name, city, state").order("name"),
     supabase.from("tee_sets").select("id, name, course_id, par, rating, slope").order("name"),
     supabase.from("teams").select("id, name, school, created_at").order("name"),
-    supabase.from("team_members").select("id, team_id, user_id, player_id, role, created_at").order("created_at", { ascending: false }),
+    supabase
+      .from("team_members")
+      .select("id, team_id, user_id, player_id, role, created_at")
+      .order("created_at", { ascending: false }),
     supabase.from("profiles").select("id, full_name, default_team_id").order("full_name"),
+    supabase
+      .from("rounds")
+      .select("id, date, player_id, course_id, tee_set_id, team_id, type, status, name, created_at")
+      .order("created_at", { ascending: false })
+      .limit(25),
   ]);
 
   return (
@@ -63,8 +74,15 @@ export default async function AdminPage() {
 
         <Card title="Create Tee Set">
           <form action={createTeeSet} className="space-y-3">
-            <Select name="course_id" label="Course" required
-              options={(courses ?? []).map(c => ({ value: c.id, label: `${c.name}${c.city ? ` — ${c.city}` : ""}${c.state ? `, ${c.state}` : ""}` }))} />
+            <Select
+              name="course_id"
+              label="Course"
+              required
+              options={(courses ?? []).map((c) => ({
+                value: c.id,
+                label: `${c.name}${c.city ? ` — ${c.city}` : ""}${c.state ? `, ${c.state}` : ""}`,
+              }))}
+            />
             <LabeledInput name="tee_name" label="Tee Name" placeholder="Blue" required />
             <LabeledInput name="par" label="Par" type="number" placeholder="72" required />
             <LabeledInput name="rating" label="Rating" type="number" step="0.1" placeholder="71.3" />
@@ -91,17 +109,26 @@ export default async function AdminPage() {
               name="team_id"
               label="Team"
               required
-              options={(teams ?? []).map(t => ({ value: t.id, label: `${t.name}${t.school ? ` — ${t.school}` : ""}` }))}
+              options={(teams ?? []).map((t) => ({
+                value: t.id,
+                label: `${t.name}${t.school ? ` — ${t.school}` : ""}`,
+              }))}
             />
             <Select
               name="player_id"
               label="Player (optional)"
-              options={[{ value: "", label: "— none —" }, ...(players ?? []).map(p => ({ value: p.id, label: p.full_name }))]}
+              options={[
+                { value: "", label: "— none —" },
+                ...(players ?? []).map((p) => ({ value: p.id, label: p.full_name })),
+              ]}
             />
             <Select
               name="user_id"
               label="User (from profiles, optional)"
-              options={[{ value: "", label: "— none —" }, ...(profiles ?? []).map(u => ({ value: u.id, label: u.full_name ?? u.id }))]}
+              options={[
+                { value: "", label: "— none —" },
+                ...(profiles ?? []).map((u) => ({ value: u.id, label: u.full_name ?? u.id })),
+              ]}
             />
             <Select
               name="role"
@@ -114,25 +141,23 @@ export default async function AdminPage() {
             />
             <Submit>Add Member</Submit>
           </form>
-          <p className="mt-2 text-xs text-gray-500">
-            Provide a Team, then either a Player, a User, or both.
-          </p>
+          <p className="mt-2 text-xs text-gray-500">Provide a Team, then a Player and/or a User.</p>
         </Card>
 
-        <Card title="Link User ↔ Player / Set Default Team">
+        <Card title="Identity Helpers">
           <div className="space-y-4">
             <form action={linkUserToPlayer} className="space-y-3">
               <Select
                 name="user_id"
                 label="User"
                 required
-                options={(profiles ?? []).map(u => ({ value: u.id, label: u.full_name ?? u.id }))}
+                options={(profiles ?? []).map((u) => ({ value: u.id, label: u.full_name ?? u.id }))}
               />
               <Select
                 name="player_id"
                 label="Player"
                 required
-                options={(players ?? []).map(p => ({ value: p.id, label: p.full_name }))}
+                options={(players ?? []).map((p) => ({ value: p.id, label: p.full_name }))}
               />
               <Submit>Link User ↔ Player</Submit>
             </form>
@@ -142,13 +167,13 @@ export default async function AdminPage() {
                 name="user_id"
                 label="User"
                 required
-                options={(profiles ?? []).map(u => ({ value: u.id, label: u.full_name ?? u.id }))}
+                options={(profiles ?? []).map((u) => ({ value: u.id, label: u.full_name ?? u.id }))}
               />
               <Select
                 name="team_id"
                 label="Default Team"
                 required
-                options={(teams ?? []).map(t => ({ value: t.id, label: t.name }))}
+                options={(teams ?? []).map((t) => ({ value: t.id, label: t.name }))}
               />
               <Submit>Set Default Team</Submit>
             </form>
@@ -156,7 +181,82 @@ export default async function AdminPage() {
         </Card>
       </div>
 
-      {/* ======== Lists with Delete buttons ======== */}
+      {/* ======== Rounds ======== */}
+      <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+        <Card title="Create Round">
+          <form action={createRound} className="space-y-3">
+            <Select
+              name="player_id"
+              label="Player"
+              required
+              options={(players ?? []).map((p) => ({ value: p.id, label: p.full_name }))}
+            />
+            <Select
+              name="team_id"
+              label="Team (optional)"
+              options={[{ value: "", label: "— none —" }, ...(teams ?? []).map((t) => ({ value: t.id, label: t.name }))]}
+            />
+            <Select
+              name="course_id"
+              label="Course"
+              required
+              options={(courses ?? []).map((c) => ({
+                value: c.id,
+                label: `${c.name}${c.city ? ` — ${c.city}` : ""}${c.state ? `, ${c.state}` : ""}`,
+              }))}
+            />
+            <Select
+              name="tee_set_id"
+              label="Tee Set"
+              required
+              options={(teeSets ?? []).map((t) => ({
+                value: t.id,
+                label: `${t.name} (par ${t.par}) · course ${t.course_id}`,
+              }))}
+            />
+            <LabeledInput name="date" label="Date" type="date" />
+            <LabeledInput name="name" label="Name (optional)" placeholder="Practice Round" />
+            <LabeledInput name="type" label="Type (optional)" placeholder="practice | tournament | qualifying" />
+            <LabeledInput name="status" label="Status (optional)" placeholder="scheduled | in_progress | complete" />
+            <LabeledInput name="notes" label="Notes (optional)" placeholder="windy, cart path only..." />
+            <Submit>Create Round</Submit>
+          </form>
+        </Card>
+
+        <Card title="Recent Rounds (delete)">
+          <ul className="divide-y">
+            {(rounds ?? []).map((r) => (
+              <li key={r.id} className="flex items-center justify-between py-2 text-sm">
+                <div>
+                  <div className="font-medium">
+                    {r.name ?? "Round"} · {r.date ?? "—"} · {r.type ?? "—"} · {r.status ?? "—"}
+                  </div>
+                  <div className="text-xs text-gray-600">
+                    player:{r.player_id} · team:{r.team_id ?? "—"} · course:{r.course_id} · tee:{r.tee_set_id}
+                  </div>
+                </div>
+                <div className="flex items-center gap-2">
+                  <a
+                    href={`/rounds/${r.id}`}
+                    className="rounded border px-2 py-1 text-xs hover:bg-gray-50"
+                  >
+                    View
+                  </a>
+                  <form action={deleteRound}>
+                    <input type="hidden" name="id" value={r.id} />
+                    <DangerSmall>Delete</DangerSmall>
+                  </form>
+                </div>
+              </li>
+            ))}
+            {(!rounds || rounds.length === 0) && (
+              <li className="py-2 text-sm text-gray-500">No rounds yet.</li>
+            )}
+          </ul>
+        </Card>
+      </div>
+
+      {/* ======== Lists with Delete buttons (Players/Courses/Tees/Teams) ======== */}
       <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
         <Card title="Players">
           <ul className="divide-y">
@@ -245,7 +345,7 @@ export default async function AdminPage() {
                   </div>
                 </div>
 
-                {/* members for this team */}
+                {/* Members for this team */}
                 <div className="ml-2 mt-2 border-l pl-3">
                   {(teamMembers ?? [])
                     .filter((m) => m.team_id === t.id)

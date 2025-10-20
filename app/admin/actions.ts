@@ -108,7 +108,6 @@ export async function deleteTeam(formData: FormData): Promise<void> {
   const supabase = createClient();
   const id = txt(formData.get("id"));
   if (!id) throw new Error("Team id is required.");
-  // Will cascade-block if FK references exist; handle data first if needed.
   const { error } = await supabase.from("teams").delete().eq("id", id);
   if (error) throw new Error(error.message);
   revalidatePath("/admin");
@@ -163,4 +162,56 @@ export async function setDefaultTeam(formData: FormData): Promise<void> {
   const { error } = await supabase.from("profiles").update({ default_team_id: team_id }).eq("id", user_id);
   if (error) throw new Error(error.message);
   revalidatePath("/admin");
+}
+
+/* --------------------------- rounds --------------------------- */
+
+export async function createRound(formData: FormData): Promise<void> {
+  const supabase = createClient();
+
+  const player_id = txt(formData.get("player_id"));
+  const course_id = txt(formData.get("course_id"));
+  const tee_set_id = txt(formData.get("tee_set_id"));
+  const team_id = txt(formData.get("team_id")); // optional
+  const date = txt(formData.get("date")); // yyyy-mm-dd
+  const name = txt(formData.get("name"));
+  const notes = txt(formData.get("notes"));
+  const type = txt(formData.get("type"));     // optional, defaults in DB
+  const status = txt(formData.get("status")); // optional, defaults in DB
+
+  if (!player_id) throw new Error("player_id is required.");
+  if (!course_id) throw new Error("course_id is required.");
+  if (!tee_set_id) throw new Error("tee_set_id is required.");
+
+  const insert = {
+    player_id,
+    course_id,
+    tee_set_id,
+    team_id: team_id ?? null,
+    date: date ?? undefined,   // let DB default if no date
+    name: name ?? null,
+    notes: notes ?? null,
+    type: type ?? undefined,       // rely on enum default when undefined
+    status: status ?? undefined,   // rely on enum default when undefined
+  };
+
+  const { error } = await supabase.from("rounds").insert(insert as any);
+  if (error) throw new Error(error.message);
+
+  revalidatePath("/admin");
+  revalidatePath("/rounds");
+}
+
+export async function deleteRound(formData: FormData): Promise<void> {
+  const supabase = createClient();
+  const id = txt(formData.get("id"));
+  if (!id) throw new Error("round id is required.");
+
+  // NOTE: If you have ON DELETE CASCADE on child tables (shots/scores), this will cascade.
+  // If not, you may get FK errors; clean up children first or add cascades.
+  const { error } = await supabase.from("rounds").delete().eq("id", id);
+  if (error) throw new Error(error.message);
+
+  revalidatePath("/admin");
+  revalidatePath("/rounds");
 }

@@ -23,7 +23,6 @@ export const revalidate = 0;
 export default async function AdminPage() {
   const supabase = createClient();
 
-  // Pull lists needed for dropdowns and summaries (no embedded relations).
   const [
     { data: players },
     { data: courses },
@@ -37,10 +36,7 @@ export default async function AdminPage() {
     supabase.from("courses").select("id, name, city, state").order("name"),
     supabase.from("tee_sets").select("id, name, course_id, par, rating, slope").order("name"),
     supabase.from("teams").select("id, name, school, created_at").order("name"),
-    supabase
-      .from("team_members")
-      .select("id, team_id, user_id, player_id, role, created_at")
-      .order("created_at", { ascending: false }),
+    supabase.from("team_members").select("id, team_id, user_id, player_id, role, created_at").order("created_at", { ascending: false }),
     supabase.from("profiles").select("id, full_name, default_team_id").order("full_name"),
     supabase
       .from("rounds")
@@ -55,14 +51,27 @@ export default async function AdminPage() {
 
       {/* ======== Create Entities ======== */}
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-        <Card title="Create Player">
+        {/* Create Player + optional login */}
+        <Card title="Create Player (optional login)">
           <form action={createPlayer} className="space-y-3">
             <LabeledInput name="full_name" label="Full Name" placeholder="Jane Doe" required />
             <LabeledInput name="grad_year" label="Grad Year" placeholder="2027" type="number" />
-            <Submit>Save Player</Submit>
+            <div className="mt-2 rounded border p-3">
+              <div className="mb-2 text-xs font-semibold text-gray-700">
+                Login (optional) — add email + temporary password to create an account now
+              </div>
+              <LabeledInput name="email" label="Email" placeholder="jane@example.com" type="email" />
+              <LabeledInput name="temp_password" label="Temporary Password" placeholder="min 6 characters" type="password" />
+            </div>
+            <Submit>Create Player</Submit>
           </form>
+          <p className="mt-2 text-xs text-gray-500">
+            If you supply email + temporary password, we’ll create an <code>auth.user</code>, a <code>profiles</code> row,
+            and link it to the new player in <code>user_players</code>.
+          </p>
         </Card>
 
+        {/* Create Course */}
         <Card title="Create Course">
           <form action={createCourse} className="space-y-3">
             <LabeledInput name="name" label="Course Name" placeholder="Pebble Ridge" required />
@@ -72,6 +81,7 @@ export default async function AdminPage() {
           </form>
         </Card>
 
+        {/* Create Tee Set */}
         <Card title="Create Tee Set">
           <form action={createTeeSet} className="space-y-3">
             <Select
@@ -236,10 +246,7 @@ export default async function AdminPage() {
                   </div>
                 </div>
                 <div className="flex items-center gap-2">
-                  <a
-                    href={`/rounds/${r.id}`}
-                    className="rounded border px-2 py-1 text-xs hover:bg-gray-50"
-                  >
+                  <a href={`/rounds/${r.id}`} className="rounded border px-2 py-1 text-xs hover:bg-gray-50">
                     View
                   </a>
                   <form action={deleteRound}>
@@ -256,7 +263,7 @@ export default async function AdminPage() {
         </Card>
       </div>
 
-      {/* ======== Lists with Delete buttons (Players/Courses/Tees/Teams) ======== */}
+      {/* ======== Lists with Delete buttons ======== */}
       <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
         <Card title="Players">
           <ul className="divide-y">

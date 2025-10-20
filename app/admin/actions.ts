@@ -3,6 +3,7 @@
 
 import { revalidatePath } from "next/cache";
 import { createClient } from "@/lib/supabase/server";
+import { createClient as createSupabaseAdmin } from "@supabase/supabase-js";
 
 /* ----------------------- helpers ----------------------- */
 function txt(x: FormDataEntryValue | null) {
@@ -16,15 +17,74 @@ function num(x: FormDataEntryValue | null) {
   return Number.isFinite(n) ? n : null;
 }
 
+function getAdminClient() {
+  const url = process.env.NEXT_PUBLIC_SUPABASE_URL!;
+  const key = process.env.SUPABASE_SERVICE_ROLE_KEY!;
+  if (!url || !key) {
+    throw new Error(
+      "Missing Supabase admin env. Set NEXT_PUBLIC_SUPABASE_URL and SUPABASE_SERVICE_ROLE_KEY."
+    );
+  }
+  return createSupabaseAdmin(url, key, {
+    auth: { autoRefreshToken: false, persistSession: false },
+  });
+}
+
 /* ---------------- players / courses / tees ---------------- */
 
 export async function createPlayer(formData: FormData): Promise<void> {
+  // If email/password provided, create an auth user and link to the new player.
   const supabase = createClient();
   const full_name = txt(formData.get("full_name"));
   const grad_year = num(formData.get("grad_year"));
+  const email = txt(formData.get("email"));
+  const tempPassword = txt(formData.get("temp_password"));
+
   if (!full_name) throw new Error("Full name is required.");
-  const { error } = await supabase.from("players").insert({ full_name, grad_year });
-  if (error) throw new Error(error.message);
+
+  // Create the player first so we have a player_id regardless.
+  const { data: playerRow, error: playerErr } = await supabase
+    .from("players")
+    .insert({ full_name, grad_year })
+    .select("id")
+    .maybeSingle();
+  if (playerErr) throw new Error(playerErr.message);
+  if (!playerRow) throw new Error("Failed to create player.");
+
+  // If email + password are provided, create an auth user and link it.
+  if (email && tempPassword) {
+    const admin = getAdminClient();
+
+    const { data: created, error: adminErr } = await admin.auth.admin.createUser({
+      email,
+      password: tempPassword,
+      email_confirm: true, // mark as confirmed so they can log in immediately
+      user_metadata: { full_name },
+    });
+    if (adminErr) {
+      // Roll back the player we just created to keep things tidy? Optional.
+      // await supabase.from("players").delete().eq("id", playerRow.id);
+      throw new Error(adminErr.message);
+    }
+    const user = created.user;
+    if (!user) throw new Error("Auth user creation returned no user.");
+
+    // Create/patch profile
+    const { error: profErr } = await supabase
+      .from("profiles")
+      .upsert(
+        { id: user.id, full_name, role: "player" },
+        { onConflict: "id" }
+      );
+    if (profErr) throw new Error(profErr.message);
+
+    // Link user ↔ player
+    const { error: linkErr } = await supabase
+      .from("user_players")
+      .upsert({ user_id: user.id, player_id: playerRow.id }, { onConflict: "user_id" });
+    if (linkErr) throw new Error(linkErr.message);
+  }
+
   revalidatePath("/admin");
 }
 
@@ -172,12 +232,12 @@ export async function createRound(formData: FormData): Promise<void> {
   const player_id = txt(formData.get("player_id"));
   const course_id = txt(formData.get("course_id"));
   const tee_set_id = txt(formData.get("tee_set_id"));
-  const team_id = txt(formData.get("team_id")); // optional
-  const date = txt(formData.get("date")); // yyyy-mm-dd
+  const team_id = txt(formData.get("team_id"));
+  const date = txt(formData.get("date"));
   const name = txt(formData.get("name"));
   const notes = txt(formData.get("notes"));
-  const type = txt(formData.get("type"));     // optional, defaults in DB
-  const status = txt(formData.get("status")); // optional, defaults in DB
+  const type = txt(formData.get("type"));
+  const status = txt(formData.get("status"));
 
   if (!player_id) throw new Error("player_id is required.");
   if (!course_id) throw new Error("course_id is required.");
@@ -188,11 +248,11 @@ export async function createRound(formData: FormData): Promise<void> {
     course_id,
     tee_set_id,
     team_id: team_id ?? null,
-    date: date ?? undefined,   // let DB default if no date
+    date: date ?? undefined,
     name: name ?? null,
     notes: notes ?? null,
-    type: type ?? undefined,       // rely on enum default when undefined
-    status: status ?? undefined,   // rely on enum default when undefined
+    type: type ?? undefined,
+    status: status ?? undefined,
   };
 
   const { error } = await supabase.from("rounds").insert(insert as any);
@@ -206,12 +266,8 @@ export async function deleteRound(formData: FormData): Promise<void> {
   const supabase = createClient();
   const id = txt(formData.get("id"));
   if (!id) throw new Error("round id is required.");
-
-  // NOTE: If you have ON DELETE CASCADE on child tables (shots/scores), this will cascade.
-  // If not, you may get FK errors; clean up children first or add cascades.
   const { error } = await supabase.from("rounds").delete().eq("id", id);
   if (error) throw new Error(error.message);
-
   revalidatePath("/admin");
   revalidatePath("/rounds");
 }

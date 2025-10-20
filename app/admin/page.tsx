@@ -1,30 +1,56 @@
 // app/admin/page.tsx
 import { createClient } from "@/lib/supabase/server";
-import { createPlayer, createCourse, createTeeSet } from "./actions";
+import {
+  createPlayer,
+  createCourse,
+  createTeeSet,
+  createTeam,
+  addTeamMember,
+  removeTeamMember,
+  linkUserToPlayer,
+  setDefaultTeam,
+} from "./actions";
 import Link from "next/link";
 
 export const dynamic = "force-dynamic";
 export const revalidate = 0;
 
-// This is a Server Component page. We DO NOT pass event handlers as props.
-// We attach server actions directly on <form action={...}>.
-
 export default async function AdminPage() {
   const supabase = createClient();
 
-  // We'll show a few helpful lists to grab IDs when creating tee sets
-  const [{ data: players }, { data: courses }, { data: teesets }] = await Promise.all([
+  // pull basic lists (no embedded relations to avoid schema cache issues)
+  const [
+    { data: players },
+    { data: courses },
+    { data: teeSets },
+    { data: teams },
+    { data: teamMembers },
+  ] = await Promise.all([
     supabase.from("players").select("id, full_name").order("full_name", { ascending: true }),
     supabase.from("courses").select("id, name, city, state").order("name", { ascending: true }),
     supabase.from("tee_sets").select("id, name, course_id, par, rating, slope").order("name", { ascending: true }),
+    supabase.from("teams").select("id, name, school, created_at").order("name", { ascending: true }),
+    supabase
+      .from("team_members")
+      .select("id, team_id, user_id, player_id, role, created_at")
+      .order("created_at", { ascending: false }),
   ]);
+
+  // group team members by team for display
+  const membersByTeam = new Map<string, typeof teamMembers>();
+  (teamMembers ?? []).forEach((m) => {
+    const list = membersByTeam.get(m.team_id) ?? [];
+    list.push(m);
+    membersByTeam.set(m.team_id, list as any);
+  });
 
   return (
     <div className="mx-auto max-w-6xl p-6 space-y-10">
       <h1 className="text-2xl font-semibold">Admin</h1>
 
+      {/* ---------- Creation forms row ---------- */}
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-        {/* Create Player */}
+        {/* Players */}
         <Card title="Create Player">
           <form action={createPlayer} className="space-y-3">
             <LabeledInput name="full_name" label="Full Name" placeholder="Jane Doe" required />
@@ -33,7 +59,7 @@ export default async function AdminPage() {
           </form>
         </Card>
 
-        {/* Create Course */}
+        {/* Courses */}
         <Card title="Create Course">
           <form action={createCourse} className="space-y-3">
             <LabeledInput name="name" label="Course Name" placeholder="Pebble Ridge" required />
@@ -43,7 +69,7 @@ export default async function AdminPage() {
           </form>
         </Card>
 
-        {/* Create Tee Set */}
+        {/* Tee Set */}
         <Card title="Create Tee Set">
           <form action={createTeeSet} className="space-y-3">
             <LabeledInput name="course_id" label="Course ID" placeholder="paste course id..." required />
@@ -57,60 +83,129 @@ export default async function AdminPage() {
         </Card>
       </div>
 
-      {/* Helpful Lists */}
+      {/* ---------- Team management ---------- */}
+      <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+        {/* Create Team */}
+        <Card title="Create Team">
+          <form action={createTeam} className="space-y-3">
+            <LabeledInput name="team_name" label="Team Name" placeholder="MGC Varsity" required />
+            <LabeledInput name="school" label="School" placeholder="Midwest Golf College" />
+            <Submit>Create Team</Submit>
+          </form>
+        </Card>
+
+        {/* Add Team Member */}
+        <Card title="Add Team Member">
+          <form action={addTeamMember} className="space-y-3">
+            <LabeledInput name="team_id" label="Team ID" placeholder="team uuid..." required />
+            <LabeledInput name="user_id" label="User ID (optional)" placeholder="auth.users uuid..." />
+            <LabeledInput name="player_id" label="Player ID (optional)" placeholder="players uuid..." />
+            <LabeledInput name="role" label="Role" placeholder="player | coach | admin" />
+            <Submit>Add Member</Submit>
+          </form>
+          <p className="mt-2 text-xs text-gray-500">
+            Provide either <code>user_id</code> or <code>player_id</code> (or both). Defaults role to{" "}
+            <code>player</code>.
+          </p>
+        </Card>
+
+        {/* Remove Team Member */}
+        <Card title="Remove Team Member">
+          <form action={removeTeamMember} className="space-y-3">
+            <LabeledInput name="member_id" label="Team Member ID" placeholder="team_members uuid..." required />
+            <Submit>Remove Member</Submit>
+          </form>
+        </Card>
+      </div>
+
+      {/* ---------- Identity helpers ---------- */}
+      <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+        <Card title="Link User ↔ Player">
+          <form action={linkUserToPlayer} className="space-y-3">
+            <LabeledInput name="user_id" label="User ID" placeholder="auth.users uuid..." required />
+            <LabeledInput name="player_id" label="Player ID" placeholder="players uuid..." required />
+            <Submit>Link</Submit>
+          </form>
+          <p className="mt-2 text-xs text-gray-500">
+            Writes to <code>user_players</code> (PK=user_id).
+          </p>
+        </Card>
+
+        <Card title="Set Default Team (Profile)">
+          <form action={setDefaultTeam} className="space-y-3">
+            <LabeledInput name="user_id" label="User ID" placeholder="auth.users uuid..." required />
+            <LabeledInput name="team_id" label="Team ID" placeholder="team uuid..." required />
+            <Submit>Set Default Team</Submit>
+          </form>
+          <p className="mt-2 text-xs text-gray-500">
+            Updates <code>profiles.default_team_id</code> for the given user.
+          </p>
+        </Card>
+      </div>
+
+      {/* ---------- Helpful lists ---------- */}
       <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-        <Card title="Players">
-          <ul className="space-y-1">
-            {(players ?? []).map((p) => (
-              <li key={p.id} className="flex items-center justify-between">
-                <span>{p.full_name}</span>
-                <code className="rounded bg-gray-100 px-1 py-0.5 text-xs">{p.id}</code>
+        <Card title="Teams">
+          <ul className="space-y-2">
+            {(teams ?? []).map((t) => (
+              <li key={t.id} className="flex items-start justify-between">
+                <div>
+                  <div className="font-medium">{t.name}</div>
+                  <div className="text-xs text-gray-600">
+                    {t.school ?? "—"} · created {new Date(t.created_at).toLocaleString()}
+                  </div>
+                </div>
+                <code className="rounded bg-gray-100 px-1 py-0.5 text-xs">{t.id}</code>
               </li>
             ))}
-            {(!players || players.length === 0) && <li className="text-sm text-gray-500">No players yet.</li>}
+            {(!teams || teams.length === 0) && (
+              <li className="text-sm text-gray-500">No teams yet.</li>
+            )}
           </ul>
         </Card>
 
-        <Card title="Courses">
-          <ul className="space-y-1">
-            {(courses ?? []).map((c) => (
-              <li key={c.id} className="flex items-center justify-between">
-                <span>
-                  {c.name}
-                  {c.city ? ` — ${c.city}` : ""}{c.state ? `, ${c.state}` : ""}
-                </span>
-                <code className="rounded bg-gray-100 px-1 py-0.5 text-xs">{c.id}</code>
+        <Card title="Team Members (latest first)">
+          <ul className="space-y-2">
+            {(teamMembers ?? []).map((m) => (
+              <li key={m.id} className="flex items-start justify-between">
+                <div className="text-sm">
+                  <div>
+                    <span className="font-medium">{m.role}</span> — team:
+                    <code className="ml-1 rounded bg-gray-100 px-1 py-0.5 text-xs">{m.team_id}</code>
+                  </div>
+                  <div className="text-xs text-gray-600">
+                    user:
+                    <code className="ml-1 rounded bg-gray-100 px-1 py-0.5 text-xs">
+                      {m.user_id ?? "—"}
+                    </code>{" "}
+                    · player:
+                    <code className="ml-1 rounded bg-gray-100 px-1 py-0.5 text-xs">
+                      {m.player_id ?? "—"}
+                    </code>{" "}
+                    · {new Date(m.created_at).toLocaleString()}
+                  </div>
+                </div>
+                <code className="rounded bg-gray-100 px-1 py-0.5 text-xs">{m.id}</code>
               </li>
             ))}
-            {(!courses || courses.length === 0) && <li className="text-sm text-gray-500">No courses yet.</li>}
+            {(!teamMembers || teamMembers.length === 0) && (
+              <li className="text-sm text-gray-500">No members yet.</li>
+            )}
           </ul>
         </Card>
       </div>
 
-      <div className="grid grid-cols-1 gap-6">
-        <Card title="Tee Sets">
-          <ul className="space-y-1">
-            {(teesets ?? []).map((t) => (
-              <li key={t.id} className="flex items-center justify-between">
-                <span>
-                  {t.name} — par {t.par}
-                  {t.rating ? `, rating ${t.rating}` : ""}
-                  {t.slope ? `, slope ${t.slope}` : ""}{" "}
-                  <Link href={`/courses`} className="text-blue-600 underline ml-2">
-                    course:{t.course_id}
-                  </Link>
-                </span>
-                <code className="rounded bg-gray-100 px-1 py-0.5 text-xs">{t.id}</code>
-              </li>
-            ))}
-            {(!teesets || teesets.length === 0) && <li className="text-sm text-gray-500">No tee sets yet.</li>}
-          </ul>
-        </Card>
+      {/* quick links */}
+      <div className="pt-4">
+        <Link href="/teams" className="text-blue-600 underline">
+          Go to Teams page
+        </Link>
       </div>
     </div>
   );
 }
 
+/* --------------------------- UI bits --------------------------- */
 function Card({ title, children }: { title: string; children: React.ReactNode }) {
   return (
     <div className="rounded-xl border bg-white p-4 shadow-sm">

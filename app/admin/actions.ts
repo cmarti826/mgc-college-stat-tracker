@@ -4,7 +4,7 @@
 import { revalidatePath } from "next/cache";
 import { createClient } from "@/lib/supabase/server";
 
-/* ----------------------- small helpers ----------------------- */
+/* ----------------------- helpers ----------------------- */
 function txt(x: FormDataEntryValue | null) {
   const s = (x ?? "").toString().trim();
   return s.length ? s : null;
@@ -16,18 +16,24 @@ function num(x: FormDataEntryValue | null) {
   return Number.isFinite(n) ? n : null;
 }
 
-/* --------------------- players / courses --------------------- */
+/* ---------------- players / courses / tees ---------------- */
 
 export async function createPlayer(formData: FormData): Promise<void> {
   const supabase = createClient();
   const full_name = txt(formData.get("full_name"));
   const grad_year = num(formData.get("grad_year"));
   if (!full_name) throw new Error("Full name is required.");
-
   const { error } = await supabase.from("players").insert({ full_name, grad_year });
   if (error) throw new Error(error.message);
+  revalidatePath("/admin");
+}
 
-  revalidatePath("/players");
+export async function deletePlayer(formData: FormData): Promise<void> {
+  const supabase = createClient();
+  const id = txt(formData.get("id"));
+  if (!id) throw new Error("Player id is required.");
+  const { error } = await supabase.from("players").delete().eq("id", id);
+  if (error) throw new Error(error.message);
   revalidatePath("/admin");
 }
 
@@ -37,11 +43,17 @@ export async function createCourse(formData: FormData): Promise<void> {
   const city = txt(formData.get("city"));
   const state = txt(formData.get("state"));
   if (!name) throw new Error("Course name is required.");
-
   const { error } = await supabase.from("courses").insert({ name, city, state });
   if (error) throw new Error(error.message);
+  revalidatePath("/admin");
+}
 
-  revalidatePath("/courses");
+export async function deleteCourse(formData: FormData): Promise<void> {
+  const supabase = createClient();
+  const id = txt(formData.get("id"));
+  if (!id) throw new Error("Course id is required.");
+  const { error } = await supabase.from("courses").delete().eq("id", id);
+  if (error) throw new Error(error.message);
   revalidatePath("/admin");
 }
 
@@ -68,8 +80,15 @@ export async function createTeeSet(formData: FormData): Promise<void> {
     tee_name: name,
   });
   if (error) throw new Error(error.message);
+  revalidatePath("/admin");
+}
 
-  revalidatePath("/courses");
+export async function deleteTeeSet(formData: FormData): Promise<void> {
+  const supabase = createClient();
+  const id = txt(formData.get("id"));
+  if (!id) throw new Error("Tee set id is required.");
+  const { error } = await supabase.from("tee_sets").delete().eq("id", id);
+  if (error) throw new Error(error.message);
   revalidatePath("/admin");
 }
 
@@ -80,26 +99,30 @@ export async function createTeam(formData: FormData): Promise<void> {
   const name = txt(formData.get("team_name"));
   const school = txt(formData.get("school"));
   if (!name) throw new Error("Team name is required.");
-
   const { error } = await supabase.from("teams").insert({ name, school });
   if (error) throw new Error(error.message);
+  revalidatePath("/admin");
+}
 
-  revalidatePath("/teams");
+export async function deleteTeam(formData: FormData): Promise<void> {
+  const supabase = createClient();
+  const id = txt(formData.get("id"));
+  if (!id) throw new Error("Team id is required.");
+  // Will cascade-block if FK references exist; handle data first if needed.
+  const { error } = await supabase.from("teams").delete().eq("id", id);
+  if (error) throw new Error(error.message);
   revalidatePath("/admin");
 }
 
 export async function addTeamMember(formData: FormData): Promise<void> {
   const supabase = createClient();
   const team_id = txt(formData.get("team_id"));
-  const user_id = txt(formData.get("user_id"));     // optional
-  const player_id = txt(formData.get("player_id")); // optional
-  const role = (txt(formData.get("role")) ?? "player") as
-    | "player"
-    | "coach"
-    | "admin";
+  const user_id = txt(formData.get("user_id"));
+  const player_id = txt(formData.get("player_id"));
+  const role = (txt(formData.get("role")) ?? "player") as "player" | "coach" | "admin";
 
   if (!team_id) throw new Error("team_id is required.");
-  if (!user_id && !player_id) throw new Error("Provide either user_id or player_id.");
+  if (!user_id && !player_id) throw new Error("Choose a user or a player.");
 
   const { error } = await supabase.from("team_members").insert({
     team_id,
@@ -108,8 +131,6 @@ export async function addTeamMember(formData: FormData): Promise<void> {
     role,
   });
   if (error) throw new Error(error.message);
-
-  revalidatePath("/teams");
   revalidatePath("/admin");
 }
 
@@ -117,42 +138,29 @@ export async function removeTeamMember(formData: FormData): Promise<void> {
   const supabase = createClient();
   const member_id = txt(formData.get("member_id"));
   if (!member_id) throw new Error("member_id is required.");
-
   const { error } = await supabase.from("team_members").delete().eq("id", member_id);
   if (error) throw new Error(error.message);
-
-  revalidatePath("/teams");
-  revalidatePath("/admin");
-}
-
-export async function setDefaultTeam(formData: FormData): Promise<void> {
-  // sets profiles.default_team_id for an auth user
-  const supabase = createClient();
-  const user_id = txt(formData.get("user_id"));
-  const team_id = txt(formData.get("team_id"));
-  if (!user_id || !team_id) throw new Error("user_id and team_id are required.");
-
-  const { error } = await supabase
-    .from("profiles")
-    .update({ default_team_id: team_id })
-    .eq("id", user_id);
-  if (error) throw new Error(error.message);
-
   revalidatePath("/admin");
 }
 
 export async function linkUserToPlayer(formData: FormData): Promise<void> {
-  // inserts/updates user_players mapping
   const supabase = createClient();
   const user_id = txt(formData.get("user_id"));
   const player_id = txt(formData.get("player_id"));
   if (!user_id || !player_id) throw new Error("user_id and player_id are required.");
-
-  // upsert by PK (user_id)
   const { error } = await supabase
     .from("user_players")
     .upsert({ user_id, player_id }, { onConflict: "user_id" });
   if (error) throw new Error(error.message);
+  revalidatePath("/admin");
+}
 
+export async function setDefaultTeam(formData: FormData): Promise<void> {
+  const supabase = createClient();
+  const user_id = txt(formData.get("user_id"));
+  const team_id = txt(formData.get("team_id"));
+  if (!user_id || !team_id) throw new Error("user_id and team_id are required.");
+  const { error } = await supabase.from("profiles").update({ default_team_id: team_id }).eq("id", user_id);
+  if (error) throw new Error(error.message);
   revalidatePath("/admin");
 }

@@ -2,15 +2,18 @@
 import { createClient } from "@/lib/supabase/server";
 import {
   createPlayer,
+  deletePlayer,
   createCourse,
+  deleteCourse,
   createTeeSet,
+  deleteTeeSet,
   createTeam,
+  deleteTeam,
   addTeamMember,
   removeTeamMember,
   linkUserToPlayer,
   setDefaultTeam,
 } from "./actions";
-import Link from "next/link";
 
 export const dynamic = "force-dynamic";
 export const revalidate = 0;
@@ -18,39 +21,29 @@ export const revalidate = 0;
 export default async function AdminPage() {
   const supabase = createClient();
 
-  // pull basic lists (no embedded relations to avoid schema cache issues)
+  // pull lists (avoid embedded relations to keep it robust)
   const [
     { data: players },
     { data: courses },
     { data: teeSets },
     { data: teams },
     { data: teamMembers },
+    { data: profiles }, // users to pick from (via profiles)
   ] = await Promise.all([
-    supabase.from("players").select("id, full_name").order("full_name", { ascending: true }),
-    supabase.from("courses").select("id, name, city, state").order("name", { ascending: true }),
-    supabase.from("tee_sets").select("id, name, course_id, par, rating, slope").order("name", { ascending: true }),
-    supabase.from("teams").select("id, name, school, created_at").order("name", { ascending: true }),
-    supabase
-      .from("team_members")
-      .select("id, team_id, user_id, player_id, role, created_at")
-      .order("created_at", { ascending: false }),
+    supabase.from("players").select("id, full_name, grad_year").order("full_name"),
+    supabase.from("courses").select("id, name, city, state").order("name"),
+    supabase.from("tee_sets").select("id, name, course_id, par, rating, slope").order("name"),
+    supabase.from("teams").select("id, name, school, created_at").order("name"),
+    supabase.from("team_members").select("id, team_id, user_id, player_id, role, created_at").order("created_at", { ascending: false }),
+    supabase.from("profiles").select("id, full_name, default_team_id").order("full_name"),
   ]);
-
-  // group team members by team for display
-  const membersByTeam = new Map<string, typeof teamMembers>();
-  (teamMembers ?? []).forEach((m) => {
-    const list = membersByTeam.get(m.team_id) ?? [];
-    list.push(m);
-    membersByTeam.set(m.team_id, list as any);
-  });
 
   return (
     <div className="mx-auto max-w-6xl p-6 space-y-10">
       <h1 className="text-2xl font-semibold">Admin</h1>
 
-      {/* ---------- Creation forms row ---------- */}
+      {/* ======== Create Entities ======== */}
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-        {/* Players */}
         <Card title="Create Player">
           <form action={createPlayer} className="space-y-3">
             <LabeledInput name="full_name" label="Full Name" placeholder="Jane Doe" required />
@@ -59,7 +52,6 @@ export default async function AdminPage() {
           </form>
         </Card>
 
-        {/* Courses */}
         <Card title="Create Course">
           <form action={createCourse} className="space-y-3">
             <LabeledInput name="name" label="Course Name" placeholder="Pebble Ridge" required />
@@ -69,10 +61,10 @@ export default async function AdminPage() {
           </form>
         </Card>
 
-        {/* Tee Set */}
         <Card title="Create Tee Set">
           <form action={createTeeSet} className="space-y-3">
-            <LabeledInput name="course_id" label="Course ID" placeholder="paste course id..." required />
+            <Select name="course_id" label="Course" required
+              options={(courses ?? []).map(c => ({ value: c.id, label: `${c.name}${c.city ? ` — ${c.city}` : ""}${c.state ? `, ${c.state}` : ""}` }))} />
             <LabeledInput name="tee_name" label="Tee Name" placeholder="Blue" required />
             <LabeledInput name="par" label="Par" type="number" placeholder="72" required />
             <LabeledInput name="rating" label="Rating" type="number" step="0.1" placeholder="71.3" />
@@ -83,9 +75,8 @@ export default async function AdminPage() {
         </Card>
       </div>
 
-      {/* ---------- Team management ---------- */}
+      {/* ======== Team Management ======== */}
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-        {/* Create Team */}
         <Card title="Create Team">
           <form action={createTeam} className="space-y-3">
             <LabeledInput name="team_name" label="Team Name" placeholder="MGC Varsity" required />
@@ -94,118 +85,200 @@ export default async function AdminPage() {
           </form>
         </Card>
 
-        {/* Add Team Member */}
-        <Card title="Add Team Member">
+        <Card title="Add Team Member (dropdowns)">
           <form action={addTeamMember} className="space-y-3">
-            <LabeledInput name="team_id" label="Team ID" placeholder="team uuid..." required />
-            <LabeledInput name="user_id" label="User ID (optional)" placeholder="auth.users uuid..." />
-            <LabeledInput name="player_id" label="Player ID (optional)" placeholder="players uuid..." />
-            <LabeledInput name="role" label="Role" placeholder="player | coach | admin" />
+            <Select
+              name="team_id"
+              label="Team"
+              required
+              options={(teams ?? []).map(t => ({ value: t.id, label: `${t.name}${t.school ? ` — ${t.school}` : ""}` }))}
+            />
+            <Select
+              name="player_id"
+              label="Player (optional)"
+              options={[{ value: "", label: "— none —" }, ...(players ?? []).map(p => ({ value: p.id, label: p.full_name }))]}
+            />
+            <Select
+              name="user_id"
+              label="User (from profiles, optional)"
+              options={[{ value: "", label: "— none —" }, ...(profiles ?? []).map(u => ({ value: u.id, label: u.full_name ?? u.id }))]}
+            />
+            <Select
+              name="role"
+              label="Role"
+              options={[
+                { value: "player", label: "player" },
+                { value: "coach", label: "coach" },
+                { value: "admin", label: "admin" },
+              ]}
+            />
             <Submit>Add Member</Submit>
           </form>
           <p className="mt-2 text-xs text-gray-500">
-            Provide either <code>user_id</code> or <code>player_id</code> (or both). Defaults role to{" "}
-            <code>player</code>.
+            Provide a Team, then either a Player, a User, or both.
           </p>
         </Card>
 
-        {/* Remove Team Member */}
-        <Card title="Remove Team Member">
-          <form action={removeTeamMember} className="space-y-3">
-            <LabeledInput name="member_id" label="Team Member ID" placeholder="team_members uuid..." required />
-            <Submit>Remove Member</Submit>
-          </form>
+        <Card title="Link User ↔ Player / Set Default Team">
+          <div className="space-y-4">
+            <form action={linkUserToPlayer} className="space-y-3">
+              <Select
+                name="user_id"
+                label="User"
+                required
+                options={(profiles ?? []).map(u => ({ value: u.id, label: u.full_name ?? u.id }))}
+              />
+              <Select
+                name="player_id"
+                label="Player"
+                required
+                options={(players ?? []).map(p => ({ value: p.id, label: p.full_name }))}
+              />
+              <Submit>Link User ↔ Player</Submit>
+            </form>
+
+            <form action={setDefaultTeam} className="space-y-3">
+              <Select
+                name="user_id"
+                label="User"
+                required
+                options={(profiles ?? []).map(u => ({ value: u.id, label: u.full_name ?? u.id }))}
+              />
+              <Select
+                name="team_id"
+                label="Default Team"
+                required
+                options={(teams ?? []).map(t => ({ value: t.id, label: t.name }))}
+              />
+              <Submit>Set Default Team</Submit>
+            </form>
+          </div>
         </Card>
       </div>
 
-      {/* ---------- Identity helpers ---------- */}
-      <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-        <Card title="Link User ↔ Player">
-          <form action={linkUserToPlayer} className="space-y-3">
-            <LabeledInput name="user_id" label="User ID" placeholder="auth.users uuid..." required />
-            <LabeledInput name="player_id" label="Player ID" placeholder="players uuid..." required />
-            <Submit>Link</Submit>
-          </form>
-          <p className="mt-2 text-xs text-gray-500">
-            Writes to <code>user_players</code> (PK=user_id).
-          </p>
-        </Card>
-
-        <Card title="Set Default Team (Profile)">
-          <form action={setDefaultTeam} className="space-y-3">
-            <LabeledInput name="user_id" label="User ID" placeholder="auth.users uuid..." required />
-            <LabeledInput name="team_id" label="Team ID" placeholder="team uuid..." required />
-            <Submit>Set Default Team</Submit>
-          </form>
-          <p className="mt-2 text-xs text-gray-500">
-            Updates <code>profiles.default_team_id</code> for the given user.
-          </p>
-        </Card>
-      </div>
-
-      {/* ---------- Helpful lists ---------- */}
+      {/* ======== Lists with Delete buttons ======== */}
       <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-        <Card title="Teams">
-          <ul className="space-y-2">
-            {(teams ?? []).map((t) => (
-              <li key={t.id} className="flex items-start justify-between">
+        <Card title="Players">
+          <ul className="divide-y">
+            {(players ?? []).map((p) => (
+              <li key={p.id} className="flex items-center justify-between py-2">
                 <div>
-                  <div className="font-medium">{t.name}</div>
-                  <div className="text-xs text-gray-600">
-                    {t.school ?? "—"} · created {new Date(t.created_at).toLocaleString()}
-                  </div>
+                  <div className="font-medium">{p.full_name}</div>
+                  <div className="text-xs text-gray-600">grad: {p.grad_year ?? "—"}</div>
                 </div>
-                <code className="rounded bg-gray-100 px-1 py-0.5 text-xs">{t.id}</code>
+                <div className="flex items-center gap-2">
+                  <code className="rounded bg-gray-100 px-1 py-0.5 text-xs">{p.id}</code>
+                  <form action={deletePlayer}>
+                    <input type="hidden" name="id" value={p.id} />
+                    <Danger>Delete</Danger>
+                  </form>
+                </div>
               </li>
             ))}
-            {(!teams || teams.length === 0) && (
-              <li className="text-sm text-gray-500">No teams yet.</li>
-            )}
+            {(!players || players.length === 0) && <li className="py-2 text-sm text-gray-500">No players yet.</li>}
           </ul>
         </Card>
 
-        <Card title="Team Members (latest first)">
-          <ul className="space-y-2">
-            {(teamMembers ?? []).map((m) => (
-              <li key={m.id} className="flex items-start justify-between">
-                <div className="text-sm">
-                  <div>
-                    <span className="font-medium">{m.role}</span> — team:
-                    <code className="ml-1 rounded bg-gray-100 px-1 py-0.5 text-xs">{m.team_id}</code>
-                  </div>
+        <Card title="Courses">
+          <ul className="divide-y">
+            {(courses ?? []).map((c) => (
+              <li key={c.id} className="flex items-center justify-between py-2">
+                <div>
+                  <div className="font-medium">{c.name}</div>
                   <div className="text-xs text-gray-600">
-                    user:
-                    <code className="ml-1 rounded bg-gray-100 px-1 py-0.5 text-xs">
-                      {m.user_id ?? "—"}
-                    </code>{" "}
-                    · player:
-                    <code className="ml-1 rounded bg-gray-100 px-1 py-0.5 text-xs">
-                      {m.player_id ?? "—"}
-                    </code>{" "}
-                    · {new Date(m.created_at).toLocaleString()}
+                    {c.city ?? "—"}{c.state ? `, ${c.state}` : ""}
                   </div>
                 </div>
-                <code className="rounded bg-gray-100 px-1 py-0.5 text-xs">{m.id}</code>
+                <div className="flex items-center gap-2">
+                  <code className="rounded bg-gray-100 px-1 py-0.5 text-xs">{c.id}</code>
+                  <form action={deleteCourse}>
+                    <input type="hidden" name="id" value={c.id} />
+                    <Danger>Delete</Danger>
+                  </form>
+                </div>
               </li>
             ))}
-            {(!teamMembers || teamMembers.length === 0) && (
-              <li className="text-sm text-gray-500">No members yet.</li>
-            )}
+            {(!courses || courses.length === 0) && <li className="py-2 text-sm text-gray-500">No courses yet.</li>}
           </ul>
         </Card>
       </div>
 
-      {/* quick links */}
-      <div className="pt-4">
-        <Link href="/teams" className="text-blue-600 underline">
-          Go to Teams page
-        </Link>
+      <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+        <Card title="Tee Sets">
+          <ul className="divide-y">
+            {(teeSets ?? []).map((t) => (
+              <li key={t.id} className="flex items-center justify-between py-2">
+                <div>
+                  <div className="font-medium">{t.name} — par {t.par}</div>
+                  <div className="text-xs text-gray-600">
+                    rating {t.rating ?? "—"}, slope {t.slope ?? "—"} · course {t.course_id}
+                  </div>
+                </div>
+                <div className="flex items-center gap-2">
+                  <code className="rounded bg-gray-100 px-1 py-0.5 text-xs">{t.id}</code>
+                  <form action={deleteTeeSet}>
+                    <input type="hidden" name="id" value={t.id} />
+                    <Danger>Delete</Danger>
+                  </form>
+                </div>
+              </li>
+            ))}
+            {(!teeSets || teeSets.length === 0) && <li className="py-2 text-sm text-gray-500">No tee sets yet.</li>}
+          </ul>
+        </Card>
+
+        <Card title="Teams & Members">
+          <ul className="divide-y">
+            {(teams ?? []).map((t) => (
+              <li key={t.id} className="py-2">
+                <div className="flex items-center justify-between">
+                  <div>
+                    <div className="font-medium">{t.name}</div>
+                    <div className="text-xs text-gray-600">{t.school ?? "—"}</div>
+                  </div>
+                  <div className="flex items-center gap-2">
+                    <code className="rounded bg-gray-100 px-1 py-0.5 text-xs">{t.id}</code>
+                    <form action={deleteTeam}>
+                      <input type="hidden" name="id" value={t.id} />
+                      <Danger>Delete</Danger>
+                    </form>
+                  </div>
+                </div>
+
+                {/* members for this team */}
+                <div className="ml-2 mt-2 border-l pl-3">
+                  {(teamMembers ?? [])
+                    .filter((m) => m.team_id === t.id)
+                    .map((m) => (
+                      <div key={m.id} className="flex items-center justify-between py-1 text-sm">
+                        <div>
+                          <span className="font-medium">{m.role}</span>{" "}
+                          <span className="text-gray-600">
+                            user:{m.user_id ?? "—"} · player:{m.player_id ?? "—"}
+                          </span>
+                        </div>
+                        <form action={removeTeamMember}>
+                          <input type="hidden" name="member_id" value={m.id} />
+                          <DangerSmall>Remove</DangerSmall>
+                        </form>
+                      </div>
+                    ))}
+                  {(teamMembers ?? []).filter((m) => m.team_id === t.id).length === 0 && (
+                    <div className="py-1 text-xs text-gray-500">No members.</div>
+                  )}
+                </div>
+              </li>
+            ))}
+            {(!teams || teams.length === 0) && <li className="py-2 text-sm text-gray-500">No teams yet.</li>}
+          </ul>
+        </Card>
       </div>
     </div>
   );
 }
 
 /* --------------------------- UI bits --------------------------- */
+
 function Card({ title, children }: { title: string; children: React.ReactNode }) {
   return (
     <div className="rounded-xl border bg-white p-4 shadow-sm">
@@ -228,9 +301,49 @@ function LabeledInput(props: React.InputHTMLAttributes<HTMLInputElement> & { lab
   );
 }
 
+function Select({
+  label,
+  options,
+  ...rest
+}: React.SelectHTMLAttributes<HTMLSelectElement> & {
+  label: string;
+  options: { value: string; label: string }[];
+}) {
+  return (
+    <label className="block space-y-1">
+      <span className="text-xs text-gray-600">{label}</span>
+      <select
+        className="w-full rounded border px-3 py-2 text-sm focus:outline-none focus:ring bg-white"
+        {...rest}
+      >
+        {options.map((o) => (
+          <option key={o.value ?? o.label} value={o.value}>
+            {o.label}
+          </option>
+        ))}
+      </select>
+    </label>
+  );
+}
+
 function Submit({ children }: { children: React.ReactNode }) {
   return (
     <button type="submit" className="rounded bg-black px-3 py-2 text-white text-sm hover:opacity-90">
+      {children}
+    </button>
+  );
+}
+
+function Danger({ children }: { children: React.ReactNode }) {
+  return (
+    <button type="submit" className="rounded bg-red-600 px-3 py-2 text-white text-sm hover:opacity-90">
+      {children}
+    </button>
+  );
+}
+function DangerSmall({ children }: { children: React.ReactNode }) {
+  return (
+    <button type="submit" className="rounded bg-red-600 px-2 py-1 text-white text-xs hover:opacity-90">
       {children}
     </button>
   );

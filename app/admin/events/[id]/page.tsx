@@ -13,12 +13,17 @@ async function fetchAll(id: string) {
     supabase.from("teams").select("id, name").order("name"),
   ]);
 
+  // Players filtered by event.team_id if set
   let players: any[] = [];
   if (event?.team_id) {
-    const { data } = await supabase.from("players").select("id, first_name, last_name, team_id").eq("team_id", event.team_id).order("last_name");
+    const { data } = await supabase
+      .from("players").select("id, first_name, last_name, team_id")
+      .eq("team_id", event.team_id).order("last_name");
     players = data ?? [];
   } else {
-    const { data } = await supabase.from("players").select("id, first_name, last_name, team_id").order("last_name");
+    const { data } = await supabase
+      .from("players").select("id, first_name, last_name, team_id")
+      .order("last_name");
     players = data ?? [];
   }
 
@@ -30,10 +35,14 @@ async function fetchAll(id: string) {
 
   const { data: linked } = await supabase
     .from("event_rounds")
-    .select(`id, round_id, round_number, day, rounds!inner(id, player_id, name, round_date, date, course_id, tee_id)`)
+    .select(`
+      id, round_id, round_number, day,
+      rounds!inner(id, player_id, name, round_date, date, course_id, tee_id)
+    `)
     .eq("event_id", id)
     .order("day", { ascending: true });
 
+  // Eligible rounds to link: unlinked, within dates, same team (if set)
   let q = supabase
     .from("rounds")
     .select("id, player_id, name, round_date, date, course_id, tee_id, team_id, event_id")
@@ -51,22 +60,39 @@ async function fetchAll(id: string) {
     supabase.from("courses").select("id, name"),
   ]);
 
-  return { event, courses: courses ?? [], teams: teams ?? [], players, roster: roster ?? [], linked: linked ?? [], eligible: eligible ?? [], tees: tees ?? [], courseList: courseList ?? [] };
+  return {
+    event,
+    courses: courses ?? [],
+    teams: teams ?? [],
+    players,
+    roster: roster ?? [],
+    linked: linked ?? [],
+    eligible: eligible ?? [],
+    tees: tees ?? [],
+    courseList: courseList ?? [],
+  };
 }
 
 async function updateEvent(id: string, formData: FormData) {
   "use server";
   const supabase = await createClient();
-  const patch = {
-    name: String(formData.get("name") || "").trim(),
-    event_type: String(formData.get("event_type") || "").trim() || null,
-    start_date: String(formData.get("start_date") || ""),
-    end_date: String(formData.get("end_date") || ""),
-    course_id: String(formData.get("course_id") || ""),
-    team_id: String(formData.get("team_id") || ""),
-  };
+
+  const name = String(formData.get("name") || "").trim();
+  const start_date = String(formData.get("start_date") || "");
+  const end_date = String(formData.get("end_date") || "");
+  const course_id = String(formData.get("course_id") || "");
+  const team_id = String(formData.get("team_id") || "");
+
+  // sanitize event_type; omit if invalid/blank
+  const rawType = String(formData.get("event_type") || "").trim().toUpperCase();
+  const allowed = new Set(["TOURNAMENT", "QUALIFYING", "PRACTICE"]);
+
+  const patch: any = { name, start_date, end_date, course_id, team_id };
+  if (allowed.has(rawType)) patch.event_type = rawType;
+
   const { error } = await supabase.from("events").update(patch).eq("id", id);
   if (error) throw error;
+
   revalidatePath(`/admin/events/${id}`);
 }
 
@@ -102,8 +128,13 @@ async function linkRound(eventId: string, formData: FormData) {
   const round_id = String(formData.get("round_id") || "");
   const round_number = formData.get("round_number") ? Number(formData.get("round_number")) : null;
   const day = String(formData.get("day") || "") || null;
+
   if (!round_id) throw new Error("Select a round to link.");
-  const { error } = await supabase.from("event_rounds").insert({ event_id: eventId, round_id, round_number, day });
+
+  const { error } = await supabase
+    .from("event_rounds")
+    .insert({ event_id: eventId, round_id, round_number, day });
+
   if (error) throw error;
   revalidatePath(`/admin/events/${eventId}`);
 }
@@ -120,8 +151,10 @@ export default async function AdminEventDetail({ params }: { params: { id: strin
   const { id } = params;
   const { event, courses, teams, players, roster, linked, eligible, tees, courseList } = await fetchAll(id);
 
-  const courseName = (cid: string | null | undefined) => courseList.find((c: any) => c.id === cid)?.name ?? "—";
-  const teeName = (tid: string | null | undefined) => tees.find((t: any) => t.id === tid)?.name ?? "—";
+  const courseName = (cid: string | null | undefined) =>
+    courseList.find((c: any) => c.id === cid)?.name ?? "—";
+  const teeName = (tid: string | null | undefined) =>
+    tees.find((t: any) => t.id === tid)?.name ?? "—";
 
   return (
     <div className="p-6 space-y-6">
@@ -137,6 +170,7 @@ export default async function AdminEventDetail({ params }: { params: { id: strin
       </div>
 
       <section className="grid md:grid-cols-2 gap-6">
+        {/* Edit */}
         <div className="rounded-2xl border p-4 bg-white">
           <h2 className="font-semibold mb-3">Edit Event</h2>
           <form action={updateEvent.bind(null, id)} className="space-y-3">
@@ -147,12 +181,23 @@ export default async function AdminEventDetail({ params }: { params: { id: strin
             <div className="grid grid-cols-2 gap-3">
               <div>
                 <label className="block text-sm">Type</label>
-                <input name="event_type" defaultValue={event.event_type ?? ""} className="w-full border rounded p-2" />
+                <select
+                  name="event_type"
+                  defaultValue={event.event_type ?? ""}
+                  className="w-full border rounded p-2"
+                >
+                  <option value="">(leave unchanged or default)</option>
+                  <option value="TOURNAMENT">TOURNAMENT</option>
+                  <option value="QUALIFYING">QUALIFYING</option>
+                  <option value="PRACTICE">PRACTICE</option>
+                </select>
               </div>
               <div>
                 <label className="block text-sm">Course</label>
                 <select name="course_id" defaultValue={event.course_id ?? ""} className="w-full border rounded p-2">
-                  {courses?.map((c: any) => <option key={c.id} value={c.id}>{c.name}</option>)}
+                  {courses?.map((c: any) => (
+                    <option key={c.id} value={c.id}>{c.name}</option>
+                  ))}
                 </select>
               </div>
               <div>
@@ -166,7 +211,9 @@ export default async function AdminEventDetail({ params }: { params: { id: strin
               <div>
                 <label className="block text-sm">Team</label>
                 <select name="team_id" defaultValue={event.team_id ?? ""} className="w-full border rounded p-2">
-                  {teams?.map((t: any) => <option key={t.id} value={t.id}>{t.name}</option>)}
+                  {teams?.map((t: any) => (
+                    <option key={t.id} value={t.id}>{t.name}</option>
+                  ))}
                 </select>
               </div>
             </div>
@@ -174,6 +221,7 @@ export default async function AdminEventDetail({ params }: { params: { id: strin
           </form>
         </div>
 
+        {/* Roster */}
         <div className="rounded-2xl border p-4 bg-white">
           <h2 className="font-semibold mb-3">Event Roster</h2>
           <div className="flex flex-wrap gap-2 mb-3">
@@ -200,6 +248,7 @@ export default async function AdminEventDetail({ params }: { params: { id: strin
         </div>
       </section>
 
+      {/* Linked rounds */}
       <section className="rounded-2xl border p-4 bg-white">
         <h2 className="font-semibold mb-3">Linked Rounds</h2>
 

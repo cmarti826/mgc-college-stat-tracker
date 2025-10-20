@@ -1,6 +1,7 @@
 import { revalidatePath } from "next/cache";
 import { createClient } from "@/lib/supabase/server";
 import NavAdmin from "../NavAdmin";
+import CourseTeePicker from "./CourseTeePicker";
 
 async function loadData() {
   const supabase = await createClient();
@@ -14,10 +15,19 @@ async function loadData() {
     supabase.from("players").select("id, full_name").order("full_name"),
     supabase.from("courses").select("id, name").order("name"),
     supabase.from("tees").select("id, name, course_id").order("name"),
-    supabase.from("rounds").select("id, name, player_id, course_id, tee_id, round_date, date, created_at, event_id").order("created_at", { ascending: false }).limit(50),
+    supabase
+      .from("rounds")
+      .select("id, name, player_id, course_id, tee_id, round_date, date, created_at, event_id")
+      .order("created_at", { ascending: false })
+      .limit(50),
   ]);
 
-  return { players: players ?? [], courses: courses ?? [], tees: tees ?? [], rounds: rounds ?? [] };
+  return {
+    players: players ?? [],
+    courses: courses ?? [],
+    tees: tees ?? [],
+    rounds: rounds ?? [],
+  };
 }
 
 async function createRound(formData: FormData) {
@@ -35,7 +45,10 @@ async function createRound(formData: FormData) {
     throw new Error("Player, Course, Tee, and Date are required.");
   }
 
-  const { error } = await supabase.from("rounds").insert({ player_id, course_id, tee_id, round_date, name, notes });
+  const { error } = await supabase.from("rounds").insert({
+    player_id, course_id, tee_id, round_date, name, notes,
+  });
+
   if (error) throw error;
   revalidatePath("/admin/rounds");
 }
@@ -43,6 +56,7 @@ async function createRound(formData: FormData) {
 async function deleteRound(roundId: string) {
   "use server";
   const supabase = await createClient();
+  // if round is linked to an event, unlink first
   await supabase.from("event_rounds").delete().eq("round_id", roundId);
   const { error } = await supabase.from("rounds").delete().eq("id", roundId);
   if (error) throw error;
@@ -62,6 +76,7 @@ export default async function AdminRoundsPage() {
       <h1 className="text-2xl font-bold">Manage Rounds</h1>
 
       <section className="grid md:grid-cols-2 gap-6">
+        {/* Create */}
         <div className="rounded-2xl border p-4 bg-white">
           <h2 className="font-semibold mb-3">Create Round</h2>
           <form action={createRound} className="space-y-3">
@@ -69,25 +84,19 @@ export default async function AdminRoundsPage() {
               <label className="block text-sm">Player</label>
               <select name="player_id" className="w-full border rounded p-2" required>
                 <option value="">Select player…</option>
-                {players.map((p: any) => <option key={p.id} value={p.id}>{p.full_name}</option>)}
+                {players.map((p: any) => (
+                  <option key={p.id} value={p.id}>{p.full_name}</option>
+                ))}
               </select>
             </div>
 
+            {/* Linked Course + Tee selects (tee filters by course) */}
             <div className="grid grid-cols-2 gap-3">
-              <div>
-                <label className="block text-sm">Course</label>
-                <select name="course_id" className="w-full border rounded p-2" required>
-                  <option value="">Select course…</option>
-                  {courses.map((c: any) => <option key={c.id} value={c.id}>{c.name}</option>)}
-                </select>
-              </div>
-              <div>
-                <label className="block text-sm">Tee</label>
-                <select name="tee_id" className="w-full border rounded p-2" required>
-                  <option value="">Select tee…</option>
-                  {tees.map((t: any) => <option key={t.id} value={t.id}>{t.name}</option>)}
-                </select>
-              </div>
+              <CourseTeePicker
+                courses={courses}
+                tees={tees}
+                initialCourseId={courses[0]?.id}
+              />
             </div>
 
             <div className="grid grid-cols-2 gap-3">
@@ -110,6 +119,7 @@ export default async function AdminRoundsPage() {
           </form>
         </div>
 
+        {/* List */}
         <div className="rounded-2xl border p-0 bg-white overflow-hidden">
           <div className="px-4 py-3 border-b font-semibold">Recent Rounds</div>
           <div className="divide-y">

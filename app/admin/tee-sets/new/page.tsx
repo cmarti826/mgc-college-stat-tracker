@@ -1,6 +1,7 @@
-// app/tee-sets/new/page.tsx  (optional public create)
+// app/admin/tee-sets/new/page.tsx
 import { revalidatePath } from "next/cache";
 import { createClient } from "@/lib/supabase/server";
+import NavAdmin from "../../NavAdmin";
 
 async function createTeeSet(formData: FormData) {
   "use server";
@@ -20,27 +21,27 @@ async function createTeeSet(formData: FormData) {
     .insert({ course_id, name, tee_name, rating, slope, par })
     .select("id")
     .single();
-
   if (error) throw error;
 
-  // Seed 1..18 holes empty
+  // Seed 1..18
   const rows = Array.from({ length: 18 }, (_, i) => ({
     tee_set_id: inserted.id, hole_number: i + 1, yardage: null,
   }));
   const { error: holesErr } = await supabase.from("tee_set_holes").insert(rows);
   if (holesErr) throw holesErr;
 
-  revalidatePath("/tee-sets");
+  revalidatePath("/admin/tee-sets");
 }
 
-export default async function PublicNewTeeSet() {
+export default async function AdminNewTeeSet() {
   const supabase = await createClient();
   const { data: courses } = await supabase.from("courses").select("id, name").order("name");
 
   return (
-    <div className="max-w-xl mx-auto p-6 space-y-6">
-      <h1 className="text-2xl font-bold">Create Tee Set</h1>
-      <form action={createTeeSet} className="space-y-3 rounded-2xl border bg-white p-4">
+    <div className="p-6 space-y-6">
+      <NavAdmin />
+      <h1 className="text-2xl font-bold">New Tee Set</h1>
+      <form action={createTeeSet} className="space-y-3 rounded-2xl border bg-white p-4 max-w-xl">
         <div>
           <label className="block text-sm">Course</label>
           <select name="course_id" className="w-full border rounded p-2" required>

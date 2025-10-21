@@ -1,3 +1,4 @@
+// app/admin/NavAdmin.tsx
 "use client";
 
 import Link from "next/link";
@@ -9,7 +10,8 @@ const items = [
   { href: "/admin/teams", label: "Teams" },
   { href: "/admin/courses", label: "Courses" },
   { href: "/admin/rounds", label: "Rounds" },
-  { href: "/admin/events", label: "Events" }, // NEW
+  { href: "/admin/tee-sets", label: "Tee Sets" }, // changed from Tees
+  { href: "/admin/events", label: "Events" },
 ];
 
 export default function NavAdmin() {

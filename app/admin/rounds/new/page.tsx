@@ -1,7 +1,8 @@
-// app/rounds/new/page.tsx
+// app/admin/rounds/new/page.tsx
 import { revalidatePath } from "next/cache";
 import { createClient } from "@/lib/supabase/server";
-import CourseTeePicker from "../../admin/rounds/CourseTeePicker";
+import NavAdmin from "../../NavAdmin";
+import CourseTeePicker from "../CourseTeePicker";
 
 async function createRound(formData: FormData) {
   "use server";
@@ -15,10 +16,10 @@ async function createRound(formData: FormData) {
   if (!player_id || !course_id || !tee_id || !round_date) throw new Error("Player, Course, Tee, and Date are required.");
   const { error } = await supabase.from("rounds").insert({ player_id, course_id, tee_id, round_date, name, notes });
   if (error) throw error;
-  revalidatePath("/rounds/new");
+  revalidatePath("/admin/rounds");
 }
 
-export default async function PublicNewRound() {
+export default async function AdminNewRoundPage() {
   const supabase = await createClient();
   const [{ data: players }, { data: courses }, { data: tees }] = await Promise.all([
     supabase.from("players").select("id, full_name").order("full_name"),
@@ -27,9 +28,10 @@ export default async function PublicNewRound() {
   ]);
 
   return (
-    <div className="max-w-2xl mx-auto p-6 space-y-6">
+    <div className="p-6 space-y-6">
+      <NavAdmin />
       <h1 className="text-2xl font-bold">New Round</h1>
-      <form action={createRound} className="space-y-3 rounded-2xl border bg-white p-4">
+      <form action={createRound} className="space-y-3 rounded-2xl border bg-white p-4 max-w-2xl">
         <div>
           <label className="block text-sm">Player</label>
           <select name="player_id" className="w-full border rounded p-2" required>

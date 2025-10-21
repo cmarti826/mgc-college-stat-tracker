@@ -12,7 +12,7 @@ async function getDashboardData() {
     teamsRes,
     playersRes,
     coursesRes,
-    teesRes,
+    teeSetsRes, // <-- tee_sets count (replaces tees)
     roundsRes,
   ] = await Promise.all([
     supabase
@@ -23,21 +23,21 @@ async function getDashboardData() {
     supabase.from("teams").select("id", { count: "exact", head: true }),
     supabase.from("players").select("id", { count: "exact", head: true }),
     supabase.from("courses").select("id", { count: "exact", head: true }),
-    supabase.from("tees").select("id", { count: "exact", head: true }),
+    supabase.from("tee_sets").select("id", { count: "exact", head: true }), // <-- here
     supabase.from("rounds").select("id", { count: "exact", head: true }),
   ]);
 
   if (evErr) throw evErr;
 
-  const teams  = (teamsRes   as unknown as CountResp).count ?? 0;
-  const players= (playersRes as unknown as CountResp).count ?? 0;
-  const courses= (coursesRes as unknown as CountResp).count ?? 0;
-  const tees   = (teesRes    as unknown as CountResp).count ?? 0;
-  const rounds = (roundsRes  as unknown as CountResp).count ?? 0;
+  const teams   = (teamsRes   as unknown as CountResp).count ?? 0;
+  const players = (playersRes as unknown as CountResp).count ?? 0;
+  const courses = (coursesRes as unknown as CountResp).count ?? 0;
+  const teeSets = (teeSetsRes as unknown as CountResp).count ?? 0; // <-- here
+  const rounds  = (roundsRes  as unknown as CountResp).count ?? 0;
 
   return {
     events: events ?? [],
-    counts: { teams, players, courses, tees, rounds },
+    counts: { teams, players, courses, teeSets, rounds },
   };
 }
 
@@ -45,21 +45,21 @@ export default async function AdminHomePage() {
   const { events, counts } = await getDashboardData();
 
   const tiles = [
-    { href: "/admin/players", label: "Players", sub: `${counts.players} total` },
-    { href: "/admin/teams", label: "Teams", sub: `${counts.teams} total` },
-    { href: "/admin/courses", label: "Courses", sub: `${counts.courses} total` },
-    { href: "/admin/tees", label: "Tees", sub: `${counts.tees} total` },
-    { href: "/admin/rounds", label: "Rounds", sub: `${counts.rounds} total` },
-    { href: "/admin/events", label: "Events", sub: "Create & manage" },
+    { href: "/admin/players",   label: "Players",  sub: `${counts.players} total` },
+    { href: "/admin/teams",     label: "Teams",    sub: `${counts.teams} total` },
+    { href: "/admin/courses",   label: "Courses",  sub: `${counts.courses} total` },
+    { href: "/admin/tee-sets",  label: "Tee Sets", sub: `${counts.teeSets} total` }, // <-- replaces Tees
+    { href: "/admin/rounds",    label: "Rounds",   sub: `${counts.rounds} total` },
+    { href: "/admin/events",    label: "Events",   sub: "Create & manage" },
   ];
 
   const quickActions = [
-    { href: "/admin/players/new", label: "➕ New Player" },
-    { href: "/admin/teams/new", label: "➕ New Team" },
-    { href: "/admin/courses/new", label: "➕ New Course" },
-    { href: "/admin/tees/new", label: "➕ New Tee" },
-    { href: "/admin/rounds/new", label: "➕ New Round" },
-    { href: "/admin/events", label: "➕ New Event" }, // event create is on /admin/events
+    { href: "/admin/players/new",   label: "➕ New Player" },
+    { href: "/admin/teams/new",     label: "➕ New Team" },
+    { href: "/admin/courses/new",   label: "➕ New Course" },
+    { href: "/admin/tee-sets/new",  label: "➕ New Tee Set" }, // <-- replaces /admin/tees/new
+    { href: "/admin/rounds/new",    label: "➕ New Round" },
+    { href: "/admin/events",        label: "➕ New Event" },
   ];
 
   return (

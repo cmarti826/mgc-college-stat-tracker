@@ -1,14 +1,13 @@
 // app/admin/tee-sets/page.tsx
 'use client';
 
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
-import { createClientComponentClient } from '@supabase/auth-helpers-nextjs';
+import type { SupabaseClient } from '@supabase/supabase-js';
+import { createClient } from '@/lib/supabase/client'; // <-- browser client
 
-// If you already have a browser client helper, feel free to replace the line above with:
-// import { supabase } from '@/lib/supabaseClient';
-
+// ---------- Types (adjust if your schema differs) ----------
 type TeeSet = {
   id: string;
   name: string;
@@ -33,31 +32,29 @@ type TeeSetWithYardages = {
   yardages: (number | null)[]; // length 18
 };
 
-const holesLabels = Array.from({ length: 18 }, (_, i) => `H${i + 1}`);
+const HOLE_LABELS = Array.from({ length: 18 }, (_, i) => `H${i + 1}`);
 
 export default function ManageTeeSetsPage() {
   const router = useRouter();
-  const supabase = createClientComponentClient();
+  const supabase: SupabaseClient = createClient(); // <-- use your existing browser client
 
   const [loading, setLoading] = useState(true);
   const [savingId, setSavingId] = useState<string | null>(null);
   const [deletingId, setDeletingId] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [items, setItems] = useState<TeeSetWithYardages[]>([]);
+  const dirtyRef = useRef<Record<string, boolean>>({});
 
-  // LOAD tee sets + yardages
+  // ---------- Load tee sets + yardages ----------
   useEffect(() => {
     (async () => {
       setLoading(true);
       setError(null);
       try {
-        // --- Adjust the select path to match your schema if needed ---
-        // Assumes: tee_sets has course_id FK to courses(id)
+        // tee_sets joined to courses (adjust relation if named differently)
         const { data: teeSets, error: tsErr } = await supabase
           .from('tee_sets')
-          .select(
-            'id,name,color,course_id,courses(name,rating,slope,par)'
-          )
+          .select('id,name,color,course_id,courses(name,rating,slope,par)')
           .order('name', { ascending: true });
 
         if (tsErr) throw tsErr;
@@ -65,8 +62,6 @@ export default function ManageTeeSetsPage() {
         const all: TeeSetWithYardages[] = [];
 
         for (const ts of (teeSets || []) as TeeSet[]) {
-          // Fetch 18 holes for this tee set
-          // --- Adjust table/columns if yours are named differently ---
           const { data: holes, error: hErr } = await supabase
             .from('tee_set_holes')
             .select('tee_set_id,hole_number,yardage')
@@ -75,7 +70,6 @@ export default function ManageTeeSetsPage() {
 
           if (hErr) throw hErr;
 
-          // Build an array[18]
           const yardages = Array.from({ length: 18 }, () => null as number | null);
           (holes || []).forEach((h: TeeSetHole) => {
             if (h.hole_number >= 1 && h.hole_number <= 18) {
@@ -111,6 +105,7 @@ export default function ManageTeeSetsPage() {
             : x
         )
       );
+      dirtyRef.current[teeSetId] = true;
     };
 
   const saveYardages = async (teeSetId: string) => {
@@ -121,8 +116,7 @@ export default function ManageTeeSetsPage() {
       const current = items.find((x) => x.teeSet.id === teeSetId);
       if (!current) return;
 
-      // Prepare upserts for 18 holes
-      // --- Adjust table/columns if yours are named differently ---
+      // Upsert rows for holes 1..18 (adjust table/columns if needed)
       const rows = current.yardages.map((y, i) => ({
         tee_set_id: teeSetId,
         hole_number: i + 1,
@@ -132,8 +126,9 @@ export default function ManageTeeSetsPage() {
       const { error: upErr } = await supabase.from('tee_set_holes').upsert(rows, {
         onConflict: 'tee_set_id,hole_number',
       });
-
       if (upErr) throw upErr;
+
+      dirtyRef.current[teeSetId] = false;
     } catch (e: any) {
       setError(e?.message ?? 'Failed to save yardages.');
     } finally {
@@ -147,7 +142,7 @@ export default function ManageTeeSetsPage() {
       setDeletingId(teeSetId);
       setError(null);
 
-      // You may want to delete holes first if you don't have cascade FK
+      // Delete holes first if no ON DELETE CASCADE
       await supabase.from('tee_set_holes').delete().eq('tee_set_id', teeSetId);
 
       const { error: delErr } = await supabase.from('tee_sets').delete().eq('id', teeSetId);
@@ -163,7 +158,7 @@ export default function ManageTeeSetsPage() {
 
   const header = useMemo(
     () => (
-      <div className="flex items-center justify-between mb-6">
+      <div className="mb-6 flex items-center justify-between">
         <h1 className="text-2xl font-semibold">Manage Tee Sets</h1>
         <Link
           href="/admin/tee-sets/new"
@@ -195,7 +190,7 @@ export default function ManageTeeSetsPage() {
         <div className="space-y-6">
           {items.map(({ teeSet, yardages }) => (
             <div key={teeSet.id} className="rounded-lg border bg-white">
-              {/* Header */}
+              {/* Card Header */}
               <div className="flex items-center justify-between border-b px-4 py-3">
                 <div className="flex flex-col">
                   <div className="flex items-center gap-2">
@@ -204,12 +199,12 @@ export default function ManageTeeSetsPage() {
                       {teeSet.color ? ` • ${teeSet.color}` : ''}
                     </span>
                     {teeSet.courses?.name && (
-                      <span className="text-sm text-gray-500">
-                        • {teeSet.courses.name}
-                      </span>
+                      <span className="text-sm text-gray-500">• {teeSet.courses.name}</span>
                     )}
                   </div>
-                  {(teeSet.courses?.rating || teeSet.courses?.slope || teeSet.courses?.par) && (
+                  {(teeSet.courses?.rating ||
+                    teeSet.courses?.slope ||
+                    teeSet.courses?.par) && (
                     <div className="text-xs text-gray-500">
                       {teeSet.courses?.rating ? `Rating ${teeSet.courses.rating}` : ''}
                       {teeSet.courses?.slope ? ` • Slope ${teeSet.courses.slope}` : ''}
@@ -232,8 +227,8 @@ export default function ManageTeeSetsPage() {
               <div className="px-4 py-4">
                 {/* Front 9 */}
                 <div className="mb-2 text-sm font-medium text-gray-700">Front 9</div>
-                <div className="grid grid-cols-9 gap-3 mb-6">
-                  {holesLabels.slice(0, 9).map((label, i) => (
+                <div className="mb-6 grid grid-cols-9 gap-3">
+                  {HOLE_LABELS.slice(0, 9).map((label, i) => (
                     <div key={label} className="flex flex-col items-center">
                       <div className="mb-1 text-xs font-semibold text-gray-600">{label}</div>
                       <input
@@ -252,7 +247,7 @@ export default function ManageTeeSetsPage() {
                 {/* Back 9 */}
                 <div className="mb-2 text-sm font-medium text-gray-700">Back 9</div>
                 <div className="grid grid-cols-9 gap-3">
-                  {holesLabels.slice(9).map((label, i) => {
+                  {HOLE_LABELS.slice(9).map((label, i) => {
                     const idx = i + 9;
                     return (
                       <div key={label} className="flex flex-col items-center">
@@ -272,7 +267,7 @@ export default function ManageTeeSetsPage() {
                 </div>
 
                 {/* Actions */}
-                <div className="mt-6 flex items-center justify-start gap-3">
+                <div className="mt-6 flex items-center gap-3">
                   <button
                     onClick={() => saveYardages(teeSet.id)}
                     disabled={savingId === teeSet.id}

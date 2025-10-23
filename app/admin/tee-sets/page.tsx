@@ -5,7 +5,7 @@ import { useEffect, useMemo, useRef, useState } from 'react';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import type { SupabaseClient } from '@supabase/supabase-js';
-import { createClient } from '@/lib/supabase/client'; // your browser client
+import { createClient } from '@/lib/supabase/client'; // browser client
 
 // ---------- Types ----------
 type TeeSet = {
@@ -13,10 +13,8 @@ type TeeSet = {
   name: string;
   color?: string | null;
   course_id: string;
-  // We only rely on course name now to avoid schema mismatches
-  course?: {
-    name: string;
-  } | null;
+  // Only showing course name to avoid schema mismatches
+  course?: { name: string } | null;
 };
 
 type TeeSetHole = {
@@ -49,8 +47,7 @@ export default function ManageTeeSetsPage() {
       setLoading(true);
       setError(null);
       try {
-        // Only select the course name through the FK relation.
-        // If your relation name differs, change `course:courses(name)` to match.
+        // Select the related course name; Supabase may return it as an array depending on FK metadata.
         const { data: teeSets, error: tsErr } = await supabase
           .from('tee_sets')
           .select('id,name,color,course_id,course:courses(name)')
@@ -60,7 +57,20 @@ export default function ManageTeeSetsPage() {
 
         const all: TeeSetWithYardages[] = [];
 
-        for (const ts of (teeSets || []) as TeeSet[]) {
+        // 🔧 Flatten relation safely (array or object)
+        for (const raw of teeSets || []) {
+          const courseRel = Array.isArray((raw as any).course)
+            ? ((raw as any).course[0] ?? null)
+            : ((raw as any).course ?? null);
+
+          const ts: TeeSet = {
+            id: (raw as any).id,
+            name: (raw as any).name,
+            color: (raw as any).color,
+            course_id: (raw as any).course_id,
+            course: courseRel ? { name: (courseRel as any).name } : null,
+          };
+
           const { data: holes, error: hErr } = await supabase
             .from('tee_set_holes')
             .select('tee_set_id,hole_number,yardage')

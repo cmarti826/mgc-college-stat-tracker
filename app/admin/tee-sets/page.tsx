@@ -5,7 +5,7 @@ import { useEffect, useMemo, useRef, useState } from 'react';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import type { SupabaseClient } from '@supabase/supabase-js';
-import { createClient } from '@/lib/supabase/client'; // browser client
+import { createClient } from '@/lib/supabase/client'; // your browser client
 
 // ---------- Types ----------
 type TeeSet = {
@@ -13,11 +13,9 @@ type TeeSet = {
   name: string;
   color?: string | null;
   course_id: string;
-  courses?: {
+  // We only rely on course name now to avoid schema mismatches
+  course?: {
     name: string;
-    rating?: number | null;
-    slope?: number | null;
-    par?: number | null;
   } | null;
 };
 
@@ -51,30 +49,18 @@ export default function ManageTeeSetsPage() {
       setLoading(true);
       setError(null);
       try {
-        // Load tee sets with their related courses
+        // Only select the course name through the FK relation.
+        // If your relation name differs, change `course:courses(name)` to match.
         const { data: teeSets, error: tsErr } = await supabase
           .from('tee_sets')
-          .select('id,name,color,course_id,courses(name,rating,slope,par)')
+          .select('id,name,color,course_id,course:courses(name)')
           .order('name', { ascending: true });
 
         if (tsErr) throw tsErr;
 
         const all: TeeSetWithYardages[] = [];
 
-        for (const raw of teeSets || []) {
-          // If Supabase returns an array for the relation, flatten it
-          const coursesRelation = Array.isArray((raw as any).courses)
-            ? (raw as any).courses[0] || null
-            : (raw as any).courses || null;
-
-          const ts: TeeSet = {
-            id: raw.id,
-            name: raw.name,
-            color: raw.color,
-            course_id: raw.course_id,
-            courses: coursesRelation,
-          };
-
+        for (const ts of (teeSets || []) as TeeSet[]) {
           const { data: holes, error: hErr } = await supabase
             .from('tee_set_holes')
             .select('tee_set_id,hole_number,yardage')
@@ -208,19 +194,10 @@ export default function ManageTeeSetsPage() {
                       {teeSet.name}
                       {teeSet.color ? ` • ${teeSet.color}` : ''}
                     </span>
-                    {teeSet.courses?.name && (
-                      <span className="text-sm text-gray-500">• {teeSet.courses.name}</span>
+                    {teeSet.course?.name && (
+                      <span className="text-sm text-gray-500">• {teeSet.course.name}</span>
                     )}
                   </div>
-                  {(teeSet.courses?.rating ||
-                    teeSet.courses?.slope ||
-                    teeSet.courses?.par) && (
-                    <div className="text-xs text-gray-500">
-                      {teeSet.courses?.rating ? `Rating ${teeSet.courses.rating}` : ''}
-                      {teeSet.courses?.slope ? ` • Slope ${teeSet.courses.slope}` : ''}
-                      {teeSet.courses?.par ? ` • Par ${teeSet.courses.par}` : ''}
-                    </div>
-                  )}
                 </div>
 
                 <button

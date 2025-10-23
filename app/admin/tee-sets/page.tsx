@@ -5,92 +5,97 @@ import { useEffect, useMemo, useRef, useState } from 'react';
 import Link from 'next/link';
 import { createClient } from '@/lib/supabase/client';
 
-type Tee = {
+type TeeSet = {
   id: string;
   name: string;
   course_id: string;
   rating: number | null;
   slope: number | null;
   par: number | null;
+  color?: string | null;
 };
 
-type TeeHole = {
-  tee_id: string;
+type TeeSetHole = {
+  tee_set_id: string;
   hole_number: number;
   yardage: number | null;
 };
 
-type TeeWithYardages = {
-  tee: Tee;
+type TeeSetWithYardages = {
+  teeSet: TeeSet;
   yardages: (number | null)[];
 };
 
 const HOLE_LABELS = Array.from({ length: 18 }, (_, i) => `H${i + 1}`);
 
-export default function ManageTeesPage() {
+export default function ManageTeeSetsPage() {
   const supabase = createClient();
 
   const [loading, setLoading] = useState(true);
   const [savingId, setSavingId] = useState<string | null>(null);
   const [deletingId, setDeletingId] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
-  const [items, setItems] = useState<TeeWithYardages[]>([]);
+
+  const [items, setItems] = useState<TeeSetWithYardages[]>([]);
   const [courseNames, setCourseNames] = useState<Record<string, string>>({});
   const dirtyRef = useRef<Record<string, boolean>>({});
 
   useEffect(() => {
     (async () => {
       setLoading(true);
+      setError(null);
       try {
-        // 1. Load all courses and make a map
-        const { data: courses, error: cErr } = await supabase.from('courses').select('id,name');
+        // 1) Courses map (id -> name)
+        const { data: courses, error: cErr } = await supabase
+          .from('courses')
+          .select('id,name');
         if (cErr) throw cErr;
         const cmap: Record<string, string> = {};
-        (courses ?? []).forEach((c) => (cmap[c.id] = c.name));
+        (courses ?? []).forEach((c: any) => (cmap[c.id] = c.name));
         setCourseNames(cmap);
 
-        // 2. Load all tees (from tees table)
-        const { data: tees, error: tErr } = await supabase
-          .from('tees')
-          .select('id,name,course_id,rating,slope,par')
+        // 2) Tee sets
+        const { data: teeSets, error: tsErr } = await supabase
+          .from('tee_sets')
+          .select('id,name,course_id,rating,slope,par,color')
           .order('name', { ascending: true });
-        if (tErr) throw tErr;
+        if (tsErr) throw tsErr;
 
-        // 3. For each tee, load tee_holes (yardages)
-        const all: TeeWithYardages[] = [];
-        for (const tee of tees ?? []) {
+        // 3) Holes for each tee set
+        const all: TeeSetWithYardages[] = [];
+        for (const ts of teeSets ?? []) {
           const { data: holes, error: hErr } = await supabase
-            .from('tee_holes')
-            .select('hole_number,yardage')
-            .eq('tee_id', tee.id)
+            .from('tee_set_holes')
+            .select('tee_set_id,hole_number,yardage')
+            .eq('tee_set_id', ts.id)
             .order('hole_number', { ascending: true });
           if (hErr) throw hErr;
 
           const yardages = Array.from({ length: 18 }, () => null as number | null);
-          (holes ?? []).forEach((h) => {
+          (holes ?? []).forEach((h: TeeSetHole) => {
             if (h.hole_number >= 1 && h.hole_number <= 18) {
               yardages[h.hole_number - 1] = h.yardage;
             }
           });
 
-          all.push({ tee: tee as Tee, yardages });
+          all.push({ teeSet: ts as TeeSet, yardages });
         }
 
         setItems(all);
       } catch (e: any) {
-        setError(e.message);
+        setError(e?.message ?? 'Failed to load tee sets.');
       } finally {
         setLoading(false);
       }
     })();
-  }, []);
+  }, [supabase]);
 
   const handleChange =
-    (teeId: string, holeIndex: number) =>
+    (teeSetId: string, holeIndex: number) =>
     (raw: string) => {
       setItems((prev) =>
         prev.map((x) =>
-          x.tee.id === teeId
+          x.teeSet.id === teeSetId
             ? {
                 ...x,
                 yardages: x.yardages.map((y, idx) =>
@@ -100,44 +105,49 @@ export default function ManageTeesPage() {
             : x
         )
       );
-      dirtyRef.current[teeId] = true;
+      dirtyRef.current[teeSetId] = true;
     };
 
-  const saveYardages = async (teeId: string) => {
+  const saveYardages = async (teeSetId: string) => {
     try {
-      setSavingId(teeId);
-      const current = items.find((x) => x.tee.id === teeId);
+      setSavingId(teeSetId);
+      setError(null);
+
+      const current = items.find((x) => x.teeSet.id === teeSetId);
       if (!current) return;
 
       const rows = current.yardages.map((y, i) => ({
-        tee_id: teeId,
+        tee_set_id: teeSetId,
         hole_number: i + 1,
         yardage: y,
       }));
 
-      const { error: upErr } = await supabase.from('tee_holes').upsert(rows, {
-        onConflict: 'tee_id,hole_number',
-      });
+      const { error: upErr } = await supabase
+        .from('tee_set_holes')
+        .upsert(rows, { onConflict: 'tee_set_id,hole_number' });
       if (upErr) throw upErr;
 
-      dirtyRef.current[teeId] = false;
+      dirtyRef.current[teeSetId] = false;
     } catch (e: any) {
-      setError(e.message);
+      setError(e?.message ?? 'Failed to save yardages.');
     } finally {
       setSavingId(null);
     }
   };
 
-  const deleteTee = async (teeId: string) => {
-    if (!confirm('Delete this tee set?')) return;
+  const deleteTeeSet = async (teeSetId: string) => {
+    if (!confirm('Delete this tee set? This cannot be undone.')) return;
     try {
-      setDeletingId(teeId);
-      await supabase.from('tee_holes').delete().eq('tee_id', teeId);
-      const { error: delErr } = await supabase.from('tees').delete().eq('id', teeId);
+      setDeletingId(teeSetId);
+      setError(null);
+
+      await supabase.from('tee_set_holes').delete().eq('tee_set_id', teeSetId);
+      const { error: delErr } = await supabase.from('tee_sets').delete().eq('id', teeSetId);
       if (delErr) throw delErr;
-      setItems((prev) => prev.filter((x) => x.tee.id !== teeId));
+
+      setItems((prev) => prev.filter((x) => x.teeSet.id !== teeSetId));
     } catch (e: any) {
-      setError(e.message);
+      setError(e?.message ?? 'Failed to delete tee set.');
     } finally {
       setDeletingId(null);
     }
@@ -174,42 +184,45 @@ export default function ManageTeesPage() {
         <div className="rounded-md border p-6">No tee sets yet.</div>
       ) : (
         <div className="space-y-6">
-          {items.map(({ tee, yardages }) => (
-            <div key={tee.id} className="rounded-lg border bg-white">
+          {items.map(({ teeSet, yardages }) => (
+            <div key={teeSet.id} className="rounded-lg border bg-white">
               {/* Header */}
               <div className="flex items-center justify-between border-b px-4 py-3">
                 <div className="flex flex-col">
                   <div className="flex flex-wrap items-center gap-2">
                     <span className="text-base font-semibold">
-                      {tee.name}
-                      {courseNames[tee.course_id] && (
+                      {teeSet.name}
+                      {teeSet.course_id && (
                         <span className="text-sm text-gray-500">
                           {' '}
-                          • {courseNames[tee.course_id]}
+                          • {courseNames[teeSet.course_id] ?? 'Unknown course'}
                         </span>
                       )}
                     </span>
-                    {(tee.rating || tee.slope || tee.par) && (
+                    {(teeSet.rating !== null ||
+                      teeSet.slope !== null ||
+                      teeSet.par !== null) && (
                       <span className="text-xs text-gray-500">
-                        {tee.rating ? `Rating ${tee.rating}` : ''}
-                        {tee.slope ? ` • Slope ${tee.slope}` : ''}
-                        {tee.par ? ` • Par ${tee.par}` : ''}
+                        {teeSet.rating !== null ? `Rating ${teeSet.rating}` : ''}
+                        {teeSet.slope !== null ? ` • Slope ${teeSet.slope}` : ''}
+                        {teeSet.par !== null ? ` • Par ${teeSet.par}` : ''}
                       </span>
                     )}
                   </div>
                 </div>
 
                 <button
-                  onClick={() => deleteTee(tee.id)}
-                  disabled={deletingId === tee.id}
+                  onClick={() => deleteTeeSet(teeSet.id)}
+                  disabled={deletingId === teeSet.id}
                   className="text-sm text-red-600 hover:text-red-700 disabled:opacity-60"
                 >
-                  {deletingId === tee.id ? 'Deleting…' : 'Delete'}
+                  {deletingId === teeSet.id ? 'Deleting…' : 'Delete'}
                 </button>
               </div>
 
               {/* Body */}
               <div className="px-4 py-4">
+                {/* Front 9 */}
                 <div className="mb-2 text-sm font-medium text-gray-700">Front 9</div>
                 <div className="mb-6 grid grid-cols-9 gap-3">
                   {HOLE_LABELS.slice(0, 9).map((label, i) => (
@@ -221,12 +234,13 @@ export default function ManageTeesPage() {
                         inputMode="numeric"
                         className="w-16 rounded border p-1 text-center text-sm focus:ring-2 focus:ring-blue-500"
                         value={yardages[i] ?? ''}
-                        onChange={(e) => handleChange(tee.id, i)(e.target.value)}
+                        onChange={(e) => handleChange(teeSet.id, i)(e.target.value)}
                       />
                     </div>
                   ))}
                 </div>
 
+                {/* Back 9 */}
                 <div className="mb-2 text-sm font-medium text-gray-700">Back 9</div>
                 <div className="grid grid-cols-9 gap-3">
                   {HOLE_LABELS.slice(9).map((label, i) => {
@@ -240,20 +254,21 @@ export default function ManageTeesPage() {
                           inputMode="numeric"
                           className="w-16 rounded border p-1 text-center text-sm focus:ring-2 focus:ring-blue-500"
                           value={yardages[idx] ?? ''}
-                          onChange={(e) => handleChange(tee.id, idx)(e.target.value)}
+                          onChange={(e) => handleChange(teeSet.id, idx)(e.target.value)}
                         />
                       </div>
                     );
                   })}
                 </div>
 
+                {/* Actions */}
                 <div className="mt-6 flex items-center gap-3">
                   <button
-                    onClick={() => saveYardages(tee.id)}
-                    disabled={savingId === tee.id}
+                    onClick={() => saveYardages(teeSet.id)}
+                    disabled={savingId === teeSet.id}
                     className="rounded-md border px-4 py-2 text-sm font-medium hover:bg-gray-50 disabled:opacity-50"
                   >
-                    {savingId === tee.id ? 'Saving…' : 'Save Yardages'}
+                    {savingId === teeSet.id ? 'Saving…' : 'Save Yardages'}
                   </button>
                 </div>
               </div>

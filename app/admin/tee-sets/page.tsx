@@ -5,9 +5,9 @@ import { useEffect, useMemo, useRef, useState } from 'react';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import type { SupabaseClient } from '@supabase/supabase-js';
-import { createClient } from '@/lib/supabase/client'; // <-- browser client
+import { createClient } from '@/lib/supabase/client'; // browser client
 
-// ---------- Types (adjust if your schema differs) ----------
+// ---------- Types ----------
 type TeeSet = {
   id: string;
   name: string;
@@ -29,14 +29,14 @@ type TeeSetHole = {
 
 type TeeSetWithYardages = {
   teeSet: TeeSet;
-  yardages: (number | null)[]; // length 18
+  yardages: (number | null)[];
 };
 
 const HOLE_LABELS = Array.from({ length: 18 }, (_, i) => `H${i + 1}`);
 
 export default function ManageTeeSetsPage() {
   const router = useRouter();
-  const supabase: SupabaseClient = createClient(); // <-- use your existing browser client
+  const supabase: SupabaseClient = createClient();
 
   const [loading, setLoading] = useState(true);
   const [savingId, setSavingId] = useState<string | null>(null);
@@ -51,7 +51,7 @@ export default function ManageTeeSetsPage() {
       setLoading(true);
       setError(null);
       try {
-        // tee_sets joined to courses (adjust relation if named differently)
+        // Load tee sets with their related courses
         const { data: teeSets, error: tsErr } = await supabase
           .from('tee_sets')
           .select('id,name,color,course_id,courses(name,rating,slope,par)')
@@ -61,7 +61,20 @@ export default function ManageTeeSetsPage() {
 
         const all: TeeSetWithYardages[] = [];
 
-        for (const ts of (teeSets || []) as TeeSet[]) {
+        for (const raw of teeSets || []) {
+          // If Supabase returns an array for the relation, flatten it
+          const coursesRelation = Array.isArray((raw as any).courses)
+            ? (raw as any).courses[0] || null
+            : (raw as any).courses || null;
+
+          const ts: TeeSet = {
+            id: raw.id,
+            name: raw.name,
+            color: raw.color,
+            course_id: raw.course_id,
+            courses: coursesRelation,
+          };
+
           const { data: holes, error: hErr } = await supabase
             .from('tee_set_holes')
             .select('tee_set_id,hole_number,yardage')
@@ -116,7 +129,6 @@ export default function ManageTeeSetsPage() {
       const current = items.find((x) => x.teeSet.id === teeSetId);
       if (!current) return;
 
-      // Upsert rows for holes 1..18 (adjust table/columns if needed)
       const rows = current.yardages.map((y, i) => ({
         tee_set_id: teeSetId,
         hole_number: i + 1,
@@ -142,9 +154,7 @@ export default function ManageTeeSetsPage() {
       setDeletingId(teeSetId);
       setError(null);
 
-      // Delete holes first if no ON DELETE CASCADE
       await supabase.from('tee_set_holes').delete().eq('tee_set_id', teeSetId);
-
       const { error: delErr } = await supabase.from('tee_sets').delete().eq('id', teeSetId);
       if (delErr) throw delErr;
 
@@ -190,7 +200,7 @@ export default function ManageTeeSetsPage() {
         <div className="space-y-6">
           {items.map(({ teeSet, yardages }) => (
             <div key={teeSet.id} className="rounded-lg border bg-white">
-              {/* Card Header */}
+              {/* Header */}
               <div className="flex items-center justify-between border-b px-4 py-3">
                 <div className="flex flex-col">
                   <div className="flex items-center gap-2">

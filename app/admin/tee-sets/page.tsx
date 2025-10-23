@@ -5,7 +5,7 @@ import { useEffect, useMemo, useRef, useState } from 'react';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import type { SupabaseClient } from '@supabase/supabase-js';
-import { createClient } from '@/lib/supabase/client'; // browser client
+import { createClient } from '@/lib/supabase/client';
 
 // ---------- Types ----------
 type TeeSet = {
@@ -13,7 +13,10 @@ type TeeSet = {
   name: string;
   color?: string | null;
   course_id: string;
-  // Only showing course name to avoid schema mismatches
+  rating: number | null;
+  slope: number | null;
+  par: number | null;
+  // Only show course name (relation can come back as object or array)
   course?: { name: string } | null;
 };
 
@@ -47,17 +50,16 @@ export default function ManageTeeSetsPage() {
       setLoading(true);
       setError(null);
       try {
-        // Select the related course name; Supabase may return it as an array depending on FK metadata.
+        // rating/slope/par are on tee_sets; only fetch course name from relation
         const { data: teeSets, error: tsErr } = await supabase
           .from('tee_sets')
-          .select('id,name,color,course_id,course:courses(name)')
+          .select('id,name,color,course_id,rating,slope,par,course:courses(name)')
           .order('name', { ascending: true });
 
         if (tsErr) throw tsErr;
 
         const all: TeeSetWithYardages[] = [];
 
-        // 🔧 Flatten relation safely (array or object)
         for (const raw of teeSets || []) {
           const courseRel = Array.isArray((raw as any).course)
             ? ((raw as any).course[0] ?? null)
@@ -68,6 +70,9 @@ export default function ManageTeeSetsPage() {
             name: (raw as any).name,
             color: (raw as any).color,
             course_id: (raw as any).course_id,
+            rating: (raw as any).rating ?? null,
+            slope: (raw as any).slope ?? null,
+            par: (raw as any).par ?? null,
             course: courseRel ? { name: (courseRel as any).name } : null,
           };
 
@@ -199,13 +204,23 @@ export default function ManageTeeSetsPage() {
               {/* Header */}
               <div className="flex items-center justify-between border-b px-4 py-3">
                 <div className="flex flex-col">
-                  <div className="flex items-center gap-2">
+                  <div className="flex flex-wrap items-center gap-2">
                     <span className="text-base font-semibold">
                       {teeSet.name}
                       {teeSet.color ? ` • ${teeSet.color}` : ''}
                     </span>
                     {teeSet.course?.name && (
                       <span className="text-sm text-gray-500">• {teeSet.course.name}</span>
+                    )}
+                    {/* rating/slope/par come from tee_sets */}
+                    {(teeSet.rating !== null ||
+                      teeSet.slope !== null ||
+                      teeSet.par !== null) && (
+                      <span className="text-xs text-gray-500">
+                        {teeSet.rating !== null ? `Rating ${teeSet.rating}` : ''}
+                        {teeSet.slope !== null ? ` • Slope ${teeSet.slope}` : ''}
+                        {teeSet.par !== null ? ` • Par ${teeSet.par}` : ''}
+                      </span>
                     )}
                   </div>
                 </div>

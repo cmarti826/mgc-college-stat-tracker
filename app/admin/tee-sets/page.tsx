@@ -8,16 +8,16 @@ import { createClient } from '@/lib/supabase/client';
 type TeeSet = {
   id: string;
   name: string;
+  tee_name?: string | null; // optional in your "new" page
   course_id: string;
   rating: number | null;
   slope: number | null;
   par: number | null;
-  color?: string | null;
 };
 
 type TeeSetHole = {
   tee_set_id: string;
-  hole_number: number;
+  hole_number: number; // 1..18
   yardage: number | null;
 };
 
@@ -45,7 +45,7 @@ export default function ManageTeeSetsPage() {
       setLoading(true);
       setError(null);
       try {
-        // 1) Courses map (id -> name)
+        // 1) Load courses -> id -> name map
         const { data: courses, error: cErr } = await supabase
           .from('courses')
           .select('id,name');
@@ -54,14 +54,14 @@ export default function ManageTeeSetsPage() {
         (courses ?? []).forEach((c: any) => (cmap[c.id] = c.name));
         setCourseNames(cmap);
 
-        // 2) Tee sets
+        // 2) Load tee sets (NO color here)
         const { data: teeSets, error: tsErr } = await supabase
           .from('tee_sets')
-          .select('id,name,course_id,rating,slope,par,color')
+          .select('id,name,tee_name,course_id,rating,slope,par')
           .order('name', { ascending: true });
         if (tsErr) throw tsErr;
 
-        // 3) Holes for each tee set
+        // 3) Load hole yardages for each tee set
         const all: TeeSetWithYardages[] = [];
         for (const ts of teeSets ?? []) {
           const { data: holes, error: hErr } = await supabase
@@ -88,7 +88,8 @@ export default function ManageTeeSetsPage() {
         setLoading(false);
       }
     })();
-  }, [supabase]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   const handleChange =
     (teeSetId: string, holeIndex: number) =>
@@ -192,6 +193,7 @@ export default function ManageTeeSetsPage() {
                   <div className="flex flex-wrap items-center gap-2">
                     <span className="text-base font-semibold">
                       {teeSet.name}
+                      {teeSet.tee_name ? ` (${teeSet.tee_name})` : ''}
                       {teeSet.course_id && (
                         <span className="text-sm text-gray-500">
                           {' '}

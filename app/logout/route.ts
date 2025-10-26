@@ -1,16 +1,8 @@
-// app/logout/route.ts
-import { NextResponse } from "next/server";
-import { createRouteClient } from "@/lib/supabase/server-route";
+import { NextResponse } from 'next/server';
+import { createClient } from '@/lib/supabase/server';
 
-export async function POST(req: Request) {
-  const supabase = createRouteClient();
+export async function POST() {
+  const supabase = await createClient();
   await supabase.auth.signOut();
-
-  const url = new URL(req.url);
-  const login = new URL("/login", url.origin);
-
-  const res = NextResponse.redirect(login, { status: 302 });
-  // Avoid showing cached authed pages after logout
-  res.headers.set("Cache-Control", "no-store, max-age=0");
-  return res;
+  return NextResponse.redirect(new URL('/(auth)/login', process.env.NEXT_PUBLIC_SITE_URL ?? 'http://localhost:3000'));
 }

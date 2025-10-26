@@ -1,13 +1,11 @@
-import { createClient } from "@/lib/supabase/server";
-import { redirect } from "next/navigation";
+// app/admin/layout.tsx
+import NavAdmin from './NavAdmin';
 
-export default async function AdminLayout({ children }: { children: React.ReactNode }) {
-  const supabase = await createClient();
-  const { data: { user } } = await supabase.auth.getUser();
-
-  // Hard-coded admin UUID you gave earlier
-  const ADMIN_ID = "5335e203-38e4-479b-a352-02986df268fd";
-  if (!user || user.id !== ADMIN_ID) redirect("/");
-
-  return <div className="max-w-6xl mx-auto p-6">{children}</div>;
+export default function AdminLayout({ children }: { children: React.ReactNode }) {
+  return (
+    <div className="min-h-screen flex flex-col bg-gray-50">
+      <NavAdmin />
+      <main className="flex-1 p-6">{children}</main>
+    </div>
+  );
 }

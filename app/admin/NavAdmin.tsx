@@ -1,37 +1,36 @@
 // app/admin/NavAdmin.tsx
-"use client";
-
-import Link from "next/link";
-import { usePathname } from "next/navigation";
-
-const items = [
-  { href: "/admin", label: "Dashboard" },
-  { href: "/admin/players", label: "Players" },
-  { href: "/admin/teams", label: "Teams" },
-  { href: "/admin/courses", label: "Courses" },
-  { href: "/admin/rounds", label: "Rounds" },
-  { href: "/admin/tee-sets", label: "Tee Sets" }, // changed from Tees
-  { href: "/admin/events", label: "Events" },
-];
+import Link from 'next/link';
+import LogoutButton from '@/components/LogoutButton';
 
 export default function NavAdmin() {
-  const pathname = usePathname();
   return (
-    <nav className="flex flex-wrap gap-2">
-      {items.map((it) => {
-        const active = pathname === it.href || pathname.startsWith(it.href + "/");
-        return (
-          <Link
-            key={it.href}
-            href={it.href}
-            className={`px-3 py-1 rounded-lg border ${
-              active ? "bg-blue-600 text-white" : "bg-white hover:bg-gray-50"
-            }`}
-          >
-            {it.label}
-          </Link>
-        );
-      })}
+    <nav className="flex items-center justify-between border-b bg-white px-4 py-3">
+      {/* Left side links */}
+      <div className="flex items-center gap-4">
+        <Link href="/admin" className="text-sm font-medium hover:underline">
+          Dashboard
+        </Link>
+        <Link href="/admin/teams" className="text-sm font-medium hover:underline">
+          Teams
+        </Link>
+        <Link href="/admin/players" className="text-sm font-medium hover:underline">
+          Players
+        </Link>
+        <Link href="/admin/courses" className="text-sm font-medium hover:underline">
+          Courses
+        </Link>
+        <Link href="/admin/tee-sets" className="text-sm font-medium hover:underline">
+          Tee Sets
+        </Link>
+        <Link href="/admin/rounds" className="text-sm font-medium hover:underline">
+          Rounds
+        </Link>
+      </div>
+
+      {/* Right side: Sign out */}
+      <div className="flex items-center gap-3">
+        <LogoutButton />
+      </div>
     </nav>
   );
 }

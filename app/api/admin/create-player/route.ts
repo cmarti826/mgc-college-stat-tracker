@@ -34,13 +34,13 @@ export async function POST(req: Request) {
     if (createErr) throw createErr;
     if (!newUser.user) throw new Error('User not created');
 
-    // 3. Create player row
-    const { data: player, error: playerErr } = await supabase
-      .from('players')
-      .insert({ full_name: name, grad_year, team_id })
-      .select('id')
-      .single();
-    if (playerErr) throw playerErr;
+// 3. Create player row (now includes email)
+const { data: player, error: playerErr } = await supabase
+  .from('players')
+  .insert({ full_name: name, grad_year, team_id, email }) // <-- added email
+  .select('id')
+  .single();
+if (playerErr) throw playerErr;
 
     // 4. Link user → player
     const { error: linkErr } = await supabase

@@ -1,21 +1,22 @@
 'use client';
 
-import { useState } from 'react';
+import { Suspense, useState } from 'react';
 import { useRouter, useSearchParams } from 'next/navigation';
 import Link from 'next/link';
 import { createClient } from '@/lib/supabase/client';
 
-export default function LoginPage() {
+// Separate the actual login UI into a subcomponent
+function LoginInner() {
   const supabase = createClient();
   const router = useRouter();
   const params = useSearchParams();
 
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
-
   const [loading, setLoading] = useState(false);
   const [mode, setMode] = useState<'signin' | 'signup' | 'magic'>('signin');
   const [error, setError] = useState<string | null>(null);
+
   const redirectTo = params.get('redirectTo') || '/';
 
   const handleSignIn = async () => {
@@ -23,10 +24,7 @@ export default function LoginPage() {
     setError(null);
     const { error } = await supabase.auth.signInWithPassword({ email, password });
     setLoading(false);
-    if (error) {
-      setError(error.message);
-      return;
-    }
+    if (error) return setError(error.message);
     router.replace(redirectTo);
   };
 
@@ -35,11 +33,7 @@ export default function LoginPage() {
     setError(null);
     const { error } = await supabase.auth.signUp({ email, password });
     setLoading(false);
-    if (error) {
-      setError(error.message);
-      return;
-    }
-    // If email confirmation is required, they’ll get a link. Otherwise, session is active.
+    if (error) return setError(error.message);
     router.replace(redirectTo);
   };
 
@@ -56,10 +50,7 @@ export default function LoginPage() {
       },
     });
     setLoading(false);
-    if (error) {
-      setError(error.message);
-      return;
-    }
+    if (error) return setError(error.message);
     alert('Magic link sent. Check your email!');
   };
 
@@ -152,10 +143,15 @@ export default function LoginPage() {
           </Link>
         </div>
       </div>
-
-      <p className="mt-3 text-xs text-gray-500">
-        Need help? Ask your coach to link your account to a player in <code>user_players</code>.
-      </p>
     </div>
+  );
+}
+
+// ✅ Wrap in Suspense to satisfy Next.js
+export default function LoginPage() {
+  return (
+    <Suspense fallback={<div className="p-6 text-center text-gray-500">Loading login…</div>}>
+      <LoginInner />
+    </Suspense>
   );
 }

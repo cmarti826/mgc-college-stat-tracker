@@ -1,3 +1,4 @@
+// app/admin/players/page.tsx
 'use client';
 
 import { useEffect, useState } from 'react';
@@ -10,7 +11,10 @@ type PlayerRow = {
   full_name: string;
   grad_year: number | null;
   email: string | null;
-  team_members?: Array<{ team_id: string; teams?: { name: string | null } | null }>;
+  team_members: Array<{
+    team_id: string;
+    teams: { name: string | null } | null;
+  }>;
 };
 
 export default function AdminPlayersPage() {
@@ -24,14 +28,42 @@ export default function AdminPlayersPage() {
     (async () => {
       setLoading(true);
       setError(null);
+
       const { data, error } = await supabase
         .from('players')
-        // ✅ Read teams via team_members join (no direct players.team_id)
-        .select('id, full_name, grad_year, email, team_members(team_id, teams(name))')
+        .select(
+          `
+          id,
+          full_name,
+          grad_year,
+          email,
+          team_members(
+            team_id,
+            teams(name)
+          )
+        `
+        )
         .order('full_name', { ascending: true });
 
       if (error) setError(error.message);
-      setPlayers((data ?? []) as PlayerRow[]);
+
+      // Normalize shape so TypeScript and UI are happy regardless of Supabase relation return
+      const rows: PlayerRow[] = (data ?? []).map((p: any) => ({
+        id: String(p.id),
+        full_name: String(p.full_name ?? ''),
+        grad_year: p.grad_year ?? null,
+        email: p.email ?? null,
+        team_members: (p.team_members ?? []).map((tm: any) => {
+          // teams may be an object or an array depending on metadata
+          const t = Array.isArray(tm?.teams) ? tm.teams[0] ?? null : tm?.teams ?? null;
+          return {
+            team_id: String(tm.team_id),
+            teams: t ? { name: t.name ?? null } : null,
+          };
+        }),
+      }));
+
+      setPlayers(rows);
       setLoading(false);
     })();
   }, [supabase]);
@@ -47,8 +79,8 @@ export default function AdminPlayersPage() {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ email }),
       });
-      const data = await res.json();
-      if (!res.ok) throw new Error(data.error || 'Failed to send reset email.');
+      const body = await res.json();
+      if (!res.ok) throw new Error(body.error || 'Failed to send reset email.');
       alert(`Password reset link sent to ${email}`);
     } catch (err: any) {
       alert(err.message);
@@ -92,11 +124,7 @@ export default function AdminPlayersPage() {
           <tbody>
             {players.map((p) => {
               const teamNames =
-                (p.team_members ?? [])
-                  .map((tm) => tm?.teams?.name)
-                  .filter(Boolean)
-                  .join(', ') || '—';
-
+                p.team_members.map((tm) => tm.teams?.name).filter(Boolean).join(', ') || '—';
               return (
                 <tr key={p.id} className="border-t">
                   <td className="p-2">{p.full_name}</td>
@@ -105,7 +133,7 @@ export default function AdminPlayersPage() {
                   <td className="p-2">{p.email ?? '—'}</td>
                   <td className="p-2 text-right space-x-2">
                     <button
-                      onClick={() => handleSendReset(p.email ?? null)}
+                      onClick={() => handleSendReset(p.email)}
                       disabled={!p.email || sending === p.email}
                       className="rounded-md border px-2 py-1 text-xs hover:bg-gray-50 disabled:opacity-60"
                     >

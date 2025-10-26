@@ -8,36 +8,40 @@ async function createRound(formData: FormData) {
   "use server";
   const supabase = await createClient();
 
-  const player_id = String(formData.get("player_id") || "");
-  const course_id = String(formData.get("course_id") || "");
-  const tee_id    = String(formData.get("tee_id") || "");
-  const round_date= String(formData.get("round_date") || "");
-  const name      = String(formData.get("name") || "").trim() || null;
-  const notes     = String(formData.get("notes") || "").trim() || null;
+  const player_id  = String(formData.get("player_id") || "");
+  const course_id  = String(formData.get("course_id") || "");
+  const tee_set_id = String(formData.get("tee_set_id") || ""); // ⬅️ tee_sets
+  const round_date = String(formData.get("round_date") || "");
+  const name       = String(formData.get("name") || "").trim() || null;
+  const notes      = String(formData.get("notes") || "").trim() || null;
 
-  if (!player_id || !course_id || !tee_id || !round_date) {
-    throw new Error("Player, Course, Tee, and Date are required.");
+  if (!player_id || !course_id || !tee_set_id || !round_date) {
+    throw new Error("Player, Course, Tee Set, and Date are required.");
   }
 
+  // If your rounds table uses tee_set_id (recommended):
   const { error } = await supabase
     .from("rounds")
-    .insert({ player_id, course_id, tee_id, round_date, name, notes });
+    .insert({ player_id, course_id, tee_set_id, round_date, name, notes });
+
+  // If your rounds table still has tee_id instead, swap the insert above to:
+  // .insert({ player_id, course_id, tee_id: tee_set_id, round_date, name, notes });
 
   if (error) throw error;
 
   revalidatePath("/rounds/new");
-  redirect("/rounds"); // or wherever your rounds list lives
+  redirect("/rounds");
 }
 
 async function loadData() {
   const supabase = await createClient();
 
-  // 1) Ensure user is logged in
+  // Require auth
   const { data: { user }, error: userErr } = await supabase.auth.getUser();
   if (userErr) throw userErr;
   if (!user) redirect("/login?redirectTo=/rounds/new");
 
-  // 2) Resolve this user’s player_id (don’t list all players)
+  // Resolve this user's player_id
   const { data: link, error: linkErr } = await supabase
     .from("user_players")
     .select("player_id")
@@ -45,17 +49,16 @@ async function loadData() {
     .maybeSingle();
   if (linkErr) throw linkErr;
 
-  // 3) Load courses (RLS: authenticated can select)
+  // Courses
   const { data: courses, error: cErr } = await supabase
     .from("courses")
     .select("id,name")
     .order("name");
   if (cErr) throw cErr;
 
-  // 4) Load tees from base table (avoid view RLS issues)
-  //    If your schema is `tee_sets` instead of `tees`, switch the table name here and in the form.
-  const { data: tees, error: tErr } = await supabase
-    .from("tees")
+  // Tee Sets (NOT the view)
+  const { data: teeSets, error: tErr } = await supabase
+    .from("tee_sets")
     .select("id,name,course_id")
     .order("name");
   if (tErr) throw tErr;
@@ -63,12 +66,12 @@ async function loadData() {
   return {
     playerId: link?.player_id ?? null,
     courses: courses ?? [],
-    tees: tees ?? [],
+    teeSets: teeSets ?? [],
   };
 }
 
 export default async function NewRoundPage() {
-  const { playerId, courses, tees } = await loadData();
+  const { playerId, courses, teeSets } = await loadData();
 
   return (
     <div className="max-w-2xl mx-auto p-6 space-y-6">
@@ -82,14 +85,15 @@ export default async function NewRoundPage() {
       )}
 
       <form action={createRound} className="space-y-3 rounded-2xl border bg-white p-4">
-        {/* We no longer show a Player selector; we use the logged-in user's player_id */}
+        {/* Use the logged-in user's player_id */}
         <input type="hidden" name="player_id" value={playerId ?? ""} />
 
         <div className="grid grid-cols-2 gap-3">
           <CourseTeePicker
             courses={courses}
-            tees={tees}
+            tees={teeSets}                 // ⬅️ pass tee sets here
             initialCourseId={courses?.[0]?.id}
+            fieldName="tee_set_id"         // ⬅️ ensure the selector posts tee_set_id
           />
         </div>
 

@@ -1,26 +1,57 @@
 // app/admin/rounds/CourseTeePicker.tsx
 "use client";
-import { useEffect, useMemo, useState } from "react";
-type Option = { id: string; name: string; course_id?: string };
+
+import { useMemo, useState } from "react";
+
+type Option = { id: string; name: string; course_id?: string | null };
+
 export default function CourseTeePicker({
-  courses, tees, initialCourseId,
-}: { courses: Option[]; tees: (Option & { course_id: string })[]; initialCourseId?: string | null; }) {
-  const [courseId, setCourseId] = useState<string>(() => initialCourseId || courses[0]?.id || "");
-  const [teeId, setTeeId] = useState<string>("");
-  const teesForCourse = useMemo(() => tees.filter((t) => t.course_id === courseId), [tees, courseId]);
-  useEffect(() => { if (!teesForCourse.find((t) => t.id === teeId)) setTeeId(teesForCourse[0]?.id || ""); }, [courseId, teesForCourse, teeId]);
+  courses,
+  tees,
+  initialCourseId,
+  fieldName = "tee_set_id", // default to tee_set_id
+}: {
+  courses: Option[];
+  tees: Option[];                // pass tee sets here
+  initialCourseId?: string;
+  fieldName?: string;            // allow override (e.g., "tee_id" if needed)
+}) {
+  const [courseId, setCourseId] = useState<string | undefined>(initialCourseId);
+
+  const filteredTees = useMemo(() => {
+    if (!courseId) return tees;
+    return (tees ?? []).filter((t) => !t.course_id || t.course_id === courseId);
+  }, [tees, courseId]);
+
   return (
     <>
       <div>
         <label className="block text-sm">Course</label>
-        <select name="course_id" className="w-full border rounded p-2" required value={courseId} onChange={(e) => setCourseId(e.target.value)}>
-          {courses.map((c) => <option key={c.id} value={c.id}>{c.name}</option>)}
+        <select
+          name="course_id"
+          className="w-full border rounded p-2"
+          value={courseId ?? ""}
+          onChange={(e) => setCourseId(e.target.value || undefined)}
+          required
+        >
+          <option value="">Select course…</option>
+          {(courses ?? []).map((c) => (
+            <option key={c.id} value={c.id}>
+              {c.name}
+            </option>
+          ))}
         </select>
       </div>
+
       <div>
-        <label className="block text-sm">Tee</label>
-        <select name="tee_id" className="w-full border rounded p-2" required value={teeId} onChange={(e) => setTeeId(e.target.value)} disabled={teesForCourse.length === 0}>
-          {teesForCourse.length === 0 ? <option value="">No tees for course</option> : teesForCourse.map((t) => <option key={t.id} value={t.id}>{t.name}</option>)}
+        <label className="block text-sm">Tee Set</label>
+        <select name={fieldName} className="w-full border rounded p-2" required>
+          <option value="">Select tee set…</option>
+          {filteredTees.map((t) => (
+            <option key={t.id} value={t.id}>
+              {t.name}
+            </option>
+          ))}
         </select>
       </div>
     </>

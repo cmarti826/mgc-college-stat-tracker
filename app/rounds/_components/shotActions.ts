@@ -1,6 +1,6 @@
 "use server";
 
-import { createRouteClient } from "@/lib/supabase/server-route";
+import { createClient } from "@/lib/supabase/route";
 import { z } from "zod";
 
 /** UI payload row coming from ShotEditor */
@@ -45,7 +45,7 @@ const UiPayload = z.object({
 type UiPayload = z.infer<typeof UiPayload>;
 
 export async function saveShotsAction(input: UiPayload) {
-  const supabase = createRouteClient();
+  const supabase = createClient();
 
   const parsed = UiPayload.safeParse(input);
   if (!parsed.success) {

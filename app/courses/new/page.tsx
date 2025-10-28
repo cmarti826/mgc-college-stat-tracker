@@ -2,13 +2,13 @@
 
 import { useMemo, useState } from 'react'
 import { useRouter } from 'next/navigation'
-import { createBrowserClient } from '@/lib/supabase/client';
-const supabase = createBrowserClient();
+import { createClient } from '@/lib/supabase/client';
+const supabase = createClient();
 
 type Hole = { number: number; par: number }
 
 export default function NewCoursePage() {
-  const supabase = useMemo(() => createBrowserClient(), [])
+  const supabase = useMemo(() => createClient(), [])
   const router = useRouter()
   const [submitting, setSubmitting] = useState(false)
 

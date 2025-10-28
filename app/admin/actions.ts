@@ -3,7 +3,7 @@
 
 import { revalidatePath } from "next/cache";
 import { createClient } from "@/lib/supabase/server";
-import { createClient as createcreateServerClient } from "@supabase/supabase-js";
+import { createClient as createcreateClient } from "@supabase/supabase-js";
 
 /* ----------------------- helpers ----------------------- */
 function txt(x: FormDataEntryValue | null) {
@@ -25,7 +25,7 @@ function getAdminClient() {
       "Missing Supabase admin env. Set NEXT_PUBLIC_SUPABASE_URL and SUPABASE_SERVICE_ROLE_KEY."
     );
   }
-  return createcreateServerClient(url, key, {
+  return createcreateClient(url, key, {
     auth: { autoRefreshToken: false, persistSession: false },
   });
 }

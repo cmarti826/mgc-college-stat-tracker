@@ -1,5 +1,5 @@
 import { NextResponse, NextRequest } from "next/server";
-import { createRouteClient } from "@/lib/supabase/server-route";
+import { createClient } from "@/lib/supabase/route";
 
 // DB enum (UPPERCASE)
 type LieEnum = "TEE" | "FAIRWAY" | "ROUGH" | "SAND" | "RECOVERY" | "GREEN";
@@ -53,7 +53,7 @@ function normalizeLie(s?: UILie): LieEnum {
 }
 
 export async function POST(req: NextRequest, { params }: { params: { id: string } }) {
-  const supabase = createRouteClient();
+  const supabase = createClient();
   const roundId = params.id;
 
   const { data: { user } } = await supabase.auth.getUser();

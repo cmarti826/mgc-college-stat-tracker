@@ -9,7 +9,7 @@ export async function POST(req: Request) {
     if (!email) return NextResponse.json({ error: 'Missing email' }, { status: 400 });
 
     // Confirm requester is an admin
-    const supabase = await createServerSupabase();
+    const supabase = await createRouteSupabase();
     const { data: { user } } = await supabase.auth.getUser();
     if (!user) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
 

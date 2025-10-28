@@ -1,10 +1,10 @@
 import Link from "next/link";
-import { createServerSupabase } from '@/lib/supabase';
+import { createBrowserSupabase } from '@/lib/supabase';
 
 export const dynamic = "force-dynamic";
 
 export default async function TeamsPage() {
-  const supabase = createServerSupabase();
+  const supabase = createBrowserSupabase();
 
   const { data: teams, error } = await supabase
     .from("teams")

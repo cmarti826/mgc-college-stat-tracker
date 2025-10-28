@@ -1,9 +1,9 @@
 import { redirect } from 'next/navigation';
-import { createServerSupabase } from '@/lib/supabase';
+import { createBrowserSupabase } from '@/lib/supabase';
 import AttachPlayer from '../_components/AttachPlayer';
 
 export default async function AttachPlayerPage() {
-  const supabase = createServerSupabase();
+  const supabase = createBrowserSupabase();
   const {
     data: { user },
   } = await supabase.auth.getUser();

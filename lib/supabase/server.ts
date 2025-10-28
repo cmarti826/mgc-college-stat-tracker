@@ -14,7 +14,11 @@ export const createServerSupabase = () => {
         getAll() { return cookieStore.getAll().map(c => ({ name: c.name, value: c.value })); },
         setAll(cookiesToSet) { cookiesToSet.forEach(c => cookieStore.set(c.name, c.value, c.options)); },
       },
-      // Remove db.schema — NOT SUPPORTED
     }
   );
+};
+
+export const withMgcSchema = async <T>(supabase: any, query: () => Promise<T>): Promise<T> => {
+  await supabase.rpc("set_mgc_schema");
+  return query();
 };

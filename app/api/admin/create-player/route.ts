@@ -1,6 +1,6 @@
 // app/api/admin/create-player/route.ts
 import { NextResponse } from 'next/server';
-import { createClient as createClient } from '@/lib/supabase';
+import { createRouteSupabase } from '@/lib/supabase/route';
 import { createClient as createAdminClient } from '@supabase/supabase-js';
 
 export const dynamic = 'force-dynamic';
@@ -23,20 +23,20 @@ export async function POST(req: Request) {
       );
     }
 
-    // 1) Verify requester is admin
-    const supabase = await createServerSupabase();
+    // 1) Verify requester is admin → use Route Client (server-safe)
+    const supabase = createRouteSupabase();
     const { data: { user }, error: getUserErr } = await supabase.auth.getUser();
     if (getUserErr) return NextResponse.json({ error: `Auth error: ${getUserErr.message}` }, { status: 401 });
     if (!user) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
 
-    // 🔧 use the correct param name: uid
+    // Check admin via RPC
     const { data: isAdmin, error: adminErr } = await supabase.rpc('is_admin', { uid: user.id });
     if (adminErr) {
       return NextResponse.json({ error: `RPC is_admin error: ${adminErr.message}` }, { status: 500 });
     }
     if (!isAdmin) return NextResponse.json({ error: 'Not an admin' }, { status: 403 });
 
-    // 2) Create auth user with SERVICE ROLE
+    // 2) Create auth user with SERVICE ROLE (bypass RLS)
     const admin = createAdminClient(supabaseUrl, serviceKey);
     const { data: newUser, error: createErr } = await admin.auth.admin.createUser({
       email,
@@ -54,13 +54,13 @@ export async function POST(req: Request) {
       .single();
     if (playerErr) return NextResponse.json({ error: `Create player failed: ${playerErr.message}` }, { status: 500 });
 
-    // 4) Link user -> player
+    // 4) Link user → player
     const { error: linkErr } = await supabase
       .from('user_players')
       .upsert({ user_id: newUser.user.id, player_id: player.id });
     if (linkErr) return NextResponse.json({ error: `Link user->player failed: ${linkErr.message}` }, { status: 500 });
 
-    // 5) Optional roster row
+    // 5) Optional: Add to team roster
     if (team_id) {
       const { error: rosterErr } = await supabase
         .from('team_members')

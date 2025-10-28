@@ -1,8 +1,13 @@
 // app/rounds/new/page.tsx
-import { revalidatePath } from "next/cache";
-import { redirect } from "next/navigation";
 import { createServerSupabase } from "@/lib/supabase/server";
-import CourseTeePicker from "../../admin/rounds/CourseTeePicker";
+import { redirect } from "next/navigation";
+
+export const dynamic = "force-dynamic";
+
+export default async function NewRound() {
+  const supabase = createServerSupabase();
+  const { data: { user } } = await supabase.auth.getUser();
+  if (!user) redirect("/login");
 
 async function createRound(formData: FormData) {
   "use server";
@@ -123,4 +128,6 @@ export default async function NewRoundPage() {
       </form>
     </div>
   );
+}
+return <div>New Round Form (Server Component)</div>;
 }

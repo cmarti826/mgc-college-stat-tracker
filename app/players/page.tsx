@@ -4,7 +4,7 @@ import { createServerSupabase } from '@/lib/supabase';
 export const dynamic = "force-dynamic";
 
 export default async function PlayersPage() {
-  const supabase = createServerSupabase()();
+  const supabase = createServerSupabase();
 
   const { data: players, error } = await supabase
     .from("players")

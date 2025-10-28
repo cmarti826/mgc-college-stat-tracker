@@ -1,6 +1,6 @@
 // app/api/admin/create-player/route.ts
 import { NextResponse } from 'next/server';
-import { createClient as createClient } from '@/lib/supabase/server';
+import { createClient as createClient } from '@/lib/supabase';
 import { createClient as createAdminClient } from '@supabase/supabase-js';
 
 export const dynamic = 'force-dynamic';
@@ -24,7 +24,7 @@ export async function POST(req: Request) {
     }
 
     // 1) Verify requester is admin
-    const supabase = await createClient();
+    const supabase = await createBrowserSupabase();
     const { data: { user }, error: getUserErr } = await supabase.auth.getUser();
     if (getUserErr) return NextResponse.json({ error: `Auth error: ${getUserErr.message}` }, { status: 401 });
     if (!user) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });

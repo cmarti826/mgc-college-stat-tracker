@@ -3,7 +3,7 @@
 
 import { useEffect, useMemo, useRef, useState } from 'react';
 import Link from 'next/link';
-import { createClient } from '@/lib/supabase/client';
+import { createClient } from '@/lib/supabase';
 
 type TeeSet = {
   id: string;
@@ -29,7 +29,7 @@ type TeeSetWithYardages = {
 const HOLE_LABELS = Array.from({ length: 18 }, (_, i) => `H${i + 1}`);
 
 export default function ManageTeeSetsPage() {
-  const supabase = createClient();
+  const supabase = createBrowserSupabase();
 
   const [loading, setLoading] = useState(true);
   const [savingId, setSavingId] = useState<string | null>(null);

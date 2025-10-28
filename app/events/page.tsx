@@ -11,7 +11,7 @@ function relName(x: RelName): string {
 }
 
 export default async function EventsPage() {
-  const supabase = createClient();
+  const supabase = createBrowserSupabase();
   const { data: events, error } = await supabase
     .from("events")
     .select(`

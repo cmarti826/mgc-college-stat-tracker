@@ -40,7 +40,7 @@ type SGRows = {
 };
 
 export default async function DashboardPage() {
-  const supabase = createClient();
+  const supabase = createBrowserSupabase();
   const { data: auth } = await supabase.auth.getUser();
   const user = auth.user;
 

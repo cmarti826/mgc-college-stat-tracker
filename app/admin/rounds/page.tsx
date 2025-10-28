@@ -6,7 +6,7 @@ import Link from "next/link";
 import CourseTeePicker from "./CourseTeePicker";
 
 async function loadData() {
-  const supabase = await createClient();
+  const supabase = await createBrowserSupabase();
   const [
     { data: players },
     { data: courses },
@@ -23,7 +23,7 @@ async function loadData() {
 
 async function createRound(formData: FormData) {
   "use server";
-  const supabase = await createClient();
+  const supabase = await createBrowserSupabase();
   const player_id = String(formData.get("player_id") || "");
   const course_id = String(formData.get("course_id") || "");
   const tee_id    = String(formData.get("tee_id") || "");
@@ -38,7 +38,7 @@ async function createRound(formData: FormData) {
 
 async function deleteRound(roundId: string) {
   "use server";
-  const supabase = await createClient();
+  const supabase = await createBrowserSupabase();
   await supabase.from("event_rounds").delete().eq("round_id", roundId);
   const { error } = await supabase.from("scheduled_rounds").delete().eq("id", roundId);
   if (error) throw error;

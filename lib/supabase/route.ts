@@ -1,12 +1,12 @@
 // lib/supabase/route.ts
 import { cookies } from "next/headers";
-import { createClient } from "@supabase/ssr";
+import { createServerClient } from "@supabase/ssr";
 import type { Database } from "./types";
 
-export const createClient = () => {
+export const createRouteSupabase = () => {
   const cookieStore = cookies();
 
-  return createClient<Database>(
+  return createServerClient<Database>(
     process.env.NEXT_PUBLIC_SUPABASE_URL!,
     process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
     {

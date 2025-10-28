@@ -7,7 +7,7 @@ import RoundEntry from "../../_components/RoundEntry";
 interface Props { params: { id: string } }
 
 export default async function EditRoundPage({ params }: Props) {
-  const supabase = createClient();
+  const supabase = createBrowserSupabase();
   const roundId = params.id;
 
   const [{ data: players }, { data: courses }, { data: teeSets }, { data: round }, { data: holes }] = await Promise.all([

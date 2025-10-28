@@ -4,7 +4,7 @@ import NavAdmin from "../NavAdmin";
 import { createClient } from "@/lib/supabase/server";
 
 async function getInit() {
-  const supabase = await createClient();
+  const supabase = await createBrowserSupabase();
 
   const [{ data: events, error: eErr }, { data: courses }, { data: teams }] = await Promise.all([
     supabase.from("v_admin_events").select("*").order("start_date", { ascending: false }),
@@ -18,7 +18,7 @@ async function getInit() {
 
 async function createEvent(formData: FormData) {
   "use server";
-  const supabase = await createClient();
+  const supabase = await createBrowserSupabase();
 
   const name = String(formData.get("name") || "").trim();
   const start_date = String(formData.get("start_date") || "");

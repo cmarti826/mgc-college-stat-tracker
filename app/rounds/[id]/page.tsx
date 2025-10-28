@@ -23,7 +23,7 @@ export default async function RoundSummaryPage({
 }: {
   params: { id: string };
 }) {
-  const supabase = createClient();
+  const supabase = createBrowserSupabase();
   const roundId = params.id;
 
   // 1) Load round (NO embedded relations)

@@ -11,7 +11,7 @@ function rel(x: any, key: "name" | "full_name"): string {
 }
 
 export default async function RoundsPage() {
-  const supabase = createClient();
+  const supabase = createBrowserSupabase();
 
   const { data: rounds, error } = await supabase
     .from("scheduled_rounds")

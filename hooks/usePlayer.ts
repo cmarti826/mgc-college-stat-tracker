@@ -1,7 +1,7 @@
 'use client';
 
 import { useEffect, useState } from 'react';
-import { createClient } from '@/lib/supabase/client';
+import { createClient } from '@/lib/supabase';
 
 type Result = {
   userId: string | null;
@@ -11,7 +11,7 @@ type Result = {
 };
 
 export function usePlayer(): Result {
-  const supabase = createClient();
+  const supabase = createBrowserSupabase();
   const [state, setState] = useState<Result>({
     userId: null,
     playerId: null,

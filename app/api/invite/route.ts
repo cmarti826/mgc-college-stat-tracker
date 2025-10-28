@@ -1,21 +1,12 @@
-// /app/api/invite/route.ts
-import { NextResponse } from 'next/server'
-import { createClient } from '@supabase/supabase-js'
-import { createClient } from '@/lib/supabase/server';
-const supabase = createClient();
+// app/api/invite/route.ts
+import { createClient } from '@supabase/supabase-js';
+import { createRouteSupabase } from '@/lib/supabase/route';
+import { NextResponse } from 'next/server';
 
-// Force Node runtime (admin client requires it)
-export const runtime = 'nodejs'
-
-type Role = 'player' | 'coach' | 'admin'
-type Body = { email: string; teamId: string; role?: Role }
-
-export async function POST(req: Request) {
-  try {
-    const { email, teamId, role = 'player' } = (await req.json()) as Body
-    if (!email || !teamId) {
-      return NextResponse.json({ error: 'email and teamId required' }, { status: 400 })
-    }
+const supabaseAdmin = createClient(
+  process.env.NEXT_PUBLIC_SUPABASE_URL!,
+  process.env.SUPABASE_SERVICE_ROLE_KEY!
+);
 
     // Verify caller session (Bearer access token from the browser)
     const authz = req.headers.get('authorization') || ''

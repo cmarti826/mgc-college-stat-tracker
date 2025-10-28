@@ -2,7 +2,7 @@
 'use client';
 
 import { useEffect, useState } from 'react';
-import { createClient } from '@/lib/supabase/client';
+import { createClient } from '@/lib/supabase';
 import Link from 'next/link';
 import NavAdmin from '../NavAdmin';
 
@@ -18,7 +18,7 @@ type PlayerRow = {
 };
 
 export default function AdminPlayersPage() {
-  const supabase = createClient();
+  const supabase = createBrowserSupabase();
   const [players, setPlayers] = useState<PlayerRow[]>([]);
   const [loading, setLoading] = useState(true);
   const [sending, setSending] = useState<string | null>(null);

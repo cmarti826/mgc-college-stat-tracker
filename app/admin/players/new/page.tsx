@@ -3,11 +3,11 @@
 
 import { useState } from 'react';
 import { useRouter } from 'next/navigation';
-import { createClient } from '@/lib/supabase/client';
+import { createClient } from '@/lib/supabase';
 import NavAdmin from '../../NavAdmin';
 
 export default function AdminNewPlayerPage() {
-  const supabase = createClient();
+  const supabase = createBrowserSupabase();
   const router = useRouter();
   const [teams, setTeams] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);

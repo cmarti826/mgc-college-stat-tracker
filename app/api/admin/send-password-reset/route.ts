@@ -1,6 +1,6 @@
 // app/api/admin/send-password-reset/route.ts
 import { NextResponse } from 'next/server';
-import { createClient as createClient } from '@/lib/supabase/server';
+import { createClient as createClient } from '@/lib/supabase';
 import { createClient as createAdminClient } from '@supabase/supabase-js';
 
 export async function POST(req: Request) {
@@ -9,7 +9,7 @@ export async function POST(req: Request) {
     if (!email) return NextResponse.json({ error: 'Missing email' }, { status: 400 });
 
     // Confirm requester is an admin
-    const supabase = await createClient();
+    const supabase = await createBrowserSupabase();
     const { data: { user } } = await supabase.auth.getUser();
     if (!user) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
 

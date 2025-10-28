@@ -3,8 +3,8 @@
 
 import { useEffect, useMemo, useState } from 'react'
 import Link from 'next/link'
-import { createClient } from '@/lib/supabase/client';
-const supabase = createClient();
+import { createClient } from '@/lib/supabase';
+const supabase = createBrowserSupabase();
 
 type RoundType = 'TOURNAMENT' | 'QUALIFYING' | 'PRACTICE'
 const TYPES: RoundType[] = ['TOURNAMENT', 'QUALIFYING', 'PRACTICE']
@@ -59,7 +59,7 @@ function addDays(d: string, n: number): string {
 }
 
 export default function LeaderboardPage() {
-  const supabase = useMemo(() => createClient(), [])
+  const supabase = useMemo(() => createBrowserSupabase(), [])
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
 

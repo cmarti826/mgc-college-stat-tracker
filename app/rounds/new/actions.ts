@@ -5,7 +5,7 @@ import { redirect } from "next/navigation";
 import { createClient } from "@/lib/supabase/server";
 
 export async function saveRoundWithHoles(formData: FormData) {
-  const supabase = await createClient();
+  const supabase = await createBrowserSupabase();
 
   const playerKey = String(formData.get("playerKey") ?? "");
   const courseKey = String(formData.get("courseKey") ?? "");

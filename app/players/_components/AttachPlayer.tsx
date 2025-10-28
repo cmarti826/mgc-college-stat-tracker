@@ -1,10 +1,10 @@
 'use client';
 
 import { useState } from 'react';
-import { createClient } from '@/lib/supabase/client';
+import { createClient } from '@/lib/supabase';
 
 export default function AttachPlayer() {
-  const supabase = createClient();
+  const supabase = createBrowserSupabase();
   const [name, setName] = useState('');
   const [role, setRole] = useState<'player' | 'coach' | 'admin'>('player');
   const [status, setStatus] = useState<string | null>(null);

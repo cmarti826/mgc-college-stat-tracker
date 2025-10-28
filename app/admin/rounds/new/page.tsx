@@ -6,7 +6,7 @@ import CourseTeePicker from "../CourseTeePicker";
 
 async function createRound(formData: FormData) {
   "use server";
-  const supabase = await createClient();
+  const supabase = await createBrowserSupabase();
   const player_id = String(formData.get("player_id") || "");
   const course_id = String(formData.get("course_id") || "");
   const tee_id    = String(formData.get("tee_id") || "");
@@ -20,7 +20,7 @@ async function createRound(formData: FormData) {
 }
 
 export default async function AdminNewRoundPage() {
-  const supabase = await createClient();
+  const supabase = await createBrowserSupabase();
   const [{ data: players }, { data: courses }, { data: tees }] = await Promise.all([
     supabase.from("players").select("id, full_name").order("full_name"),
     supabase.from("courses").select("id, name").order("name"),

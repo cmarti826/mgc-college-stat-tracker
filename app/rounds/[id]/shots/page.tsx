@@ -68,7 +68,7 @@ const toUI = (lie: DBShot["start_lie"]): LieUI =>
   : "Other";
 
 export default async function ShotsPage({ params }: { params: { id: string } }) {
-  const supabase = createClient();
+  const supabase = createBrowserSupabase();
   const roundId = params.id;
 
   // Round (canonical cols only)

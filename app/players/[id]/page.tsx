@@ -11,7 +11,7 @@ function relName(x: RelName): string {
 }
 
 export default async function PlayerDetail({ params }: { params: { id: string } }) {
-  const supabase = createClient();
+  const supabase = createBrowserSupabase();
   const playerId = params.id;
 
   const { data: player, error: playerErr } = await supabase

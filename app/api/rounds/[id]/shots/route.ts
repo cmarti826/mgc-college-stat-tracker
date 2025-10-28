@@ -53,7 +53,7 @@ function normalizeLie(s?: UILie): LieEnum {
 }
 
 export async function POST(req: NextRequest, { params }: { params: { id: string } }) {
-  const supabase = createClient();
+  const supabase = createBrowserSupabase();
   const roundId = params.id;
 
   const { data: { user } } = await supabase.auth.getUser();

@@ -9,20 +9,20 @@ async function fetchAll(id: string) {
   if (e1) throw e1;
 
   const [{ data: courses }, { data: teams }] = await Promise.all([
-    supabase.from("courses").schema("mgc").select("id, name").order("name"),
-    supabase.from("teams").schema("mgc").select("id, name").order("name"),
+    supabase.from("courses").select("id, name").order("name"),
+    supabase.from("teams").select("id, name").order("name"),
   ]);
 
   // Players filtered by event.team_id if set
   let players: any[] = [];
   if (event?.team_id) {
     const { data } = await supabase
-      .from("players").schema("mgc").select("id, first_name, last_name, team_id")
+      .from("players").select("id, first_name, last_name, team_id")
       .eq("team_id", event.team_id).order("last_name");
     players = data ?? [];
   } else {
     const { data } = await supabase
-      .from("players").schema("mgc").select("id, first_name, last_name, team_id")
+      .from("players").select("id, first_name, last_name, team_id")
       .order("last_name");
     players = data ?? [];
   }
@@ -44,7 +44,7 @@ async function fetchAll(id: string) {
 
   // Eligible rounds to link: unlinked, within dates, same team (if set)
   let q = supabase
-    .from("scheduled_rounds").schema("mgc")
+    .from("scheduled_rounds")
     .select("id, player_id, name, round_date, date, course_id, tee_id, team_id, event_id")
     .is("event_id", null)
     .order("round_date", { ascending: true });
@@ -57,7 +57,7 @@ async function fetchAll(id: string) {
 
   const [{ data: tees }, { data: courseList }] = await Promise.all([
     supabase.from("tees").select("id, name, course_id"),
-    supabase.from("courses").schema("mgc").select("id, name"),
+    supabase.from("courses").select("id, name"),
   ]);
 
   return {

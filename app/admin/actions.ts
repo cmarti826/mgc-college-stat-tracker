@@ -44,7 +44,7 @@ export async function createPlayer(formData: FormData): Promise<void> {
 
   // Create the player first so we have a player_id regardless.
   const { data: playerRow, error: playerErr } = await supabase
-    .from("players").schema("mgc")
+    .from("players")
     .insert({ full_name, grad_year })
     .select("id")
     .maybeSingle();
@@ -63,7 +63,7 @@ export async function createPlayer(formData: FormData): Promise<void> {
     });
     if (adminErr) {
       // Roll back the player we just created to keep things tidy? Optional.
-      // await supabase.from("players").schema("mgc").delete().eq("id", playerRow.id);
+      // await supabase.from("players").delete().eq("id", playerRow.id);
       throw new Error(adminErr.message);
     }
     const user = created.user;
@@ -80,7 +80,7 @@ export async function createPlayer(formData: FormData): Promise<void> {
 
     // Link user ↔ player
     const { error: linkErr } = await supabase
-      .from("user_players").schema("mgc")
+      .from("user_players")
       .upsert({ user_id: user.id, player_id: playerRow.id }, { onConflict: "user_id" });
     if (linkErr) throw new Error(linkErr.message);
   }
@@ -92,7 +92,7 @@ export async function deletePlayer(formData: FormData): Promise<void> {
   const supabase = createServerSupabase();
   const id = txt(formData.get("id"));
   if (!id) throw new Error("Player id is required.");
-  const { error } = await supabase.from("players").schema("mgc").delete().eq("id", id);
+  const { error } = await supabase.from("players").delete().eq("id", id);
   if (error) throw new Error(error.message);
   revalidatePath("/admin");
 }
@@ -103,7 +103,7 @@ export async function createCourse(formData: FormData): Promise<void> {
   const city = txt(formData.get("city"));
   const state = txt(formData.get("state"));
   if (!name) throw new Error("Course name is required.");
-  const { error } = await supabase.from("courses").schema("mgc").insert({ name, city, state });
+  const { error } = await supabase.from("courses").insert({ name, city, state });
   if (error) throw new Error(error.message);
   revalidatePath("/admin");
 }
@@ -112,7 +112,7 @@ export async function deleteCourse(formData: FormData): Promise<void> {
   const supabase = createServerSupabase();
   const id = txt(formData.get("id"));
   if (!id) throw new Error("Course id is required.");
-  const { error } = await supabase.from("courses").schema("mgc").delete().eq("id", id);
+  const { error } = await supabase.from("courses").delete().eq("id", id);
   if (error) throw new Error(error.message);
   revalidatePath("/admin");
 }
@@ -130,7 +130,7 @@ export async function createTeeSet(formData: FormData): Promise<void> {
   if (!name) throw new Error("Tee set name is required.");
   if (!par) throw new Error("Par is required.");
 
-  const { error } = await supabase.from("tee_sets").schema("mgc").insert({
+  const { error } = await supabase.from("tee_sets").insert({
     course_id,
     name,
     rating,
@@ -147,7 +147,7 @@ export async function deleteTeeSet(formData: FormData): Promise<void> {
   const supabase = createServerSupabase();
   const id = txt(formData.get("id"));
   if (!id) throw new Error("Tee set id is required.");
-  const { error } = await supabase.from("tee_sets").schema("mgc").delete().eq("id", id);
+  const { error } = await supabase.from("tee_sets").delete().eq("id", id);
   if (error) throw new Error(error.message);
   revalidatePath("/admin");
 }
@@ -159,7 +159,7 @@ export async function createTeam(formData: FormData): Promise<void> {
   const name = txt(formData.get("team_name"));
   const school = txt(formData.get("school"));
   if (!name) throw new Error("Team name is required.");
-  const { error } = await supabase.from("teams").schema("mgc").insert({ name, school });
+  const { error } = await supabase.from("teams").insert({ name, school });
   if (error) throw new Error(error.message);
   revalidatePath("/admin");
 }
@@ -168,7 +168,7 @@ export async function deleteTeam(formData: FormData): Promise<void> {
   const supabase = createServerSupabase();
   const id = txt(formData.get("id"));
   if (!id) throw new Error("Team id is required.");
-  const { error } = await supabase.from("teams").schema("mgc").delete().eq("id", id);
+  const { error } = await supabase.from("teams").delete().eq("id", id);
   if (error) throw new Error(error.message);
   revalidatePath("/admin");
 }
@@ -208,7 +208,7 @@ export async function linkUserToPlayer(formData: FormData): Promise<void> {
   const player_id = txt(formData.get("player_id"));
   if (!user_id || !player_id) throw new Error("user_id and player_id are required.");
   const { error } = await supabase
-    .from("user_players").schema("mgc")
+    .from("user_players")
     .upsert({ user_id, player_id }, { onConflict: "user_id" });
   if (error) throw new Error(error.message);
   revalidatePath("/admin");
@@ -255,7 +255,7 @@ export async function createRound(formData: FormData): Promise<void> {
     status: status ?? undefined,
   };
 
-  const { error } = await supabase.from("scheduled_rounds").schema("mgc").insert(insert as any);
+  const { error } = await supabase.from("scheduled_rounds").insert(insert as any);
   if (error) throw new Error(error.message);
 
   revalidatePath("/admin");
@@ -266,7 +266,7 @@ export async function deleteRound(formData: FormData): Promise<void> {
   const supabase = createServerSupabase();
   const id = txt(formData.get("id"));
   if (!id) throw new Error("round id is required.");
-  const { error } = await supabase.from("scheduled_rounds").schema("mgc").delete().eq("id", id);
+  const { error } = await supabase.from("scheduled_rounds").delete().eq("id", id);
   if (error) throw new Error(error.message);
   revalidatePath("/admin");
   revalidatePath("/rounds");

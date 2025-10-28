@@ -9,9 +9,9 @@ export default async function NewRoundPage() {
 
   // Fetch minimal data needed to render selectors
   const [playersRes, coursesRes, teeSetsRes] = await Promise.all([
-    supabase.from("players").schema("mgc").select("id, first_name, last_name, grad_year").order("last_name"),
-    supabase.from("courses").schema("mgc").select("id, name").order("name"),
-    supabase.from("tee_sets").schema("mgc").select("id, course_id, name, rating, slope, par").order("name"),
+    supabase.from("players").select("id, first_name, last_name, grad_year").order("last_name"),
+    supabase.from("courses").select("id, name").order("name"),
+    supabase.from("tee_sets").select("id, course_id, name, rating, slope, par").order("name"),
   ]);
 
   const players = playersRes.data ?? [];

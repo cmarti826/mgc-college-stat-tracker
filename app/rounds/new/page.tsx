@@ -23,7 +23,7 @@ async function createRound(formData: FormData) {
   }
 
   const { error } = await supabase
-    .from("scheduled_rounds").schema("mgc")
+    .from("scheduled_rounds")
     .insert({ player_id, course_id, tee_set_id, round_date, name, notes });
 
   if (error) throw error;
@@ -41,20 +41,20 @@ async function loadData() {
   if (!user) redirect("/login?redirectTo=/rounds/new");
 
   const { data: link, error: linkErr } = await supabase
-    .from("user_players").schema("mgc")
+    .from("user_players")
     .select("player_id")
     .eq("user_id", user.id)
     .maybeSingle();
   if (linkErr) throw linkErr;
 
   const { data: courses, error: cErr } = await supabase
-    .from("courses").schema("mgc")
+    .from("courses")
     .select("id,name")
     .order("name");
   if (cErr) throw cErr;
 
   const { data: teeSets, error: tErr } = await supabase
-    .from("tee_sets").schema("mgc")
+    .from("tee_sets")
     .select("id,name,course_id")
     .order("name");
   if (tErr) throw tErr;

@@ -5,7 +5,7 @@ export const dynamic = "force-dynamic";
 export default async function CoursesPage() {
   const supabase = createBrowserSupabase();
   const { data: courses, error } = await supabase
-    .from("courses").schema("mgc")
+    .from("courses")
     .select("id, name, city, state, created_at")
     .order("name", { ascending: true });
 

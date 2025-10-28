@@ -4,8 +4,8 @@ import { createServerSupabase } from "@/lib/supabase/server";
 export default async function TeeSetsIndex() {
   const supabase = await createServerSupabase();
   const [{ data: sets }, { data: courses }] = await Promise.all([
-    supabase.from("tee_sets").schema("mgc").select("id, course_id, name, tee_name, rating, slope, par").order("name"),
-    supabase.from("courses").schema("mgc").select("id, name"),
+    supabase.from("tee_sets").select("id, course_id, name, tee_name, rating, slope, par").order("name"),
+    supabase.from("courses").select("id, name"),
   ]);
 
   const courseName = (cid: string) => courses?.find((c: any) => c.id === cid)?.name ?? "—";

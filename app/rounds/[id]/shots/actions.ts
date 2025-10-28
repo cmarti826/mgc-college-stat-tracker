@@ -2,7 +2,7 @@
 "use server";
 
 import { revalidatePath } from "next/cache";
-import { createClient } from "@/lib/supabase/server";
+import { createServerSupabase } from "@/lib/supabase/server";
 
 type LieUI = "Tee" | "Fairway" | "Rough" | "Sand" | "Recovery" | "Other" | "Green" | "Penalty";
 const toDbLie = (ui?: LieUI | null) =>

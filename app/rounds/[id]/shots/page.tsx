@@ -1,6 +1,6 @@
 // app/rounds/[id]/shots/page.tsx
 import Link from "next/link";
-import { createClient } from "@/lib/supabase/server";
+import { createServerSupabase } from "@/lib/supabase/server";
 import ShotEditor from "@/app/rounds/_components/ShotEditor";
 
 export const dynamic = "force-dynamic";

@@ -1,6 +1,6 @@
 // app/tee-sets/new/page.tsx  (optional public create)
 import { revalidatePath } from "next/cache";
-import { createClient } from "@/lib/supabase/server";
+import { createServerSupabase } from "@/lib/supabase/server";
 
 async function createTeeSet(formData: FormData) {
   "use server";

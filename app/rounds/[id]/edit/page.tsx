@@ -1,7 +1,7 @@
 // ==========================
 // File: app/rounds/[id]/edit/page.tsx
 // ==========================
-import { createClient } from "@/lib/supabase/server";
+import { createServerSupabase } from "@/lib/supabase/server";
 import RoundEntry from "../../_components/RoundEntry";
 
 interface Props { params: { id: string } }

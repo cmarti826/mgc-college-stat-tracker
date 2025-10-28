@@ -1,5 +1,5 @@
 // app/admin/AdminContent.tsx
-import { createClient } from "@/lib/supabase/server";
+import { createServerSupabase } from "@/lib/supabase/server";
 import {
   createPlayer,
   deletePlayer,

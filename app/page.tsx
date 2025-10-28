@@ -1,6 +1,6 @@
 // app/page.tsx
 import Link from "next/link";
-import { createClient } from "@/lib/supabase/server";
+import { createServerSupabase } from "@/lib/supabase/server";
 import DashboardPanel from "./_components/DashboardPanel";
 
 type Player = { id: string; full_name: string | null };

@@ -1,5 +1,5 @@
 // app/rounds/new/page.tsx
-import { createClient } from "@/lib/supabase/server";
+import { createServerSupabase } from "@/lib/supabase/server";
 import RoundEntry from "../_components/RoundEntry";
 
 export const dynamic = "force-dynamic"; // avoid caching while building

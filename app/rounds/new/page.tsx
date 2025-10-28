@@ -1,7 +1,7 @@
 // app/rounds/new/page.tsx
 import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
-import { createClient } from "@/lib/supabase/server";
+import { createServerSupabase } from "@/lib/supabase/server";
 import CourseTeePicker from "../../admin/rounds/CourseTeePicker";
 
 async function createRound(formData: FormData) {

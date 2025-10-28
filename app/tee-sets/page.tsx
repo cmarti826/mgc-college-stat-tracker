@@ -1,5 +1,5 @@
 // app/tee-sets/page.tsx
-import { createClient } from "@/lib/supabase/server";
+import { createServerSupabase } from "@/lib/supabase/server";
 
 export default async function TeeSetsIndex() {
   const supabase = await createBrowserSupabase();

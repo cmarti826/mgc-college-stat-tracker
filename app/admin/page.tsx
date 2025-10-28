@@ -1,6 +1,6 @@
 // app/admin/page.tsx
 import Link from "next/link";
-import { createClient } from "@/lib/supabase/server";
+import { createServerSupabase } from "@/lib/supabase/server";
 
 type CountResp = { count: number | null };
 

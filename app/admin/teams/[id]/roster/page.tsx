@@ -1,5 +1,5 @@
 // app/admin/teams/[id]/roster/page.tsx
-import { createClient } from "@/lib/supabase/server";
+import { createServerSupabase } from "@/lib/supabase/server";
 import { revalidatePath } from "next/cache";
 import Link from "next/link";
 

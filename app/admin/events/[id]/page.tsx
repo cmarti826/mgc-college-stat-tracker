@@ -1,6 +1,6 @@
 import { revalidatePath } from "next/cache";
 import NavAdmin from "../../NavAdmin";
-import { createClient } from "@/lib/supabase/server";
+import { createServerSupabase } from "@/lib/supabase/server";
 
 async function fetchAll(id: string) {
   const supabase = await createBrowserSupabase();

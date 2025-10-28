@@ -1,6 +1,6 @@
 // app/admin/rounds/page.tsx
 import { revalidatePath } from "next/cache";
-import { createClient } from "@/lib/supabase/server";
+import { createServerSupabase } from "@/lib/supabase/server";
 import NavAdmin from "../NavAdmin";
 import Link from "next/link";
 import CourseTeePicker from "./CourseTeePicker";

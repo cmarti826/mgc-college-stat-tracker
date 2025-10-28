@@ -42,7 +42,7 @@ export default async function AdminContent() {
       .order("created_at", { ascending: false }),
     supabase.from("profiles").select("id, full_name, default_team_id").order("full_name"),
     supabase
-      .from("rounds")
+      .from("scheduled_rounds")
       .select("id, date, player_id, course_id, tee_set_id, team_id, type, status, name, created_at")
       .order("created_at", { ascending: false })
       .limit(25),

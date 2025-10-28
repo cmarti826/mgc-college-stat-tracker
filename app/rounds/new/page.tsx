@@ -21,7 +21,7 @@ async function createRound(formData: FormData) {
 
   // If your rounds table uses tee_set_id (recommended):
   const { error } = await supabase
-    .from("rounds")
+    .from("scheduled_rounds")
     .insert({ player_id, course_id, tee_set_id, round_date, name, notes });
 
   // If your rounds table still has tee_id instead, swap the insert above to:

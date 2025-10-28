@@ -14,7 +14,7 @@ export default async function EditRoundPage({ params }: Props) {
     supabase.from("players").select("id, first_name, last_name, grad_year").order("last_name"),
     supabase.from("courses").select("id, name").order("name"),
     supabase.from("tee_sets").select("id, course_id, name, rating, slope, par").order("name"),
-    supabase.from("rounds").select("id, player_id, course_id, tee_set_id, event_id, played_on, notes").eq("id", roundId).single(),
+    supabase.from("scheduled_rounds").select("id, player_id, course_id, tee_set_id, event_id, played_on, notes").eq("id", roundId).single(),
     supabase.from("round_holes").select("hole_number, par, yards, strokes, putts, fir, gir, up_down, sand_save, penalty").eq("round_id", roundId).order("hole_number"),
   ]);
 

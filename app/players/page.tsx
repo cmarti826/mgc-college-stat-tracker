@@ -21,7 +21,7 @@ export default async function PlayersPage() {
     .select("player_id, team_id");
 
   const { data: playerRounds } = await supabase
-    .from("rounds")
+    .from("scheduled_rounds")
     .select("id, player_id");
 
   const teamsByPlayer = new Map<string, number>();

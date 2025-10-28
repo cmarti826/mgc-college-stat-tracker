@@ -14,7 +14,7 @@ export default async function RoundsPage() {
   const supabase = createClient();
 
   const { data: rounds, error } = await supabase
-    .from("rounds")
+    .from("scheduled_rounds")
     .select(`
       id, date, status, type,
       players:player_id ( full_name ),

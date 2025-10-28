@@ -3,7 +3,7 @@
 
 import { revalidatePath } from "next/cache";
 import { createClient } from "@/lib/supabase/server";
-import { createClient as createSupabaseAdmin } from "@supabase/supabase-js";
+import { createClient as createcreateServerClient } from "@supabase/supabase-js";
 
 /* ----------------------- helpers ----------------------- */
 function txt(x: FormDataEntryValue | null) {
@@ -25,7 +25,7 @@ function getAdminClient() {
       "Missing Supabase admin env. Set NEXT_PUBLIC_SUPABASE_URL and SUPABASE_SERVICE_ROLE_KEY."
     );
   }
-  return createSupabaseAdmin(url, key, {
+  return createcreateServerClient(url, key, {
     auth: { autoRefreshToken: false, persistSession: false },
   });
 }
@@ -255,7 +255,7 @@ export async function createRound(formData: FormData): Promise<void> {
     status: status ?? undefined,
   };
 
-  const { error } = await supabase.from("rounds").insert(insert as any);
+  const { error } = await supabase.from("scheduled_rounds").insert(insert as any);
   if (error) throw new Error(error.message);
 
   revalidatePath("/admin");
@@ -266,7 +266,7 @@ export async function deleteRound(formData: FormData): Promise<void> {
   const supabase = createClient();
   const id = txt(formData.get("id"));
   if (!id) throw new Error("round id is required.");
-  const { error } = await supabase.from("rounds").delete().eq("id", id);
+  const { error } = await supabase.from("scheduled_rounds").delete().eq("id", id);
   if (error) throw new Error(error.message);
   revalidatePath("/admin");
   revalidatePath("/rounds");

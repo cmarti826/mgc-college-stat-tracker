@@ -24,7 +24,7 @@ async function getDashboardData() {
     supabase.from("players").select("id", { count: "exact", head: true }),
     supabase.from("courses").select("id", { count: "exact", head: true }),
     supabase.from("tee_sets").select("id", { count: "exact", head: true }), // <-- here
-    supabase.from("rounds").select("id", { count: "exact", head: true }),
+    supabase.from("scheduled_rounds").select("id", { count: "exact", head: true }),
   ]);
 
   if (evErr) throw evErr;

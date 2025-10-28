@@ -28,7 +28,7 @@ export default async function RoundSummaryPage({
 
   // 1) Load round (NO embedded relations)
   const { data: round } = await supabase
-    .from("rounds")
+    .from("scheduled_rounds")
     .select("id, date, type, status, notes, player_id, course_id, tee_set_id")
     .eq("id", roundId)
     .maybeSingle();

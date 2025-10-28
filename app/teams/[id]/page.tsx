@@ -24,7 +24,7 @@ export default async function TeamDetail({ params }: { params: { id: string } })
       .eq("team_id", teamId)
       .order("full_name", { ascending: true }),
     supabase
-      .from("rounds")
+      .from("scheduled_rounds")
       .select(`
         id, date,
         players:player_id ( full_name ),

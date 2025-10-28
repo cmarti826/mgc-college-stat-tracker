@@ -4,7 +4,8 @@
 import { useEffect, useMemo, useState } from 'react'
 import Link from 'next/link'
 import { useParams } from 'next/navigation'
-import { supabaseBrowser } from '@/lib/supabase-browser'
+import { createBrowserClient } from '@/lib/supabase/client';
+const supabase = createBrowserClient();
 
 type EventHeader = {
   id: string
@@ -69,7 +70,7 @@ type TeamMode = 'sum_all' | 'best_n'
 
 export default function EventDetailPage() {
   const { id } = useParams<{ id: string }>()
-  const supabase = useMemo(() => supabaseBrowser(), [])
+  const supabase = useMemo(() => createBrowserClient(), [])
 
   const [hdr, setHdr] = useState<EventHeader | null>(null)
   const [leader, setLeader] = useState<LbRow[]>([])

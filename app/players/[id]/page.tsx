@@ -28,7 +28,7 @@ export default async function PlayerDetail({ params }: { params: { id: string } 
       `)
       .eq("player_id", playerId),
     supabase
-      .from("rounds")
+      .from("scheduled_rounds")
       .select(`
         id, date, status, type,
         teams:team_id ( name ),

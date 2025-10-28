@@ -14,7 +14,7 @@ async function createRound(formData: FormData) {
   const name      = String(formData.get("name") || "").trim() || null;
   const notes     = String(formData.get("notes") || "").trim() || null;
   if (!player_id || !course_id || !tee_id || !round_date) throw new Error("Player, Course, Tee, and Date are required.");
-  const { error } = await supabase.from("rounds").insert({ player_id, course_id, tee_id, round_date, name, notes });
+  const { error } = await supabase.from("scheduled_rounds").insert({ player_id, course_id, tee_id, round_date, name, notes });
   if (error) throw error;
   revalidatePath("/admin/rounds");
 }

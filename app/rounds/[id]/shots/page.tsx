@@ -73,7 +73,7 @@ export default async function ShotsPage({ params }: { params: { id: string } }) 
 
   // Round (canonical cols only)
   const { data: round } = await supabase
-    .from("rounds")
+    .from("scheduled_rounds")
     .select("id, player_id, course_id, tee_set_id, date")
     .eq("id", roundId)
     .maybeSingle();

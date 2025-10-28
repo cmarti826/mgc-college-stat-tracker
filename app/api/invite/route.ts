@@ -1,7 +1,8 @@
 // /app/api/invite/route.ts
 import { NextResponse } from 'next/server'
 import { createClient } from '@supabase/supabase-js'
-import { supabaseAdmin } from '@/lib/supabaseAdmin'
+import { createServerClient } from '@/lib/supabase/server';
+const supabase = createServerClient();
 
 // Force Node runtime (admin client requires it)
 export const runtime = 'nodejs'
@@ -56,7 +57,7 @@ export async function POST(req: Request) {
 
     // Invite or generate magic link
     const redirectTo = `${process.env.NEXT_PUBLIC_SITE_URL || 'https://mgcstats.vercel.app'}/auth/callback`
-    const { data: inviteData, error: inviteError } = await supabaseAdmin.auth.admin.inviteUserByEmail(email, { redirectTo })
+    const { data: inviteData, error: inviteError } = await createServerClient.auth.admin.inviteUserByEmail(email, { redirectTo })
 
     let userId: string | undefined = inviteData?.user?.id
     let info: 'invited' | 'existing_user_magic_link' = 'invited'
@@ -65,7 +66,7 @@ export async function POST(req: Request) {
     if (inviteError) {
       if (inviteError.status === 422) {
         // Existing user → generate a magic link instead
-        const { data: linkData, error: linkError } = await supabaseAdmin.auth.admin.generateLink({
+        const { data: linkData, error: linkError } = await createServerClient.auth.admin.generateLink({
           type: 'magiclink',
           email,
           options: { redirectTo },
@@ -92,7 +93,7 @@ export async function POST(req: Request) {
     let warn: string | undefined
 
     try {
-      const { error: rpcError } = await supabaseAdmin.rpc('add_team_member_by_email', {
+      const { error: rpcError } = await createServerClient.rpc('add_team_member_by_email', {
         p_team: teamId,
         p_email: email,
         p_role: role,
@@ -102,7 +103,7 @@ export async function POST(req: Request) {
         warn = `Invite ok but team add via RPC failed: ${rpcError.message}`
         // Fallback: if we know the userId, upsert team_members directly
         if (userId) {
-          const { error: insErr } = await supabaseAdmin
+          const { error: insErr } = await createServerClient
             .from('team_members')
             .upsert({ team_id: teamId, user_id: userId, role })
           if (insErr) {

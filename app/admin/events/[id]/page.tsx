@@ -44,7 +44,7 @@ async function fetchAll(id: string) {
 
   // Eligible rounds to link: unlinked, within dates, same team (if set)
   let q = supabase
-    .from("rounds")
+    .from("scheduled_rounds")
     .select("id, player_id, name, round_date, date, course_id, tee_id, team_id, event_id")
     .is("event_id", null)
     .order("round_date", { ascending: true });

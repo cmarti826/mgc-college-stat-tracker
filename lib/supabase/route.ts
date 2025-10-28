@@ -1,13 +1,12 @@
-// lib/supabase/server-route.ts
+// lib/supabase/route.ts
 import { cookies } from "next/headers";
-import { createServerClient, type CookieOptions } from "@supabase/ssr";
+import { createServerClient } from "@supabase/ssr";
+import type { Database } from "./types";
 
-// Use this ONLY in Route Handlers (e.g. app/some/route.ts) or "use server" actions.
-// It can set/delete cookies.
-export function createRouteClient() {
+export const createRouteClient = () => {
   const cookieStore = cookies();
 
-  return createServerClient(
+  return createServerClient<Database>(
     process.env.NEXT_PUBLIC_SUPABASE_URL!,
     process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
     {
@@ -15,13 +14,13 @@ export function createRouteClient() {
         get(name: string) {
           return cookieStore.get(name)?.value;
         },
-        set(name: string, value: string, options: CookieOptions) {
+        set(name: string, value: string, options) {
           cookieStore.set({ name, value, ...options });
         },
-        remove(name: string, options: CookieOptions) {
+        remove(name: string, options) {
           cookieStore.delete({ name, ...options });
         },
       },
     }
   );
-}
+};

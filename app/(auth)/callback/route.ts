@@ -1,6 +1,6 @@
 // app/(auth)/callback/route.ts
 import { NextResponse } from 'next/server';
-import { createRouteClient } from '@/lib/supabase';
+import { createRouteSupabase } from '@/lib/supabase/route'; // DIRECT IMPORT
 
 export async function GET(request: Request) {
   const { searchParams } = new URL(request.url);

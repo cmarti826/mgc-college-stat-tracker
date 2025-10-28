@@ -1,4 +1,6 @@
 // lib/supabase/route.ts
+'use server';
+
 import { cookies } from "next/headers";
 import { createServerClient } from "@supabase/ssr";
 import type { Database } from "./types";
@@ -14,10 +16,10 @@ export const createRouteSupabase = () => {
         get(name: string) {
           return cookieStore.get(name)?.value;
         },
-        set(name: string, value: string, options) {
+        set(name: string, value: string, options: any) {
           cookieStore.set({ name, value, ...options });
         },
-        remove(name: string, options) {
+        remove(name: string, options: any) {
           cookieStore.delete({ name, ...options });
         },
       },

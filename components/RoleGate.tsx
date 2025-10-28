@@ -1,20 +1,26 @@
-'use client'
+// components/RoleGate.tsx
+"use client";
 
-import { ReactNode, useEffect } from 'react'
-import { useRouter } from 'next/navigation'
-import { useProfile, Role } from '@/lib/useProfile'
+import { ReactNode } from "react";
+import { useRouter } from "next/navigation";
+import { useProfile, Role } from "@/lib/useProfile";
 
 export default function RoleGate({ allow, children }: { allow: Role[]; children: ReactNode }) {
-  const { loading, role } = useProfile()
-  const router = useRouter()
+  const { loading, role } = useProfile();
+  const router = useRouter();
 
-  useEffect(() => {
-    if (loading) return
-    if (!role) { router.replace('/auth'); return }
-    if (!allow.includes(role)) { router.replace('/'); }
-  }, [loading, role, router, allow])
+  if (loading) {
+    return (
+      <div className="flex items-center justify-center min-h-screen">
+        <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-gray-900"></div>
+      </div>
+    );
+  }
 
-  if (loading) return <div style={{ padding: 16 }}>Checking permissions…</div>
-  if (!role || !allow.includes(role)) return null
-  return <>{children}</>
+  if (!role || !allow.includes(role)) {
+    router.replace("/unauthorized");
+    return null;
+  }
+
+  return <>{children}</>;
 }

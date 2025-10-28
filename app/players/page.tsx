@@ -7,7 +7,7 @@ export default async function PlayersPage() {
   const supabase = createBrowserSupabase();
 
   const { data: players, error } = await supabase
-    .from("players")
+    .from("players").schema("mgc")
     .select("id, full_name, grad_year, created_at")
     .order("full_name", { ascending: true });
 
@@ -21,7 +21,7 @@ export default async function PlayersPage() {
     .select("player_id, team_id");
 
   const { data: playerRounds } = await supabase
-    .from("scheduled_rounds")
+    .from("scheduled_rounds").schema("mgc")
     .select("id, player_id");
 
   const teamsByPlayer = new Map<string, number>();

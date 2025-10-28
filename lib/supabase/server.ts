@@ -14,9 +14,7 @@ export const createServerSupabase = () => {
         getAll() { return cookieStore.getAll().map(c => ({ name: c.name, value: c.value })); },
         setAll(cookiesToSet) { cookiesToSet.forEach(c => cookieStore.set(c.name, c.value, c.options)); },
       },
-      db: {
-        schema: "mgc", // ← SET DEFAULT SCHEMA HERE
-      },
+      // Remove db.schema — NOT SUPPORTED
     }
   );
 };

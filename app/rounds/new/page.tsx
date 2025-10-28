@@ -1,21 +1,17 @@
 // app/rounds/new/page.tsx
 import { createServerSupabase } from "@/lib/supabase/server";
-import { redirect } from "next/navigation";
+import { redirect, revalidatePath } from "next/navigation";
 
 export const dynamic = "force-dynamic";
 
-export default async function NewRound() {
-  const supabase = createServerSupabase();
-  const { data: { user } } = await supabase.auth.getUser();
-  if (!user) redirect("/login");
-
+// Server Action: Create Round
 async function createRound(formData: FormData) {
   "use server";
-  const supabase = await createServerSupabase();
+  const supabase = createServerSupabase();
 
   const player_id  = String(formData.get("player_id") || "");
   const course_id  = String(formData.get("course_id") || "");
-  const tee_set_id = String(formData.get("tee_set_id") || ""); // ⬅️ tee_sets
+  const tee_set_id = String(formData.get("tee_set_id") || "");
   const round_date = String(formData.get("round_date") || "");
   const name       = String(formData.get("name") || "").trim() || null;
   const notes      = String(formData.get("notes") || "").trim() || null;
@@ -24,13 +20,9 @@ async function createRound(formData: FormData) {
     throw new Error("Player, Course, Tee Set, and Date are required.");
   }
 
-  // If your rounds table uses tee_set_id (recommended):
   const { error } = await supabase
     .from("scheduled_rounds")
     .insert({ player_id, course_id, tee_set_id, round_date, name, notes });
-
-  // If your rounds table still has tee_id instead, swap the insert above to:
-  // .insert({ player_id, course_id, tee_id: tee_set_id, round_date, name, notes });
 
   if (error) throw error;
 
@@ -38,15 +30,14 @@ async function createRound(formData: FormData) {
   redirect("/rounds");
 }
 
+// Load data for form
 async function loadData() {
-  const supabase = await createServerSupabase();
+  const supabase = createServerSupabase();
 
-  // Require auth
   const { data: { user }, error: userErr } = await supabase.auth.getUser();
   if (userErr) throw userErr;
   if (!user) redirect("/login?redirectTo=/rounds/new");
 
-  // Resolve this user's player_id
   const { data: link, error: linkErr } = await supabase
     .from("user_players")
     .select("player_id")
@@ -54,14 +45,12 @@ async function loadData() {
     .maybeSingle();
   if (linkErr) throw linkErr;
 
-  // Courses
   const { data: courses, error: cErr } = await supabase
     .from("courses")
     .select("id,name")
     .order("name");
   if (cErr) throw cErr;
 
-  // Tee Sets (NOT the view)
   const { data: teeSets, error: tErr } = await supabase
     .from("tee_sets")
     .select("id,name,course_id")
@@ -75,6 +64,7 @@ async function loadData() {
   };
 }
 
+// MAIN PAGE COMPONENT
 export default async function NewRoundPage() {
   const { playerId, courses, teeSets } = await loadData();
 
@@ -90,15 +80,14 @@ export default async function NewRoundPage() {
       )}
 
       <form action={createRound} className="space-y-3 rounded-2xl border bg-white p-4">
-        {/* Use the logged-in user's player_id */}
         <input type="hidden" name="player_id" value={playerId ?? ""} />
 
         <div className="grid grid-cols-2 gap-3">
           <CourseTeePicker
             courses={courses}
-            tees={teeSets}                 // ⬅️ pass tee sets here
+            tees={teeSets}
             initialCourseId={courses?.[0]?.id}
-            fieldName="tee_set_id"         // ⬅️ ensure the selector posts tee_set_id
+            fieldName="tee_set_id"
           />
         </div>
 
@@ -128,6 +117,4 @@ export default async function NewRoundPage() {
       </form>
     </div>
   );
-}
-return <div>New Round Form (Server Component)</div>;
 }

@@ -1,5 +1,5 @@
 import { redirect } from 'next/navigation';
-import { createClient } from '@/lib/supabase';
+import { createBrowserSupabase } from '@/lib/supabase';
 import AttachPlayer from '../_components/AttachPlayer';
 
 export default async function AttachPlayerPage() {

@@ -3,7 +3,7 @@
 
 import { useEffect, useMemo, useRef, useState } from 'react';
 import Link from 'next/link';
-import { createClient } from '@/lib/supabase';
+import { createBrowserSupabase } from '@/lib/supabase';
 
 type TeeSet = {
   id: string;

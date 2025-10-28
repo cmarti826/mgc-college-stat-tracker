@@ -3,7 +3,7 @@
 
 import { useState } from 'react';
 import { useRouter } from 'next/navigation';
-import { createClient } from '@/lib/supabase';
+import { createBrowserSupabase } from '@/lib/supabase';
 import NavAdmin from '../../NavAdmin';
 
 export default function AdminNewPlayerPage() {

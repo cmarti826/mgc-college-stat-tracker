@@ -3,7 +3,7 @@
 
 import { useEffect, useMemo, useState } from 'react'
 import Link from 'next/link'
-import { createClient } from '@/lib/supabase';
+import { createBrowserSupabase } from '@/lib/supabase';
 const supabase = createBrowserSupabase();
 
 type RoundType = 'TOURNAMENT' | 'QUALIFYING' | 'PRACTICE'

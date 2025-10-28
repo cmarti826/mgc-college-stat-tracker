@@ -4,7 +4,7 @@
 import { useEffect, useMemo, useState } from 'react'
 import Link from 'next/link'
 import { useParams } from 'next/navigation'
-import { createClient } from '@/lib/supabase';
+import { createBrowserSupabase } from '@/lib/supabase';
 const supabase = createBrowserSupabase();
 
 type EventHeader = {

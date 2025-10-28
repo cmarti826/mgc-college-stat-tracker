@@ -1,4 +1,4 @@
-import { createClient } from '@/lib/supabase';
+import { createBrowserSupabase } from '@/lib/supabase';
 
 export const dynamic = "force-dynamic";
 

@@ -1,6 +1,8 @@
 // app/rounds/new/page.tsx
 import { createServerSupabase } from "@/lib/supabase/server";
-import { redirect, revalidatePath } from "next/navigation";
+import { redirect } from "next/navigation";
+import { revalidatePath } from "next/cache";
+import CourseTeePicker from "@/app/admin/rounds/CourseTeePicker";
 
 export const dynamic = "force-dynamic";
 

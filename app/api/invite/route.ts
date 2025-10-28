@@ -3,115 +3,126 @@ import { createClient } from '@supabase/supabase-js';
 import { createRouteSupabase } from '@/lib/supabase/route';
 import { NextResponse } from 'next/server';
 
+// Admin client (service role) — bypass RLS
 const supabaseAdmin = createClient(
   process.env.NEXT_PUBLIC_SUPABASE_URL!,
   process.env.SUPABASE_SERVICE_ROLE_KEY!
 );
 
-    // Verify caller session (Bearer access token from the browser)
-    const authz = req.headers.get('authorization') || ''
-    const token = authz.startsWith('Bearer ') ? authz.slice(7) : null
-    if (!token) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
+export async function POST(req: Request) {
+  try {
+    // 1. Verify caller session
+    const authz = req.headers.get('authorization') || '';
+    const token = authz.startsWith('Bearer ') ? authz.slice(7) : null;
+    if (!token) {
+      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+    }
 
-    const anon = createClient(
-      process.env.NEXT_PUBLIC_SUPABASE_URL!,
-      process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
-      { global: { headers: { Authorization: `Bearer ${token}` } } }
-    )
-
-    const { data: meData, error: meErr } = await anon.auth.getUser()
+    const anon = createRouteSupabase();
+    const { data: meData, error: meErr } = await anon.auth.getUser(token);
     if (meErr || !meData?.user) {
-      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
+      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
     }
-    const meId = meData.user.id
+    const meId = meData.user.id;
 
-    // Require coach/admin: profiles.role OR team_members.role for this team
-    let isCoachOrAdmin = false
-    const { data: prof } = await anon.from('profiles').select('role').eq('id', meId).maybeSingle()
-    if (prof && (prof as any).role && ['coach', 'admin'].includes((prof as any).role)) {
-      isCoachOrAdmin = true
+    // 2. Parse body
+    const body = await req.json();
+    const { email, team_id, role = 'player' } = body;
+    if (!email || !team_id) {
+      return NextResponse.json({ error: 'email and team_id required' }, { status: 400 });
     }
+
+    // 3. Check caller is coach/admin of team
+    const { data: member, error: memberErr } = await supabaseAdmin
+      .from('team_members')
+      .select('role')
+      .eq('team_id', team_id)
+      .eq('user_id', meId)
+      .single();
+
+    if (memberErr || !member) {
+      return NextResponse.json({ error: 'Not team member' }, { status: 403 });
+    }
+
+    const isCoachOrAdmin = ['coach', 'admin'].includes(member.role);
     if (!isCoachOrAdmin) {
-      const { data: tm } = await anon
+      return NextResponse.json({ error: 'Coach/admin required' }, { status: 403 });
+    }
+
+    // 4. Invite or generate magic link
+    let userId: string | null = null;
+    let actionLink: string | null = null;
+    let info = 'invited';
+    let teamAdded = false;
+    let warn: string | null = null;
+
+    // Check if user exists
+    const { data: existingUser } = await supabaseAdmin.auth.admin.listUsers();
+    const found = existingUser.users.find(u => u.email === email);
+
+    if (found) {
+      userId = found.id;
+      info = 'existing_user_magic_link';
+
+      // Generate magic link
+      const { data: linkData, error: linkError } = await supabaseAdmin.auth.admin.generateLink({
+        type: 'signup',
+        email,
+        password,
+        options: {
+          redirectTo: `${process.env.NEXT_PUBLIC_SITE_URL}/auth/callback`,
+        },
+      });
+
+      if (linkError) {
+        return NextResponse.json({ error: linkError.message }, { status: linkError.status || 500 });
+      }
+
+      actionLink = linkData?.properties?.action_link || null;
+    } else {
+      // Invite new user
+      const { data: inviteData, error: inviteError } = await supabaseAdmin.auth.admin.inviteUserByEmail(email, {
+        redirectTo: `${process.env.NEXT_PUBLIC_SITE_URL}/auth/callback`,
+      });
+
+      if (inviteError) {
+        return NextResponse.json({ error: inviteError.message }, { status: inviteError.status || 500 });
+      }
+
+      userId = inviteData.user.id;
+      actionLink = inviteData.user.action_link || null;
+    }
+
+    // 5. Add to team (if not already)
+    if (userId) {
+      const { error: addErr } = await supabaseAdmin
         .from('team_members')
-        .select('role')
-        .eq('team_id', teamId)
-        .eq('user_id', meId)
-        .maybeSingle()
-      if (tm && (tm as any).role && ['coach', 'admin'].includes((tm as any).role)) {
-        isCoachOrAdmin = true
-      }
-    }
-    if (!isCoachOrAdmin) {
-      return NextResponse.json({ error: 'Coach/admin required' }, { status: 403 })
-    }
+        .upsert(
+          { team_id, user_id: userId, role },
+          { onConflict: 'team_id,user_id' }
+        );
 
-    // Invite or generate magic link
-    const redirectTo = `${process.env.NEXT_PUBLIC_SITE_URL || 'https://mgcstats.vercel.app'}/auth/callback`
-    const { data: inviteData, error: inviteError } = await createClient.auth.admin.inviteUserByEmail(email, { redirectTo })
-
-    let userId: string | undefined = inviteData?.user?.id
-    let info: 'invited' | 'existing_user_magic_link' = 'invited'
-    let actionLink: string | undefined
-
-    if (inviteError) {
-      if (inviteError.status === 422) {
-        // Existing user → generate a magic link instead
-        const { data: linkData, error: linkError } = await createClient.auth.admin.generateLink({
-          type: 'magiclink',
-          email,
-          options: { redirectTo },
-        })
-        if (linkError) {
-          return NextResponse.json({ error: linkError.message }, { status: linkError.status || 500 })
-        }
-        userId = linkData?.user?.id
-        // Supabase types differ by version; try both shapes
-        actionLink =
-          // @ts-ignore
-          (linkData as any)?.properties?.action_link ||
-          // @ts-ignore
-          (linkData as any)?.action_link ||
-          undefined
-        info = 'existing_user_magic_link'
+      if (addErr) {
+        warn = `Team add failed: ${addErr.message}`;
       } else {
-        return NextResponse.json({ error: inviteError.message }, { status: inviteError.status || 500 })
+        teamAdded = true;
       }
     }
 
-    // Add to team via RPC (preferred), with safe narrowing and fallback
-    let teamAdded = false
-    let warn: string | undefined
+    // 6. Success
+    return NextResponse.json({
+      ok: true,
+      status: info,
+      userId,
+      action_link: actionLink,
+      teamAdded,
+      warn,
+    });
 
-    try {
-      const { error: rpcError } = await createClient.rpc('add_team_member_by_email', {
-        p_team: teamId,
-        p_email: email,
-        p_role: role,
-      })
-
-      if (rpcError) {
-        warn = `Invite ok but team add via RPC failed: ${rpcError.message}`
-        // Fallback: if we know the userId, upsert team_members directly
-        if (userId) {
-          const { error: insErr } = await createClient
-            .from('team_members')
-            .upsert({ team_id: teamId, user_id: userId, role })
-          if (insErr) {
-            warn += `; fallback insert failed: ${insErr.message}`
-          } else {
-            teamAdded = true
-          }
-        }
-      } else {
-        teamAdded = true
-      }
-    } catch (e: any) {
-      warn = `Team add exception: ${e?.message || String(e)}`
-    }
-
-    return NextResponse.json({ ok: true, status: info, userId, action_link: actionLink, teamAdded, warn })
   } catch (e: any) {
-    return NextResponse.json({ error: e?.message || 'Internal error' }, { status: 500 })
+    return NextResponse.json(
+      { error: e?.message || 'Internal error' },
+      { status: 500 }
+    );
   }
 }

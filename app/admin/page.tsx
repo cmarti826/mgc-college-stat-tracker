@@ -5,7 +5,7 @@ import { createServerSupabase } from "@/lib/supabase/server";
 type CountResp = { count: number | null };
 
 async function getDashboardData() {
-  const supabase = await createBrowserSupabase();
+  const supabase = await createServerSupabase();
 
   const [
     { data: events, error: evErr },

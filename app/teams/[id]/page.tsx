@@ -13,7 +13,7 @@ function rel(x: Rel, key: "name" | "full_name"): string {
 }
 
 export default async function TeamDetail({ params }: { params: { id: string } }) {
-  const supabase = createBrowserSupabase();
+  const supabase = createServerSupabase();
   const teamId = params.id;
 
   const [{ data: team }, { data: roster }, { data: rounds }] = await Promise.all([

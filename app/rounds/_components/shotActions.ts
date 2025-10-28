@@ -45,7 +45,7 @@ const UiPayload = z.object({
 type UiPayload = z.infer<typeof UiPayload>;
 
 export async function saveShotsAction(input: UiPayload) {
-  const supabase = createBrowserSupabase();
+  const supabase = createServerSupabase();
 
   const parsed = UiPayload.safeParse(input);
   if (!parsed.success) {

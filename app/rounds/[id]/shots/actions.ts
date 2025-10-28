@@ -38,7 +38,7 @@ export type UpsertShot = {
 };
 
 export async function upsertShots(roundId: string, rows: UpsertShot[]) {
-  const supabase = createBrowserSupabase();
+  const supabase = createServerSupabase();
   if (!rows?.length) return { ok: true };
 
   const payload = rows.map((r) => ({
@@ -73,7 +73,7 @@ export async function upsertShots(roundId: string, rows: UpsertShot[]) {
 }
 
 export async function deleteShot(roundId: string, shotId: string) {
-  const supabase = createBrowserSupabase();
+  const supabase = createServerSupabase();
   const { error } = await supabase.from("shots").delete().eq("id", shotId);
   if (error) return { ok: false, error: error.message };
 

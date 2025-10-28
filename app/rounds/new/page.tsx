@@ -6,7 +6,7 @@ import CourseTeePicker from "../../admin/rounds/CourseTeePicker";
 
 async function createRound(formData: FormData) {
   "use server";
-  const supabase = await createBrowserSupabase();
+  const supabase = await createServerSupabase();
 
   const player_id  = String(formData.get("player_id") || "");
   const course_id  = String(formData.get("course_id") || "");
@@ -34,7 +34,7 @@ async function createRound(formData: FormData) {
 }
 
 async function loadData() {
-  const supabase = await createBrowserSupabase();
+  const supabase = await createServerSupabase();
 
   // Require auth
   const { data: { user }, error: userErr } = await supabase.auth.getUser();

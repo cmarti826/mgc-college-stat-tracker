@@ -5,7 +5,7 @@ import NavAdmin from "../../NavAdmin";
 
 async function createTeeSet(formData: FormData) {
   "use server";
-  const supabase = await createBrowserSupabase();
+  const supabase = await createServerSupabase();
 
   const course_id = String(formData.get("course_id") || "");
   const name = String(formData.get("name") || "").trim();
@@ -34,7 +34,7 @@ async function createTeeSet(formData: FormData) {
 }
 
 export default async function AdminNewTeeSet() {
-  const supabase = await createBrowserSupabase();
+  const supabase = await createServerSupabase();
   const { data: courses } = await supabase.from("courses").select("id, name").order("name");
 
   return (

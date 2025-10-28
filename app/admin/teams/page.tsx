@@ -3,7 +3,7 @@ import { createServerSupabase } from "@/lib/supabase/server";
 import NavAdmin from "../NavAdmin";
 
 async function loadData() {
-  const supabase = await createBrowserSupabase();
+  const supabase = await createServerSupabase();
   const [{ data: teams }, { data: members }] = await Promise.all([
     supabase.from("teams").select("id, name, school, created_at").order("name"),
     supabase.from("team_members").select("id, team_id, player_id"),
@@ -15,7 +15,7 @@ async function loadData() {
 
 async function createTeam(formData: FormData) {
   "use server";
-  const supabase = await createBrowserSupabase();
+  const supabase = await createServerSupabase();
   const name = String(formData.get("name") || "").trim();
   const school = String(formData.get("school") || "").trim() || null;
   if (!name) throw new Error("Team name is required.");
@@ -26,7 +26,7 @@ async function createTeam(formData: FormData) {
 
 async function deleteTeam(teamId: string) {
   "use server";
-  const supabase = await createBrowserSupabase();
+  const supabase = await createServerSupabase();
   await supabase.from("team_members").delete().eq("team_id", teamId);
   const { error } = await supabase.from("teams").delete().eq("id", teamId);
   if (error) throw error;

@@ -2,7 +2,7 @@
 import { createServerSupabase } from "@/lib/supabase/server";
 
 export default async function TeeSetsIndex() {
-  const supabase = await createBrowserSupabase();
+  const supabase = await createServerSupabase();
   const [{ data: sets }, { data: courses }] = await Promise.all([
     supabase.from("tee_sets").select("id, course_id, name, tee_name, rating, slope, par").order("name"),
     supabase.from("courses").select("id, name"),

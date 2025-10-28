@@ -5,7 +5,7 @@ import RoundEntry from "../_components/RoundEntry";
 export const dynamic = "force-dynamic"; // avoid caching while building
 
 export default async function NewRoundPage() {
-  const supabase = createBrowserSupabase();
+  const supabase = createServerSupabase();
 
   // Fetch minimal data needed to render selectors
   const [playersRes, coursesRes, teeSetsRes] = await Promise.all([

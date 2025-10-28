@@ -34,7 +34,7 @@ function getAdminClient() {
 
 export async function createPlayer(formData: FormData): Promise<void> {
   // If email/password provided, create an auth user and link to the new player.
-  const supabase = createBrowserSupabase();
+  const supabase = createServerSupabase();
   const full_name = txt(formData.get("full_name"));
   const grad_year = num(formData.get("grad_year"));
   const email = txt(formData.get("email"));
@@ -89,7 +89,7 @@ export async function createPlayer(formData: FormData): Promise<void> {
 }
 
 export async function deletePlayer(formData: FormData): Promise<void> {
-  const supabase = createBrowserSupabase();
+  const supabase = createServerSupabase();
   const id = txt(formData.get("id"));
   if (!id) throw new Error("Player id is required.");
   const { error } = await supabase.from("players").delete().eq("id", id);
@@ -98,7 +98,7 @@ export async function deletePlayer(formData: FormData): Promise<void> {
 }
 
 export async function createCourse(formData: FormData): Promise<void> {
-  const supabase = createBrowserSupabase();
+  const supabase = createServerSupabase();
   const name = txt(formData.get("name"));
   const city = txt(formData.get("city"));
   const state = txt(formData.get("state"));
@@ -109,7 +109,7 @@ export async function createCourse(formData: FormData): Promise<void> {
 }
 
 export async function deleteCourse(formData: FormData): Promise<void> {
-  const supabase = createBrowserSupabase();
+  const supabase = createServerSupabase();
   const id = txt(formData.get("id"));
   if (!id) throw new Error("Course id is required.");
   const { error } = await supabase.from("courses").delete().eq("id", id);
@@ -118,7 +118,7 @@ export async function deleteCourse(formData: FormData): Promise<void> {
 }
 
 export async function createTeeSet(formData: FormData): Promise<void> {
-  const supabase = createBrowserSupabase();
+  const supabase = createServerSupabase();
   const course_id = txt(formData.get("course_id"));
   const name = txt(formData.get("tee_name")) ?? txt(formData.get("name"));
   const rating = num(formData.get("rating"));
@@ -144,7 +144,7 @@ export async function createTeeSet(formData: FormData): Promise<void> {
 }
 
 export async function deleteTeeSet(formData: FormData): Promise<void> {
-  const supabase = createBrowserSupabase();
+  const supabase = createServerSupabase();
   const id = txt(formData.get("id"));
   if (!id) throw new Error("Tee set id is required.");
   const { error } = await supabase.from("tee_sets").delete().eq("id", id);
@@ -155,7 +155,7 @@ export async function deleteTeeSet(formData: FormData): Promise<void> {
 /* ---------------------- teams & members ---------------------- */
 
 export async function createTeam(formData: FormData): Promise<void> {
-  const supabase = createBrowserSupabase();
+  const supabase = createServerSupabase();
   const name = txt(formData.get("team_name"));
   const school = txt(formData.get("school"));
   if (!name) throw new Error("Team name is required.");
@@ -165,7 +165,7 @@ export async function createTeam(formData: FormData): Promise<void> {
 }
 
 export async function deleteTeam(formData: FormData): Promise<void> {
-  const supabase = createBrowserSupabase();
+  const supabase = createServerSupabase();
   const id = txt(formData.get("id"));
   if (!id) throw new Error("Team id is required.");
   const { error } = await supabase.from("teams").delete().eq("id", id);
@@ -174,7 +174,7 @@ export async function deleteTeam(formData: FormData): Promise<void> {
 }
 
 export async function addTeamMember(formData: FormData): Promise<void> {
-  const supabase = createBrowserSupabase();
+  const supabase = createServerSupabase();
   const team_id = txt(formData.get("team_id"));
   const user_id = txt(formData.get("user_id"));
   const player_id = txt(formData.get("player_id"));
@@ -194,7 +194,7 @@ export async function addTeamMember(formData: FormData): Promise<void> {
 }
 
 export async function removeTeamMember(formData: FormData): Promise<void> {
-  const supabase = createBrowserSupabase();
+  const supabase = createServerSupabase();
   const member_id = txt(formData.get("member_id"));
   if (!member_id) throw new Error("member_id is required.");
   const { error } = await supabase.from("team_members").delete().eq("id", member_id);
@@ -203,7 +203,7 @@ export async function removeTeamMember(formData: FormData): Promise<void> {
 }
 
 export async function linkUserToPlayer(formData: FormData): Promise<void> {
-  const supabase = createBrowserSupabase();
+  const supabase = createServerSupabase();
   const user_id = txt(formData.get("user_id"));
   const player_id = txt(formData.get("player_id"));
   if (!user_id || !player_id) throw new Error("user_id and player_id are required.");
@@ -215,7 +215,7 @@ export async function linkUserToPlayer(formData: FormData): Promise<void> {
 }
 
 export async function setDefaultTeam(formData: FormData): Promise<void> {
-  const supabase = createBrowserSupabase();
+  const supabase = createServerSupabase();
   const user_id = txt(formData.get("user_id"));
   const team_id = txt(formData.get("team_id"));
   if (!user_id || !team_id) throw new Error("user_id and team_id are required.");
@@ -227,7 +227,7 @@ export async function setDefaultTeam(formData: FormData): Promise<void> {
 /* --------------------------- rounds --------------------------- */
 
 export async function createRound(formData: FormData): Promise<void> {
-  const supabase = createBrowserSupabase();
+  const supabase = createServerSupabase();
 
   const player_id = txt(formData.get("player_id"));
   const course_id = txt(formData.get("course_id"));
@@ -263,7 +263,7 @@ export async function createRound(formData: FormData): Promise<void> {
 }
 
 export async function deleteRound(formData: FormData): Promise<void> {
-  const supabase = createBrowserSupabase();
+  const supabase = createServerSupabase();
   const id = txt(formData.get("id"));
   if (!id) throw new Error("round id is required.");
   const { error } = await supabase.from("scheduled_rounds").delete().eq("id", id);

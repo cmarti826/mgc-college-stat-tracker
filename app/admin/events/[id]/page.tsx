@@ -3,7 +3,7 @@ import NavAdmin from "../../NavAdmin";
 import { createServerSupabase } from "@/lib/supabase/server";
 
 async function fetchAll(id: string) {
-  const supabase = await createBrowserSupabase();
+  const supabase = await createServerSupabase();
 
   const { data: event, error: e1 } = await supabase.from("events").select("*").eq("id", id).single();
   if (e1) throw e1;
@@ -75,7 +75,7 @@ async function fetchAll(id: string) {
 
 async function updateEvent(id: string, formData: FormData) {
   "use server";
-  const supabase = await createBrowserSupabase();
+  const supabase = await createServerSupabase();
 
   const name = String(formData.get("name") || "").trim();
   const start_date = String(formData.get("start_date") || "");
@@ -98,7 +98,7 @@ async function updateEvent(id: string, formData: FormData) {
 
 async function deleteEvent(id: string) {
   "use server";
-  const supabase = await createBrowserSupabase();
+  const supabase = await createServerSupabase();
   const { error } = await supabase.from("events").delete().eq("id", id);
   if (error) throw error;
   revalidatePath("/admin/events");
@@ -106,7 +106,7 @@ async function deleteEvent(id: string) {
 
 async function addEventPlayer(id: string, formData: FormData) {
   "use server";
-  const supabase = await createBrowserSupabase();
+  const supabase = await createServerSupabase();
   const player_id = String(formData.get("player_id") || "");
   if (!player_id) throw new Error("Player is required.");
   const { error } = await supabase.from("event_players").insert({ event_id: id, player_id });
@@ -116,7 +116,7 @@ async function addEventPlayer(id: string, formData: FormData) {
 
 async function removeEventPlayer(id: string, epId: string) {
   "use server";
-  const supabase = await createBrowserSupabase();
+  const supabase = await createServerSupabase();
   const { error } = await supabase.from("event_players").delete().eq("id", epId);
   if (error) throw error;
   revalidatePath(`/admin/events/${id}`);
@@ -124,7 +124,7 @@ async function removeEventPlayer(id: string, epId: string) {
 
 async function linkRound(eventId: string, formData: FormData) {
   "use server";
-  const supabase = await createBrowserSupabase();
+  const supabase = await createServerSupabase();
   const round_id = String(formData.get("round_id") || "");
   const round_number = formData.get("round_number") ? Number(formData.get("round_number")) : null;
   const day = String(formData.get("day") || "") || null;
@@ -141,7 +141,7 @@ async function linkRound(eventId: string, formData: FormData) {
 
 async function unlinkRound(eventId: string, eventRoundId: string) {
   "use server";
-  const supabase = await createBrowserSupabase();
+  const supabase = await createServerSupabase();
   const { error } = await supabase.from("event_rounds").delete().eq("id", eventRoundId);
   if (error) throw error;
   revalidatePath(`/admin/events/${eventId}`);

@@ -28,7 +28,7 @@ const RoundSchema = z.object({
 export type RoundPayload = z.infer<typeof RoundSchema>;
 
 export async function createRoundAction(payload: RoundPayload) {
-  const supabase = createBrowserSupabase();
+  const supabase = createServerSupabase();
 
   const parsed = RoundSchema.safeParse(payload);
   if (!parsed.success) return { error: "Please complete player, course, tee, date and 18 holes." };
@@ -59,7 +59,7 @@ export async function createRoundAction(payload: RoundPayload) {
 }
 
 export async function updateRoundAction(payload: RoundPayload) {
-  const supabase = createBrowserSupabase();
+  const supabase = createServerSupabase();
   if (!payload.id) return { error: "Missing round id" };
 
   const holes = payload.holes.map((h) => ({

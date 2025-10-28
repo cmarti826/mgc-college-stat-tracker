@@ -21,7 +21,7 @@ export const dynamic = "force-dynamic";
 export const revalidate = 0;
 
 export default async function AdminContent() {
-  const supabase = createBrowserSupabase();
+  const supabase = createServerSupabase();
 
   const [
     { data: players },

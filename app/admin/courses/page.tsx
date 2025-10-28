@@ -3,14 +3,14 @@ import { createServerSupabase } from "@/lib/supabase/server";
 import NavAdmin from "../NavAdmin";
 
 async function loadData() {
-  const supabase = await createBrowserSupabase();
+  const supabase = await createServerSupabase();
   const { data: courses } = await supabase.from("courses").select("id, name, city, state, created_at").order("name");
   return { courses: courses ?? [] };
 }
 
 async function createCourse(formData: FormData) {
   "use server";
-  const supabase = await createBrowserSupabase();
+  const supabase = await createServerSupabase();
   const name = String(formData.get("name") || "").trim();
   const city = String(formData.get("city") || "").trim() || null;
   const state = String(formData.get("state") || "").trim() || null;
@@ -22,7 +22,7 @@ async function createCourse(formData: FormData) {
 
 async function deleteCourse(courseId: string) {
   "use server";
-  const supabase = await createBrowserSupabase();
+  const supabase = await createServerSupabase();
   const { error } = await supabase.from("courses").delete().eq("id", courseId);
   if (error) throw error;
   revalidatePath("/admin/courses");

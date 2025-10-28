@@ -30,7 +30,7 @@ function profileName(x: RelProfile): string | null {
 /* ----------------------- SERVER ACTIONS ----------------------- */
 async function addPlayerMember(formData: FormData) {
   "use server";
-  const supabase = createBrowserSupabase();
+  const supabase = createServerSupabase();
   const teamId = formData.get("team_id") as string;
   const playerId = (formData.get("player_id") as string) || null;
   const role = (formData.get("role") as string) || "player";
@@ -53,7 +53,7 @@ async function addPlayerMember(formData: FormData) {
 
 async function addUserMember(formData: FormData) {
   "use server";
-  const supabase = createBrowserSupabase();
+  const supabase = createServerSupabase();
   const teamId = formData.get("team_id") as string;
   const userId = (formData.get("user_id") as string) || null;
   const role = (formData.get("role") as string) || "coach";
@@ -76,7 +76,7 @@ async function addUserMember(formData: FormData) {
 
 async function updateMemberRole(formData: FormData) {
   "use server";
-  const supabase = createBrowserSupabase();
+  const supabase = createServerSupabase();
   const id = formData.get("id") as string;
   const teamId = formData.get("team_id") as string;
   const role = (formData.get("role") as string) || "player";
@@ -89,7 +89,7 @@ async function updateMemberRole(formData: FormData) {
 
 async function removeMember(formData: FormData) {
   "use server";
-  const supabase = createBrowserSupabase();
+  const supabase = createServerSupabase();
   const id = formData.get("id") as string;
   const teamId = formData.get("team_id") as string;
   if (!id || !teamId) return;
@@ -106,7 +106,7 @@ export default async function TeamRosterAdmin({
   params: { id: string };
 }) {
   const teamId = params.id;
-  const supabase = createBrowserSupabase();
+  const supabase = createServerSupabase();
 
   const [{ data: team }, { data: roster }, { data: players }, { data: profiles }] =
     await Promise.all([

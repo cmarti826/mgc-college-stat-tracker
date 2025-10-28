@@ -20,11 +20,11 @@ async function getDashboardData() {
       .select("*")
       .order("start_date", { ascending: false })
       .limit(5),
-    supabase.from("teams").select("id", { count: "exact", head: true }),
-    supabase.from("players").select("id", { count: "exact", head: true }),
-    supabase.from("courses").select("id", { count: "exact", head: true }),
-    supabase.from("tee_sets").select("id", { count: "exact", head: true }), // <-- here
-    supabase.from("scheduled_rounds").select("id", { count: "exact", head: true }),
+    supabase.from("teams").schema("mgc").select("id", { count: "exact", head: true }),
+    supabase.from("players").schema("mgc").select("id", { count: "exact", head: true }),
+    supabase.from("courses").schema("mgc").select("id", { count: "exact", head: true }),
+    supabase.from("tee_sets").schema("mgc").select("id", { count: "exact", head: true }), // <-- here
+    supabase.from("scheduled_rounds").schema("mgc").select("id", { count: "exact", head: true }),
   ]);
 
   if (evErr) throw evErr;

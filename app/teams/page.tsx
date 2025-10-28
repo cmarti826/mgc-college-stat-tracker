@@ -7,7 +7,7 @@ export default async function TeamsPage() {
   const supabase = createBrowserSupabase();
 
   const { data: teams, error } = await supabase
-    .from("teams")
+    .from("teams").schema("mgc")
     .select("id, name, school, created_at")
     .order("name", { ascending: true });
 

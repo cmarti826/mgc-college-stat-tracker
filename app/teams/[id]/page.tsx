@@ -17,14 +17,14 @@ export default async function TeamDetail({ params }: { params: { id: string } })
   const teamId = params.id;
 
   const [{ data: team }, { data: roster }, { data: rounds }] = await Promise.all([
-    supabase.from("teams").select("*").eq("id", teamId).single(),
+    supabase.from("teams").schema("mgc").select("*").eq("id", teamId).single(),
     supabase
       .from("v_team_roster")
       .select("*")
       .eq("team_id", teamId)
       .order("full_name", { ascending: true }),
     supabase
-      .from("scheduled_rounds")
+      .from("scheduled_rounds").schema("mgc")
       .select(`
         id, date,
         players:player_id ( full_name ),

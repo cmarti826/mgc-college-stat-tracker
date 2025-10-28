@@ -1,157 +1,97 @@
-'use client';
+// app/(auth)/login/page.tsx
+"use client";
 
-import { Suspense, useState } from 'react';
-import { useRouter, useSearchParams } from 'next/navigation';
-import Link from 'next/link';
-import { createClient } from '@/lib/supabase';
+import { useEffect } from "react";
+import { useRouter, useSearchParams } from "next/navigation";
+import Link from "next/link";
+import { createBrowserSupabase } from "@/lib/supabase";
 
-// Separate the actual login UI into a subcomponent
 function LoginInner() {
-  const supabase = createBrowserSupabase();
   const router = useRouter();
-  const params = useSearchParams();
+  const searchParams = useSearchParams();
+  const redirectTo = searchParams.get("redirectTo");
 
-  const [email, setEmail] = useState('');
-  const [password, setPassword] = useState('');
-  const [loading, setLoading] = useState(false);
-  const [mode, setMode] = useState<'signin' | 'signup' | 'magic'>('signin');
-  const [error, setError] = useState<string | null>(null);
-
-  const redirectTo = params.get('redirectTo') || '/';
-
-  const handleSignIn = async () => {
-    setLoading(true);
-    setError(null);
-    const { error } = await supabase.auth.signInWithPassword({ email, password });
-    setLoading(false);
-    if (error) return setError(error.message);
-    router.replace(redirectTo);
-  };
-
-  const handleSignUp = async () => {
-    setLoading(true);
-    setError(null);
-    const { error } = await supabase.auth.signUp({ email, password });
-    setLoading(false);
-    if (error) return setError(error.message);
-    router.replace(redirectTo);
-  };
-
-  const handleMagicLink = async () => {
-    setLoading(true);
-    setError(null);
-    const { error } = await supabase.auth.signInWithOtp({
-      email,
+  const handleGoogleLogin = async () => {
+    const supabase = createBrowserSupabase();
+    const { error } = await supabase.auth.signInWithOAuth({
+      provider: "google",
       options: {
-        emailRedirectTo:
-          process.env.NEXT_PUBLIC_SITE_URL
-            ? `${process.env.NEXT_PUBLIC_SITE_URL}/auth/callback`
-            : `${window.location.origin}/auth/callback`,
+        redirectTo: redirectTo ? `${window.location.origin}${redirectTo}` : undefined,
       },
     });
-    setLoading(false);
-    if (error) return setError(error.message);
-    alert('Magic link sent. Check your email!');
+
+    if (error) {
+      console.error("Google login error:", error);
+      alert("Login failed. Please try again.");
+    }
   };
 
   return (
-    <div className="mx-auto max-w-md p-6">
-      <h1 className="mb-4 text-2xl font-bold">Player Login</h1>
-
-      <div className="mb-3 flex gap-2">
-        <button
-          onClick={() => setMode('signin')}
-          className={`rounded-md border px-3 py-1 text-sm ${mode === 'signin' ? 'bg-gray-100' : ''}`}
-        >
-          Sign In
-        </button>
-        <button
-          onClick={() => setMode('signup')}
-          className={`rounded-md border px-3 py-1 text-sm ${mode === 'signup' ? 'bg-gray-100' : ''}`}
-        >
-          Sign Up
-        </button>
-        <button
-          onClick={() => setMode('magic')}
-          className={`rounded-md border px-3 py-1 text-sm ${mode === 'magic' ? 'bg-gray-100' : ''}`}
-        >
-          Magic Link
-        </button>
-      </div>
-
-      <div className="space-y-3 rounded-2xl border bg-white p-4">
-        <div>
-          <label className="block text-sm">Email</label>
-          <input
-            type="email"
-            className="w-full rounded border p-2"
-            value={email}
-            onChange={(e) => setEmail(e.target.value)}
-            placeholder="you@school.edu"
-          />
-        </div>
-
-        {mode !== 'magic' && (
-          <div>
-            <label className="block text-sm">Password</label>
-            <input
-              type="password"
-              className="w-full rounded border p-2"
-              value={password}
-              onChange={(e) => setPassword(e.target.value)}
-              placeholder="••••••••"
-            />
+    <div className="min-h-screen flex items-center justify-center bg-gradient-to-br from-green-50 to-blue-50 p-4">
+      <div className="w-full max-w-md">
+        <div className="bg-white rounded-3xl shadow-xl p-8 space-y-6">
+          <div className="text-center">
+            <h1 className="text-3xl font-bold text-gray-900">Welcome to MGC Stats</h1>
+            <p className="mt-2 text-gray-600">Track your college golf performance</p>
           </div>
-        )}
 
-        {error && (
-          <div className="rounded-md border border-red-300 bg-red-50 p-2 text-sm text-red-700">
-            {error}
+          <button
+            onClick={handleGoogleLogin}
+            className="w-full flex items-center justify-center gap-3 bg-white border-2 border-gray-300 rounded-2xl px-6 py-4 text-gray-700 font-medium hover:shadow-lg transition-shadow"
+          >
+            <svg className="w-6 h-6" viewBox="0 0 24 24">
+              <path
+                fill="#4285F4"
+                d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92c-.26 1.37-1.04 2.53-2.21 3.31v2.77h3.57c2.08-1.92 3.28-4.74 3.28-8.09z"
+              />
+              <path
+                fill="#34A853"
+                d="M12 23c2.97 0 5.46-.98 7.28-2.66l-3.57-2.77c-.98.66-2.23 1.06-3.71 1.06-2.86 0-5.29-1.93-6.16-4.53H2.18v2.84C3.99 20.53 7.7 23 12 23z"
+              />
+              <path
+                fill="#FBBC05"
+                d="M5.84 14.09c-.22-.66-.35-1.36-.35-2.09s.13-1.43.35-2.09V7.07H2.18C1.43 8.55 1 10.22 1 12s.43 3.45 1.18 4.93l2.85-2.22.81-.62z"
+              />
+              <path
+                fill="#EA4335"
+                d="M12 6.5c1.61 0 3.05.55 4.18 1.64l3.12-3.12C17.45 2.09 14.97 1 12 1 7.7 1 3.99 3.47 2.18 7.07l3.66 2.84c.87-2.6 3.3-4.41 6.16-4.41z"
+              />
+            </svg>
+            Continue with Google
+          </button>
+
+          <div className="text-center text-sm text-gray-500">
+            <p>
+              By continuing, you agree to our{" "}
+              <Link href="/terms" className="underline hover:text-gray-700">
+                Terms
+              </Link>{" "}
+              and{" "}
+              <Link href="/privacy" className="underline hover:text-gray-700">
+                Privacy Policy
+              </Link>
+            </p>
           </div>
-        )}
 
-        <div className="flex items-center gap-2">
-          {mode === 'signin' && (
-            <button
-              onClick={handleSignIn}
-              disabled={loading}
-              className="rounded-xl bg-blue-600 px-4 py-2 text-white disabled:opacity-50"
-            >
-              {loading ? 'Signing in…' : 'Sign In'}
-            </button>
-          )}
-          {mode === 'signup' && (
-            <button
-              onClick={handleSignUp}
-              disabled={loading}
-              className="rounded-xl bg-blue-600 px-4 py-2 text-white disabled:opacity-50"
-            >
-              {loading ? 'Creating…' : 'Create Account'}
-            </button>
-          )}
-          {mode === 'magic' && (
-            <button
-              onClick={handleMagicLink}
-              disabled={loading || !email}
-              className="rounded-xl bg-blue-600 px-4 py-2 text-white disabled:opacity-50"
-            >
-              {loading ? 'Sending…' : 'Send Magic Link'}
-            </button>
-          )}
-          <Link href="/" className="text-sm text-gray-600 hover:underline">
-            Cancel
-          </Link>
+          <div className="text-center text-xs text-gray-400 mt-8">
+            <p>© 2025 MGC College Stat Tracker</p>
+          </div>
         </div>
       </div>
     </div>
   );
 }
 
-// ✅ Wrap in Suspense to satisfy Next.js
 export default function LoginPage() {
-  return (
-    <Suspense fallback={<div className="p-6 text-center text-gray-500">Loading login…</div>}>
-      <LoginInner />
-    </Suspense>
-  );
+  const searchParams = useSearchParams();
+  const code = searchParams.get("code");
+
+  useEffect(() => {
+    if (code) {
+      // Let callback route handle it
+      window.location.href = `/auth/callback?code=${code}`;
+    }
+  }, [code]);
+
+  return <LoginInner />;
 }

@@ -4,7 +4,8 @@ import { useEffect, useMemo, useRef, useState, useTransition } from "react";
 import { ChevronLeft, ChevronRight, Save, Send } from "lucide-react";
 import { z } from "zod";
 import { createRoundAction, updateRoundAction } from "./actions";
-import { createClient as createBrowserSupabase } from "@/lib/supabase/client";
+import { createBrowserSupabase } from '@/lib/supabase';
+const supabase = createBrowserSupabase();
 
 /* Zod */
 const HoleSchema = z.object({

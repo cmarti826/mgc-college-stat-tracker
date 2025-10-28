@@ -1,5 +1,5 @@
 import { NextResponse, NextRequest } from "next/server";
-import { createClient } from "@/lib/supabase/route";
+import { createRouteSupabase } from '@/lib/supabase/route'
 
 // DB enum (UPPERCASE)
 type LieEnum = "TEE" | "FAIRWAY" | "ROUGH" | "SAND" | "RECOVERY" | "GREEN";

@@ -1,113 +1,112 @@
-import Link from "next/link";
+// app/players/[id]/page.tsx
 import { createServerSupabase } from "@/lib/supabase/server";
+import { notFound } from "next/navigation";
+import { format } from "date-fns";
 
 export const dynamic = "force-dynamic";
 
-type RelName = { name?: string } | { name?: string }[] | null;
-function relName(x: RelName): string {
-  if (!x) return "—";
-  if (Array.isArray(x)) return x[0]?.name ?? "—";
-  return x.name ?? "—";
-}
-
 export default async function PlayerDetail({ params }: { params: { id: string } }) {
-  const supabase = createBrowserSupabase();
+  const supabase = createServerSupabase(); // Server component → use server client
   const playerId = params.id;
 
   const { data: player, error: playerErr } = await supabase
-    .from("players").select("*").eq("id", playerId).single();
+    .from("players")
+    .select("*, team_members(team:teams(name))")
+    .eq("id", playerId)
+    .single();
 
-  if (playerErr || !player) return <div className="text-red-600">Player not found.</div>;
+  if (playerErr || !player) {
+    notFound();
+  }
 
-  const [{ data: memberships }, { data: rounds }] = await Promise.all([
-    supabase
-      .from("team_members")
-      .select(`
-        team_id, role,
-        teams:team_id ( name )
-      `)
-      .eq("player_id", playerId),
-    supabase
-      .from("scheduled_rounds")
-      .select(`
-        id, date, status, type,
-        teams:team_id ( name ),
-        courses:course_id ( name )
-      `)
-      .eq("player_id", playerId)
-      .order("date", { ascending: false }),
-  ]);
+  const { data: rounds, error: roundsErr } = await supabase
+    .from("rounds")
+    .select("*, course:courses(name)")
+    .eq("player_id", playerId)
+    .order("date", { ascending: false });
+
+  const stats = rounds?.reduce(
+    (acc, r) => {
+      const strokes = r.holes.reduce((s: number, h: any) => s + (h.strokes ?? 0), 0);
+      const putts = r.holes.reduce((p: number, h: any) => p + (h.putts ?? 0), 0);
+      acc.totalStrokes += strokes;
+      acc.totalPutts += putts;
+      acc.roundCount += 1;
+      return acc;
+    },
+    { totalStrokes: 0, totalPutts: 0, roundCount: 0 }
+  );
+
+  const avgScore = stats?.roundCount ? (stats.totalStrokes / stats.roundCount).toFixed(1) : "-";
+  const avgPutts = stats?.roundCount ? (stats.totalPutts / stats.roundCount).toFixed(1) : "-";
 
   return (
-    <div className="space-y-6">
-      <div>
-        <h1 className="text-xl font-semibold">{player.full_name ?? "Player"}</h1>
-        <p className="text-sm text-neutral-600">Grad Year: {player.grad_year ?? "-"}</p>
+    <div className="max-w-4xl mx-auto p-6 space-y-8">
+      {/* Header */}
+      <div className="bg-white rounded-2xl shadow-sm p-6 border">
+        <div className="flex items-center justify-between">
+          <div>
+            <h1 className="text-3xl font-bold">{player.full_name}</h1>
+            {player.grad_year && <p className="text-gray-600">Class of {player.grad_year}</p>}
+          </div>
+          <div className="text-right">
+            <p className="text-sm text-gray-500">Team</p>
+            <p className="font-medium">{player.team_members?.team?.name || "No team"}</p>
+          </div>
+        </div>
       </div>
 
-      <section className="space-y-2">
-        <h2 className="font-medium">Teams</h2>
-        <div className="rounded-lg border bg-white overflow-hidden">
-          <table className="w-full text-sm">
-            <thead className="bg-neutral-50">
-              <tr>
-                <th className="text-left p-3">Team</th>
-                <th className="text-left p-3">Role</th>
-              </tr>
-            </thead>
-            <tbody>
-              {(memberships ?? []).length === 0 && (
-                <tr><td className="p-3" colSpan={2}>No team memberships.</td></tr>
-              )}
-              {(memberships ?? []).map((m) => (
-                <tr key={m.team_id} className="border-t">
-                  <td className="p-3">
-                    <Link href={`/teams/${m.team_id}`} className="underline">
-                      {relName(m.teams as RelName) || m.team_id}
-                    </Link>
-                  </td>
-                  <td className="p-3">{m.role}</td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
+      {/* Stats Cards */}
+      <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+        <div className="bg-gradient-to-br from-green-50 to-emerald-50 rounded-xl p-5 border">
+          <p className="text-sm text-gray-600">Rounds Played</p>
+          <p className="text-3xl font-bold">{stats?.roundCount || 0}</p>
         </div>
-      </section>
+        <div className="bg-gradient-to-br from-blue-50 to-indigo-50 rounded-xl p-5 border">
+          <p className="text-sm text-gray-600">Average Score</p>
+          <p className="text-3xl font-bold">{avgScore}</p>
+        </div>
+        <div className="bg-gradient-to-br from-purple-50 to-pink-50 rounded-xl p-5 border">
+          <p className="text-sm text-gray-600">Average Putts</p>
+          <p className="text-3xl font-bold">{avgPutts}</p>
+        </div>
+      </div>
 
-      <section className="space-y-2">
-        <h2 className="font-medium">Rounds</h2>
-        <div className="rounded-lg border bg-white overflow-hidden">
-          <table className="w-full text-sm">
-            <thead className="bg-neutral-50">
-              <tr>
-                <th className="text-left p-3">Date</th>
-                <th className="text-left p-3">Team</th>
-                <th className="text-left p-3">Course</th>
-                <th className="text-left p-3">Status</th>
-                <th className="text-left p-3">Type</th>
-              </tr>
-            </thead>
-            <tbody>
-              {(rounds ?? []).length === 0 && (
-                <tr><td className="p-3" colSpan={5}>No rounds yet.</td></tr>
-              )}
-              {(rounds ?? []).map((r) => (
-                <tr key={r.id} className="border-t">
-                  <td className="p-3">
-                    <Link href={`/rounds/${r.id}`} className="underline">
-                      {r.date ? new Date(r.date).toLocaleDateString() : "—"}
-                    </Link>
-                  </td>
-                  <td className="p-3">{relName(r.teams as RelName)}</td>
-                  <td className="p-3">{relName(r.courses as RelName)}</td>
-                  <td className="p-3">{r.status}</td>
-                  <td className="p-3">{r.type}</td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
+      {/* Recent Rounds */}
+      <div className="bg-white rounded-2xl shadow-sm border overflow-hidden">
+        <div className="p-6 border-b">
+          <h2 className="text-xl font-semibold">Recent Rounds</h2>
         </div>
-      </section>
+        <div className="divide-y">
+          {rounds && rounds.length > 0 ? (
+            rounds.map((round: any) => {
+              const total = round.holes.reduce((s: number, h: any) => s + (h.strokes ?? 0), 0);
+              return (
+                <div key={round.id} className="p-4 hover:bg-gray-50 transition">
+                  <div className="flex items-center justify-between">
+                    <div>
+                      <p className="font-medium">{round.course?.name || "Unknown Course"}</p>
+                      <p className="text-sm text-gray-600">
+                        {format(new Date(round.date), "MMM d, yyyy")}
+                      </p>
+                    </div>
+                    <div className="text-right">
+                      <p className="font-bold text-lg">{total}</p>
+                      <p className="text-sm text-gray-600">
+                        {round.holes.reduce((p: number, h: any) => p + (h.putts ?? 0), 0)} putts
+                      </p>
+                    </div>
+                  </div>
+                </div>
+              );
+            })
+          ) : (
+            <div className="p-8 text-center text-gray-500">
+              No rounds recorded yet.
+            </div>
+          )}
+        </div>
+      </div>
     </div>
   );
 }

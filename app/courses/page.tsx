@@ -1,9 +1,9 @@
-import { createBrowserSupabase } from '@/lib/supabase';
+import { createServerSupabase() } from '@/lib/supabase';
 
 export const dynamic = "force-dynamic";
 
 export default async function CoursesPage() {
-  const supabase = createBrowserSupabase();
+  const supabase = createServerSupabase()();
   const { data: courses, error } = await supabase
     .from("courses")
     .select("id, name, city, state, created_at")

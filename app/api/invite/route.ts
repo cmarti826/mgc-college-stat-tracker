@@ -1,16 +1,19 @@
 // app/api/invite/route.ts
-import { createClient } from '@supabase/supabase-js';
-import { createRouteSupabase } from '@/lib/supabase/route';
 import { NextResponse } from 'next/server';
+import { createRouteSupabase } from '@/lib/supabase/route';
+import { createClient as createAdminClient } from '@supabase/supabase-js';
 
-// Admin client (service role) — bypass RLS
-const supabaseAdmin = createClient(
-  process.env.NEXT_PUBLIC_SUPABASE_URL!,
-  process.env.SUPABASE_SERVICE_ROLE_KEY!
-);
+export const dynamic = 'force-dynamic';
 
 export async function POST(req: Request) {
   try {
+    const body = await req.json();
+    const { email, team_id, role = 'player' } = body;
+
+    if (!email || !team_id) {
+      return NextResponse.json({ error: 'email and team_id required' }, { status: 400 });
+    }
+
     // 1. Verify caller session
     const authz = req.headers.get('authorization') || '';
     const token = authz.startsWith('Bearer ') ? authz.slice(7) : null;
@@ -18,22 +21,15 @@ export async function POST(req: Request) {
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
     }
 
-    const anon = createRouteSupabase();
-    const { data: meData, error: meErr } = await anon.auth.getUser(token);
-    if (meErr || !meData?.user) {
+    const supabase = createRouteSupabase();
+    const { data: { user }, error: authErr } = await supabase.auth.getUser(token);
+    if (authErr || !user) {
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
     }
-    const meId = meData.user.id;
+    const meId = user.id;
 
-    // 2. Parse body
-    const body = await req.json();
-    const { email, team_id, role = 'player' } = body;
-    if (!email || !team_id) {
-      return NextResponse.json({ error: 'email and team_id required' }, { status: 400 });
-    }
-
-    // 3. Check caller is coach/admin of team
-    const { data: member, error: memberErr } = await supabaseAdmin
+    // 2. Check caller is coach/admin of team
+    const { data: member, error: memberErr } = await supabase
       .from('team_members')
       .select('role')
       .eq('team_id', team_id)
@@ -49,26 +45,29 @@ export async function POST(req: Request) {
       return NextResponse.json({ error: 'Coach/admin required' }, { status: 403 });
     }
 
-    // 4. Invite or generate magic link
+    // 3. Invite or generate magic link
     let userId: string | null = null;
     let actionLink: string | null = null;
     let info = 'invited';
     let teamAdded = false;
     let warn: string | null = null;
 
+    const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL!;
+    const serviceKey = process.env.SUPABASE_SERVICE_ROLE_KEY!;
+    const admin = createAdminClient(supabaseUrl, serviceKey);
+
     // Check if user exists
-    const { data: existingUser } = await supabaseAdmin.auth.admin.listUsers();
-    const found = existingUser.users.find(u => u.email === email);
+    const { data: existingUsers } = await admin.auth.admin.listUsers();
+    const found = existingUsers.users.find(u => u.email === email);
 
     if (found) {
       userId = found.id;
       info = 'existing_user_magic_link';
 
-      // Generate magic link
-      const { data: linkData, error: linkError } = await supabaseAdmin.auth.admin.generateLink({
-        type: 'signup',
+      // Generate magic link for existing user
+      const { data: linkData, error: linkError } = await admin.auth.admin.generateLink({
+        type: 'magiclink',
         email,
-        password,
         options: {
           redirectTo: `${process.env.NEXT_PUBLIC_SITE_URL}/auth/callback`,
         },
@@ -80,8 +79,8 @@ export async function POST(req: Request) {
 
       actionLink = linkData?.properties?.action_link || null;
     } else {
-      // Invite new user
-      const { data: inviteData, error: inviteError } = await supabaseAdmin.auth.admin.inviteUserByEmail(email, {
+      // Invite new user (no password)
+      const { data: inviteData, error: inviteError } = await admin.auth.admin.inviteUserByEmail(email, {
         redirectTo: `${process.env.NEXT_PUBLIC_SITE_URL}/auth/callback`,
       });
 
@@ -93,9 +92,9 @@ export async function POST(req: Request) {
       actionLink = inviteData.user.action_link || null;
     }
 
-    // 5. Add to team (if not already)
+    // 4. Add to team (if not already)
     if (userId) {
-      const { error: addErr } = await supabaseAdmin
+      const { error: addErr } = await supabase
         .from('team_members')
         .upsert(
           { team_id, user_id: userId, role },
@@ -109,7 +108,7 @@ export async function POST(req: Request) {
       }
     }
 
-    // 6. Success
+    // 5. Success
     return NextResponse.json({
       ok: true,
       status: info,

@@ -10,7 +10,7 @@ export default async function PlayerDetail({ params }: { params: { id: string } 
   const playerId = params.id;
 
   const { data: player, error: playerErr } = await supabase
-    .from("players").schema("mgc")
+    .from("mgc.players")
     .select("*, team_members(team:teams(name))")
     .eq("id", playerId)
     .single();

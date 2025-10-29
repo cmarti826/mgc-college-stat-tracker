@@ -28,7 +28,7 @@ export default async function RoundSummaryPage({
 
   // 1) Load round (NO embedded relations)
   const { data: round } = await supabase
-    .from("scheduled_rounds").schema("mgc")
+    .from("mgc.scheduled_rounds")
     .select("id, date, type, status, notes, player_id, course_id, tee_set_id")
     .eq("id", roundId)
     .maybeSingle();
@@ -38,13 +38,13 @@ export default async function RoundSummaryPage({
   // 2) Related names by ID (no schema-relationship cache needed)
   const [{ data: player }, { data: course }, { data: tee }] = await Promise.all([
     round.player_id
-      ? supabase.from("players").schema("mgc").select("full_name").eq("id", round.player_id).maybeSingle()
+      ? supabase.from("mgc.players").select("full_name").eq("id", round.player_id).maybeSingle()
       : Promise.resolve({ data: null } as any),
     round.course_id
-      ? supabase.from("courses").schema("mgc").select("name").eq("id", round.course_id).maybeSingle()
+      ? supabase.from("mgc.courses").select("name").eq("id", round.course_id).maybeSingle()
       : Promise.resolve({ data: null } as any),
     round.tee_set_id
-      ? supabase.from("tee_sets").schema("mgc").select("name").eq("id", round.tee_set_id).maybeSingle()
+      ? supabase.from("mgc.tee_sets").select("name").eq("id", round.tee_set_id).maybeSingle()
       : Promise.resolve({ data: null } as any),
   ]);
 
@@ -54,7 +54,7 @@ export default async function RoundSummaryPage({
 
   // 3) Totals (graceful if null)
   const { data: totals } = await supabase
-    .from("v_round_totals")
+    .from("mgc.v_round_totals")
     .select(
       "round_id, strokes, putts, penalty_strokes, sg_total, sg_ott, sg_app, sg_arg, sg_putt"
     )
@@ -63,7 +63,7 @@ export default async function RoundSummaryPage({
 
   // 4) Hole-by-hole
   const { data: holes } = await supabase
-    .from("v_hole_totals")
+    .from("mgc.v_hole_totals")
     .select("hole_number, strokes, putts, penalty_strokes, sg_total")
     .eq("round_id", roundId)
     .order("hole_number", { ascending: true });

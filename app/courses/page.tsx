@@ -2,12 +2,28 @@ import { createBrowserSupabase } from '@/lib/supabase';
 
 export const dynamic = "force-dynamic";
 
+type Course = {
+  id: string;
+  name: string;
+  city?: string | null;
+  state?: string | null;
+  created_at: string;
+};
+
 export default async function CoursesPage() {
   const supabase = createBrowserSupabase();
-  const { data: courses, error } = await supabase
+  if (!supabase) {
+    return <div className="text-red-600">Supabase client unavailable</div>;
+  }
+  // supabase client typing can be ambiguous in this context; cast to any to ensure callable methods
+  const sb: any = supabase;
+  const res = await sb
     .from("courses").schema("mgc")
     .select("id, name, city, state, created_at")
     .order("name", { ascending: true });
+
+  const courses = (res?.data ?? null) as Course[] | null;
+  const error = res?.error;
 
   if (error) return <div className="text-red-600">Error loading courses: {error.message}</div>;
 
@@ -24,7 +40,7 @@ export default async function CoursesPage() {
             </tr>
           </thead>
           <tbody>
-            {(courses ?? []).map((c) => (
+            {(courses ?? []).map((c: Course) => (
               <tr key={c.id} className="border-t">
                 <td className="p-3">{c.name}</td>
                 <td className="p-3">{[c.city, c.state].filter(Boolean).join(", ") || "—"}</td>

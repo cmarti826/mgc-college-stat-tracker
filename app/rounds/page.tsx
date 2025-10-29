@@ -14,7 +14,7 @@ export default async function RoundsPage() {
   const supabase = createServerSupabase();
 
   const { data: rounds, error } = await supabase
-    .from("scheduled_rounds").schema("mgc")
+    .from("mgc.scheduled_rounds")
     .select(`
       id, date, status, type,
       players:player_id ( full_name ),

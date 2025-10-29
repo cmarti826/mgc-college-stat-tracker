@@ -15,8 +15,9 @@ async function createTeeSet(formData: FormData) {
 
   if (!course_id || !name) throw new Error("Course and Name are required.");
 
+  if (!supabase) throw new Error("Supabase client unavailable");
   const { data: inserted, error } = await supabase
-    .from("tee_sets").schema("mgc")
+    .from("mgc.tee_sets")
     .insert({ course_id, name, tee_name, rating, slope, par })
     .select("id")
     .single();
@@ -33,9 +34,10 @@ async function createTeeSet(formData: FormData) {
   revalidatePath("/tee-sets");
 }
 
-export default async function PublicNewTeeSet() {
+export default async function Page() {
   const supabase = await createServerSupabase();
-  const { data: courses } = await supabase.from("courses").schema("mgc").select("id, name").order("name");
+  if (!supabase) throw new Error("Supabase client unavailable");
+  const { data: courses } = await supabase.from("mgc.courses").select("id, name").order("name");
 
   return (
     <div className="max-w-xl mx-auto p-6 space-y-6">

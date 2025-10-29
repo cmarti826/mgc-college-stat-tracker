@@ -73,7 +73,7 @@ export default async function ShotsPage({ params }: { params: { id: string } }) 
 
   // Round (canonical cols only)
   const { data: round } = await supabase
-    .from("scheduled_rounds").schema("mgc")
+    .from("mgc.scheduled_rounds")
     .select("id, player_id, course_id, tee_set_id, date")
     .eq("id", roundId)
     .maybeSingle();
@@ -90,13 +90,13 @@ export default async function ShotsPage({ params }: { params: { id: string } }) 
   // Header names (by ID)
   const [{ data: player }, { data: course }, { data: tee }] = await Promise.all([
     round.player_id
-      ? supabase.from("players").schema("mgc").select("full_name").eq("id", round.player_id).maybeSingle()
+      ? supabase.from("mgc.players").select("full_name").eq("id", round.player_id).maybeSingle()
       : Promise.resolve({ data: null } as any),
     round.course_id
-      ? supabase.from("courses").schema("mgc").select("name").eq("id", round.course_id).maybeSingle()
+      ? supabase.from("mgc.courses").select("name").eq("id", round.course_id).maybeSingle()
       : Promise.resolve({ data: null } as any),
     round.tee_set_id
-      ? supabase.from("tee_sets").schema("mgc").select("name").eq("id", round.tee_set_id).maybeSingle()
+      ? supabase.from("mgc.tee_sets").select("name").eq("id", round.tee_set_id).maybeSingle()
       : Promise.resolve({ data: null } as any),
   ]);
 
@@ -109,7 +109,7 @@ export default async function ShotsPage({ params }: { params: { id: string } }) 
 
   // Shots
   const { data: shots } = await supabase
-    .from("shots")
+    .from("mgc.shots")
     .select(`
       id, round_id, hole_number, shot_number,
       start_lie, end_lie,

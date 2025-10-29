@@ -7,7 +7,7 @@ export default async function TeamsPage() {
   const supabase = createBrowserSupabase();
 
   const { data: teams, error } = await supabase
-    .from("teams").schema("mgc")
+    .from("mgc.teams")
     .select("id, name, school, created_at")
     .order("name", { ascending: true });
 
@@ -15,8 +15,7 @@ export default async function TeamsPage() {
     return <div className="text-red-600">Error loading teams: {error.message}</div>;
   }
 
-  const { data: roster } = await supabase.from("team_members").select("team_id, player_id");
-
+  const { data: roster } = await supabase.from("mgc.team_members").select("team_id, player_id");
   const rosterCounts = new Map<string, number>();
   (roster ?? []).forEach((r) => {
     rosterCounts.set(r.team_id, (rosterCounts.get(r.team_id) ?? 0) + 1);

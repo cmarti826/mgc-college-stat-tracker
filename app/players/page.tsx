@@ -6,8 +6,12 @@ export const dynamic = "force-dynamic";
 export default async function PlayersPage() {
   const supabase = createBrowserSupabase();
 
-  const { data: players, error } = await supabase
-    .from("players").schema("mgc")
+  if (!supabase) {
+    return <div className="text-red-600">Supabase client not available</div>;
+  }
+
+  const { data: players, error } = await supabase!
+    .from("mgc.players")
     .select("id, full_name, grad_year, created_at")
     .order("full_name", { ascending: true });
 
@@ -16,12 +20,12 @@ export default async function PlayersPage() {
   }
 
   // counts: teams & rounds per player
-  const { data: teamCounts } = await supabase
+  const { data: teamCounts } = await supabase!
     .from("team_members")
     .select("player_id, team_id");
 
-  const { data: playerRounds } = await supabase
-    .from("scheduled_rounds").schema("mgc")
+  const { data: playerRounds } = await supabase!
+    .from("mgc.scheduled_rounds")
     .select("id, player_id");
 
   const teamsByPlayer = new Map<string, number>();

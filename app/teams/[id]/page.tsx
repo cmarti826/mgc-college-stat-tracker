@@ -17,14 +17,14 @@ export default async function TeamDetail({ params }: { params: { id: string } })
   const teamId = params.id;
 
   const [{ data: team }, { data: roster }, { data: rounds }] = await Promise.all([
-    supabase.from("teams").schema("mgc").select("*").eq("id", teamId).single(),
+    supabase.from("mgc.teams").select("*").eq("id", teamId).single(),
     supabase
       .from("v_team_roster")
       .select("*")
       .eq("team_id", teamId)
       .order("full_name", { ascending: true }),
     supabase
-      .from("scheduled_rounds").schema("mgc")
+      .from("mgc.scheduled_rounds")
       .select(`
         id, date,
         players:player_id ( full_name ),
@@ -55,7 +55,7 @@ export default async function TeamDetail({ params }: { params: { id: string } })
               </tr>
             </thead>
             <tbody>
-              {(roster ?? []).map((r) => (
+              {(roster ?? []).map((r: { player_id: string; full_name?: string | null; grad_year?: number | null; role?: string | null }) => (
                 <tr key={r.player_id} className="border-t">
                   <td className="p-3">
                     <Link href={`/players/${r.player_id}`} className="underline">
@@ -86,7 +86,7 @@ export default async function TeamDetail({ params }: { params: { id: string } })
               </tr>
             </thead>
             <tbody>
-              {(rounds ?? []).map((r) => (
+              {(rounds ?? []).map((r: { id: string | number; date?: string | null; players?: Rel; courses?: Rel }) => (
                 <tr key={r.id} className="border-t">
                   <td className="p-3">
                     <Link href={`/rounds/${r.id}`} className="underline">

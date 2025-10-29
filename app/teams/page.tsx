@@ -1,7 +1,7 @@
 // app/teams/page.tsx
 
 import Link from "next/link";
-import { createBrowserSupabase } from '@/lib/supabase';
+import { createBrowserSupabase } from '@/lib/supabase/client';
 
 export const dynamic = "force-dynamic";
 

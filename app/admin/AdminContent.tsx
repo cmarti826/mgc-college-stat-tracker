@@ -24,41 +24,49 @@ export default async function AdminContent() {
   const supabase = createServerSupabase();
 
   const [
-    { data: players },
-    { data: courses },
-    { data: teeSets },
-    { data: teams },
-    { data: teamMembers },
-    { data: profiles },
-    { data: rounds },
+    playersResult,
+    coursesResult,
+    teeSetsResult,
+    teamsResult,
+    teamMembersResult,
+    profilesResult,
+    roundsResult,
   ] = await Promise.all([
-    withMgcSchema(supabase, () =>
-      supabase.from("players").select("id, full_name, grad_year").order("full_name")
+    withMgcSchema(supabase, async () =>
+      await supabase.from("players").select("id, full_name, grad_year").order("full_name")
     ),
-    withMgcSchema(supabase, () =>
-      supabase.from("courses").select("id, name, city, state").order("name")
+    withMgcSchema(supabase, async () =>
+      await supabase.from("courses").select("id, name, city, state").order("name")
     ),
-    withMgcSchema(supabase, () =>
-      supabase.from("tee_sets").select("id, name, course_id, par, rating, slope").order("name")
+    withMgcSchema(supabase, async () =>
+      await supabase.from("tee_sets").select("id, name, course_id, par, rating, slope").order("name")
     ),
-    withMgcSchema(supabase, () =>
-      supabase.from("teams").select("id, name, school, created_at").order("name")
+    withMgcSchema(supabase, async () =>
+      await supabase.from("teams").select("id, name, school, created_at").order("name")
     ),
-    withMgcSchema(supabase, () =>
-      supabase
+    withMgcSchema(supabase, async () =>
+      await supabase
         .from("team_members")
         .select("id, team_id, user_id, player_id, role, created_at")
         .order("created_at", { ascending: false })
     ),
-    supabase.from("profiles").select("id, full_name, default_team_id").order("full_name"), // public schema
-    withMgcSchema(supabase, () =>
-      supabase
+    supabase.from("profiles").select("id, full_name, default_team_id").order("full_name"),
+    withMgcSchema(supabase, async () =>
+      await supabase
         .from("scheduled_rounds")
         .select("id, date, player_id, course_id, tee_set_id, team_id, type, status, name, created_at")
         .order("created_at", { ascending: false })
         .limit(25)
     ),
   ]);
+
+  const players = (playersResult as { data: any[] | null }).data;
+  const courses = (coursesResult as { data: any[] | null }).data;
+  const teeSets = (teeSetsResult as { data: any[] | null }).data;
+  const teams = (teamsResult as { data: any[] | null }).data;
+  const teamMembers = (teamMembersResult as { data: any[] | null }).data;
+  const profiles = (profilesResult as { data: any[] | null }).data;
+  const rounds = (roundsResult as { data: any[] | null }).data;
 
   return (
     <div className="mx-auto max-w-6xl p-6 space-y-10">
@@ -189,7 +197,7 @@ export default async function AdminContent() {
                 required
                 options={(players ?? []).map((p) => ({ value: p.id, label: p.full_name }))}
               />
-              <Submit>Link User ↔ Player</Submit>
+              <Submit>Link User to Player</Submit>
             </form>
 
             <form action={setDefaultTeam} className="space-y-3">

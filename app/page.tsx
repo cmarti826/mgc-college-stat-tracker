@@ -1,12 +1,12 @@
 // app/page.tsx
-import { createServerSupabase } from "@/lib/supabase/server";
-import Link from "next/link";
+import Link from 'next/link'
+import { createServerSupabase } from '@/lib/supabase/server' // ← FIXED
 
-export const dynamic = "force-dynamic";
+export const dynamic = 'force-dynamic'
 
 export default async function Home() {
-  const supabase = createServerSupabase();
-  const { data: { user } } = await supabase.auth.getUser();
+  const supabase = createServerSupabase() // ← NOW WORKS
+  const { data: { user } } = await supabase.auth.getUser()
 
   return (
     <div className="min-h-screen bg-gradient-to-br from-green-50 to-blue-50 flex items-center justify-center p-6">
@@ -36,5 +36,5 @@ export default async function Home() {
         )}
       </div>
     </div>
-  );
+  )
 }

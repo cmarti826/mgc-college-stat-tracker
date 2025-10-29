@@ -4,7 +4,7 @@ import NavAdmin from "../NavAdmin";
 
 async function loadData() {
   const supabase = await createServerSupabase();
-  const { data: courses } = await supabase.from("courses").schema("mgc").select("id, name, city, state, created_at").order("name");
+  const { data: courses } = await supabase.from("mgc.courses").select("id, name, city, state, created_at").order("name");
   return { courses: courses ?? [] };
 }
 
@@ -15,7 +15,7 @@ async function createCourse(formData: FormData) {
   const city = String(formData.get("city") || "").trim() || null;
   const state = String(formData.get("state") || "").trim() || null;
   if (!name) throw new Error("Course name is required.");
-  const { error } = await supabase.from("courses").schema("mgc").insert({ name, city, state });
+  const { error } = await supabase.from("mgc.courses").insert({ name, city, state });
   if (error) throw error;
   revalidatePath("/admin/courses");
 }
@@ -23,7 +23,7 @@ async function createCourse(formData: FormData) {
 async function deleteCourse(courseId: string) {
   "use server";
   const supabase = await createServerSupabase();
-  const { error } = await supabase.from("courses").schema("mgc").delete().eq("id", courseId);
+  const { error } = await supabase.from("mgc.courses").delete().eq("id", courseId);
   if (error) throw error;
   revalidatePath("/admin/courses");
 }

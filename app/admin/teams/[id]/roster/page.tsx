@@ -110,7 +110,7 @@ export default async function TeamRosterAdmin({
 
   const [{ data: team }, { data: roster }, { data: players }, { data: profiles }] =
     await Promise.all([
-      supabase.from("teams").schema("mgc").select("*").eq("id", teamId).single(),
+      supabase.from("mgc.teams").select("*").eq("id", teamId).single(),
       supabase
         .from("team_members")
         .select(`
@@ -123,7 +123,7 @@ export default async function TeamRosterAdmin({
         .eq("team_id", teamId)
         .order("created_at", { ascending: true }),
       supabase
-        .from("players").schema("mgc")
+        .from("mgc.players")
         .select("id, full_name, grad_year")
         .order("full_name", { ascending: true }),
       supabase

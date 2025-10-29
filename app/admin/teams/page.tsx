@@ -4,10 +4,9 @@ import NavAdmin from "../NavAdmin";
 
 async function loadData() {
   const supabase = await createServerSupabase();
-  const [{ data: teams }, { data: members }] = await Promise.all([
-    supabase.from("teams").schema("mgc").select("id, name, school, created_at").order("name"),
-    supabase.from("team_members").select("id, team_id, player_id"),
-  ]);
+  const teamQuery = supabase.from("mgc.teams").select("id, name, school, created_at").order("name");
+  const memberQuery = supabase.from("team_members").select("id, team_id, player_id");
+  const [{ data: teams }, { data: members }] = await Promise.all([teamQuery, memberQuery]);
   const counts = new Map<string, number>();
   (members ?? []).forEach((m: any) => counts.set(m.team_id, (counts.get(m.team_id) ?? 0) + 1));
   return { teams: teams ?? [], counts };
@@ -19,7 +18,7 @@ async function createTeam(formData: FormData) {
   const name = String(formData.get("name") || "").trim();
   const school = String(formData.get("school") || "").trim() || null;
   if (!name) throw new Error("Team name is required.");
-  const { error } = await supabase.from("teams").schema("mgc").insert({ name, school });
+  const { error } = await supabase.from("mgc.teams").insert({ name, school });
   if (error) throw error;
   revalidatePath("/admin/teams");
 }
@@ -28,7 +27,7 @@ async function deleteTeam(teamId: string) {
   "use server";
   const supabase = await createServerSupabase();
   await supabase.from("team_members").delete().eq("team_id", teamId);
-  const { error } = await supabase.from("teams").schema("mgc").delete().eq("id", teamId);
+  const { error } = await supabase.from("mgc.teams").delete().eq("id", teamId);
   if (error) throw error;
   revalidatePath("/admin/teams");
 }

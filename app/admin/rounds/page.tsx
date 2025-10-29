@@ -13,10 +13,10 @@ async function loadData() {
     { data: tees },
     { data: rounds },
   ] = await Promise.all([
-    supabase.from("players").schema("mgc").select("id, full_name").order("full_name"),
-    supabase.from("courses").schema("mgc").select("id, name").order("name"),
+    supabase.from("mgc.players").select("id, full_name").order("full_name"),
+    supabase.from("mgc.courses").select("id, name").order("name"),
     supabase.from("v_tees_simple").select("id, name, course_id").order("name"),
-    supabase.from("scheduled_rounds").schema("mgc").select("id, name, player_id, course_id, tee_id, round_date, date, created_at, event_id").order("created_at", { ascending: false }).limit(50),
+    supabase.from("mgc.scheduled_rounds").select("id, name, player_id, course_id, tee_id, round_date, date, created_at, event_id").order("created_at", { ascending: false }).limit(50),
   ]);
   return { players: players ?? [], courses: courses ?? [], tees: tees ?? [], rounds: rounds ?? [] };
 }
@@ -31,7 +31,7 @@ async function createRound(formData: FormData) {
   const name      = String(formData.get("name") || "").trim() || null;
   const notes     = String(formData.get("notes") || "").trim() || null;
   if (!player_id || !course_id || !tee_id || !round_date) throw new Error("Player, Course, Tee, and Date are required.");
-  const { error } = await supabase.from("scheduled_rounds").schema("mgc").insert({ player_id, course_id, tee_id, round_date, name, notes });
+  const { error } = await supabase.from("mgc.scheduled_rounds").insert({ player_id, course_id, tee_id, round_date, name, notes });
   if (error) throw error;
   revalidatePath("/admin/rounds");
 }
@@ -40,7 +40,7 @@ async function deleteRound(roundId: string) {
   "use server";
   const supabase = await createServerSupabase();
   await supabase.from("event_rounds").delete().eq("round_id", roundId);
-  const { error } = await supabase.from("scheduled_rounds").schema("mgc").delete().eq("id", roundId);
+  const { error } = await supabase.from("mgc.scheduled_rounds").delete().eq("id", roundId);
   if (error) throw error;
   revalidatePath("/admin/rounds");
 }

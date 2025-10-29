@@ -17,7 +17,7 @@ async function createTeeSet(formData: FormData) {
   if (!course_id || !name) throw new Error("Course and Name are required.");
 
   const { data: inserted, error } = await supabase
-    .from("tee_sets").schema("mgc")
+    .from("mgc.tee_sets")
     .insert({ course_id, name, tee_name, rating, slope, par })
     .select("id")
     .single();
@@ -35,7 +35,7 @@ async function createTeeSet(formData: FormData) {
 
 export default async function AdminNewTeeSet() {
   const supabase = await createServerSupabase();
-  const { data: courses } = await supabase.from("courses").schema("mgc").select("id, name").order("name");
+  const { data: courses } = await supabase.from("mgc.courses").select("id, name").order("name");
 
   return (
     <div className="p-6 space-y-6">

@@ -6,6 +6,9 @@ type CountResp = { count: number | null };
 
 async function getDashboardData() {
   const supabase = await createServerSupabase();
+  if (!supabase) throw new Error("Failed to create Supabase server client");
+
+  const sb = supabase!;
 
   const [
     { data: events, error: evErr },
@@ -15,16 +18,16 @@ async function getDashboardData() {
     teeSetsRes, // <-- tee_sets count (replaces tees)
     roundsRes,
   ] = await Promise.all([
-    supabase
+    sb
       .from("v_admin_events")
       .select("*")
       .order("start_date", { ascending: false })
       .limit(5),
-    supabase.from("teams").schema("mgc").select("id", { count: "exact", head: true }),
-    supabase.from("players").schema("mgc").select("id", { count: "exact", head: true }),
-    supabase.from("courses").schema("mgc").select("id", { count: "exact", head: true }),
-    supabase.from("tee_sets").schema("mgc").select("id", { count: "exact", head: true }), // <-- here
-    supabase.from("scheduled_rounds").schema("mgc").select("id", { count: "exact", head: true }),
+    sb.from("mgc.teams").select("id", { count: "exact", head: true }),
+    sb.from("mgc.players").select("id", { count: "exact", head: true }),
+    sb.from("mgc.courses").select("id", { count: "exact", head: true }),
+    sb.from("mgc.tee_sets").select("id", { count: "exact", head: true }), // <-- here
+    sb.from("mgc.scheduled_rounds").select("id", { count: "exact", head: true }),
   ]);
 
   if (evErr) throw evErr;

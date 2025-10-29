@@ -30,7 +30,7 @@ export function useProfile(): Profile {
       }
 
       const { data: link } = await supabase
-        .from("user_players").schema("mgc")
+        .from("mgc.user_players")
         .select("player_id")
         .eq("user_id", user.id)
         .single();
@@ -41,7 +41,7 @@ export function useProfile(): Profile {
       }
 
       const { data: player } = await supabase
-        .from("players").schema("mgc")
+        .from("mgc.players")
         .select("id")
         .eq("id", link.player_id)
         .single();

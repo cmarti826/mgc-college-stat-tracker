@@ -1,4 +1,5 @@
 // app/players/[id]/page.tsx
+
 import { createServerSupabase } from "@/lib/supabase/server";
 import { notFound } from "next/navigation";
 import { format } from "date-fns";

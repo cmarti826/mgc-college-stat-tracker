@@ -1,5 +1,4 @@
-// Run once:
-// npx supabase gen types typescript --project-id xvuoiowfpfmaimgbrljy --schema mgc > lib/supabase/types.ts
+// lib/supabase/types.ts
 
 export type Json =
   | string

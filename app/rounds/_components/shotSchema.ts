@@ -1,3 +1,5 @@
+// app/rounds/_components/shotSchema.ts
+
 import { z } from "zod";
 
 export const ShotInput = z.object({

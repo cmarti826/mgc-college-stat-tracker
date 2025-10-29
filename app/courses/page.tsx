@@ -1,3 +1,5 @@
+// app/courses/page.tsx 
+
 import { createBrowserSupabase } from '@/lib/supabase';
 
 export const dynamic = "force-dynamic";

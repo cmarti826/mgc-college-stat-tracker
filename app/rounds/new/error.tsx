@@ -1,3 +1,5 @@
+// app/rounds/new/error.tsx
+
 "use client";
 
 export default function NewRoundError({ error }: { error: Error }) {

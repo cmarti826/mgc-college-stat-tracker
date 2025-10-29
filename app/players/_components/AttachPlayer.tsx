@@ -1,3 +1,5 @@
+// app/players/_components/AttachPlayer.tsx 
+
 'use client';
 
 import { useState } from 'react';

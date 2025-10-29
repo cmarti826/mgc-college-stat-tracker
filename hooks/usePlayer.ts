@@ -1,3 +1,5 @@
+// hooks/usePlayer.ts
+
 'use client';
 
 import { useEffect, useState } from 'react';

@@ -1,4 +1,5 @@
 // app/players/layout.tsx
+
 import NavPlayers from './Nav';
 
 export default function PlayersLayout({ children }: { children: React.ReactNode }) {

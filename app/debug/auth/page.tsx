@@ -1,3 +1,5 @@
+// app/debug/auth/page.tsx 
+
 import { createServerSupabase } from "@/lib/supabase/server";
 
 export const dynamic = "force-dynamic";

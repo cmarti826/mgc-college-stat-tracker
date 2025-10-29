@@ -1,3 +1,5 @@
+// app/players/page.tsx 
+
 import Link from 'next/link';
 import { createBrowserSupabase } from '@/lib/supabase';
 

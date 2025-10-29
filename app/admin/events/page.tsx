@@ -1,3 +1,5 @@
+// app/admin/events/page.tsx
+
 import { revalidatePath } from "next/cache";
 import Link from "next/link";
 import NavAdmin from "../NavAdmin";

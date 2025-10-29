@@ -1,4 +1,5 @@
 // app/players/attach/page.tsx
+
 import { createServerSupabase } from "@/lib/supabase/server";
 import { redirect } from "next/navigation";
 import AttachPlayer from "app/players/_components/AttachPlayer";

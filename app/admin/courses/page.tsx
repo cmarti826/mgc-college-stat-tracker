@@ -1,3 +1,5 @@
+// app/admin/courses/page.tsx
+
 import { revalidatePath } from "next/cache";
 import { createServerSupabase } from "@/lib/supabase/server";
 import NavAdmin from "../NavAdmin";

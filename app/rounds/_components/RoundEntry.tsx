@@ -1,3 +1,5 @@
+// app/rounds/_components/RoundEntry.tsx
+
 "use client";
 
 import { useEffect, useMemo, useRef, useState, useTransition } from "react";

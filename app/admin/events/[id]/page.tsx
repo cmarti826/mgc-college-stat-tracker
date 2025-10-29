@@ -1,3 +1,5 @@
+// app/admin/events/[id]/page.tsx
+
 import { revalidatePath } from "next/cache";
 import NavAdmin from "../../NavAdmin";
 import { createServerSupabase } from "@/lib/supabase/server";

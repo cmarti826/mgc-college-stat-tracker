@@ -1,8 +1,8 @@
-// app/courses/page.tsx 
+// app/courses/page.tsx
 
-import { createBrowserSupabase } from '@/lib/supabase';
+import { createServerSupabase } from '@/lib/supabase/server';
 
-export const dynamic = "force-dynamic";
+export const dynamic = 'force-dynamic';
 
 type Course = {
   id: string;
@@ -13,21 +13,16 @@ type Course = {
 };
 
 export default async function CoursesPage() {
-  const supabase = createBrowserSupabase();
-  if (!supabase) {
-    return <div className="text-red-600">Supabase client unavailable</div>;
+  const supabase = createServerSupabase();
+
+  const { data: courses, error } = await supabase
+    .from('mgc.courses')
+    .select('id, name, city, state, created_at')
+    .order('name', { ascending: true });
+
+  if (error) {
+    return <div className="text-red-600">Error loading courses: {error.message}</div>;
   }
-  // supabase client typing can be ambiguous in this context; cast to any to ensure callable methods
-  const sb: any = supabase;
-  const res = await sb
-    .from("mgc.courses")
-    .select("id, name, city, state, created_at")
-    .order("name", { ascending: true });
-
-  const courses = (res?.data ?? null) as Course[] | null;
-  const error = res?.error;
-
-  if (error) return <div className="text-red-600">Error loading courses: {error.message}</div>;
 
   return (
     <div>
@@ -42,15 +37,24 @@ export default async function CoursesPage() {
             </tr>
           </thead>
           <tbody>
-            {(courses ?? []).map((c: Course) => (
-              <tr key={c.id} className="border-t">
-                <td className="p-3">{c.name}</td>
-                <td className="p-3">{[c.city, c.state].filter(Boolean).join(", ") || "—"}</td>
-                <td className="p-3">{new Date(c.created_at).toLocaleDateString()}</td>
+            {courses.length === 0 ? (
+              <tr>
+                <td className="p-3" colSpan={3}>
+                  No courses.
+                </td>
               </tr>
-            ))}
-            {(!courses || courses.length === 0) && (
-              <tr><td className="p-3" colSpan={3}>No courses.</td></tr>
+            ) : (
+              courses.map((c) => (
+                <tr key={c.id} className="border-t">
+                  <td className="p-3">{c.name}</td>
+                  <td className="p-3">
+                    {[c.city, c.state].filter(Boolean).join(', ') || '—'}
+                  </td>
+                  <td className="p-3">
+                    {new Date(c.created_at).toLocaleDateString()}
+                  </td>
+                </tr>
+              ))
             )}
           </tbody>
         </table>

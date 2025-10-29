@@ -17,8 +17,3 @@ export const createServerSupabase = () => {
     }
   );
 };
-
-export const withMgcSchema = async <T>(supabase: any, query: () => Promise<T>): Promise<T> => {
-  await supabase.rpc("set_mgc_schema");
-  return query();
-};

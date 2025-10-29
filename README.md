@@ -12,6 +12,8 @@ cp .env.local.example .env.local
 npm run dev
 ```
 
+// Force push
+
 Open http://localhost:3000
 
 - Auth page: `/auth` (magic link)

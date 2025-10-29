@@ -1,11 +1,11 @@
 // app/page.tsx
 import Link from 'next/link'
-import { createServerSupabase } from '@/lib/supabase/server' // ← FIXED
+import { createServerSupabase } from '@/lib/supabase/server'
 
 export const dynamic = 'force-dynamic'
 
 export default async function Home() {
-  const supabase = createServerSupabase() // ← NOW WORKS
+  const supabase = createServerSupabase()
   const { data: { user } } = await supabase.auth.getUser()
 
   return (

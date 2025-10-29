@@ -2,6 +2,8 @@
 import Link from 'next/link';
 import LogoutButton from '@/components/LogoutButton';
 
+export const dynamic = 'force-dynamic' // ← ADD THIS
+
 export default function NavAdmin() {
   return (
     <nav className="flex items-center justify-between border-b bg-white px-4 py-3">

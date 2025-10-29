@@ -5,6 +5,8 @@ import { useMemo, useState } from "react";
 
 type Option = { id: string; name: string; course_id?: string | null };
 
+export const dynamic = 'force-dynamic' // ← ADD THIS
+
 export default function CourseTeePicker({
   courses,
   tees,

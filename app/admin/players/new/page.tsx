@@ -6,6 +6,8 @@ import { useRouter } from 'next/navigation';
 import { createBrowserSupabase } from '@/lib/supabase';
 import NavAdmin from '../../NavAdmin';
 
+export const dynamic = 'force-dynamic' // ← ADD THIS
+
 export default function AdminNewPlayerPage() {
   const supabase = createBrowserSupabase();
   const router = useRouter();

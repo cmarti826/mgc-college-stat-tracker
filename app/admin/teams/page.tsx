@@ -4,6 +4,8 @@ import { revalidatePath } from "next/cache";
 import { createServerSupabase } from "@/lib/supabase/server";
 import NavAdmin from "../NavAdmin";
 
+export const dynamic = 'force-dynamic' // ← ADD THIS
+
 async function loadData() {
   const supabase = await createServerSupabase();
   const teamQuery = supabase.from("mgc.teams").select("id, name, school, created_at").order("name");

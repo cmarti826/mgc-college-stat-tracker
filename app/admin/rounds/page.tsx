@@ -5,6 +5,8 @@ import NavAdmin from "../NavAdmin";
 import Link from "next/link";
 import CourseTeePicker from "./CourseTeePicker";
 
+export const dynamic = 'force-dynamic' // ← ADD THIS
+
 async function loadData() {
   const supabase = await createServerSupabase();
   const [

@@ -5,6 +5,8 @@ import Link from "next/link";
 import NavAdmin from "../NavAdmin";
 import { createServerSupabase } from "@/lib/supabase/server";
 
+export const dynamic = 'force-dynamic' // ← ADD THIS
+
 async function getInit() {
   const supabase = await createServerSupabase();
 

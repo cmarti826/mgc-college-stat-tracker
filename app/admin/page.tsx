@@ -2,6 +2,8 @@
 import Link from "next/link";
 import { createServerSupabase } from "@/lib/supabase/server";
 
+export const dynamic = 'force-dynamic' // ← ADD THIS
+
 type CountResp = { count: number | null };
 
 async function getDashboardData() {

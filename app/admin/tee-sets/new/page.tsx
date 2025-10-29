@@ -3,6 +3,8 @@ import { revalidatePath } from "next/cache";
 import { createServerSupabase } from "@/lib/supabase/server";
 import NavAdmin from "../../NavAdmin";
 
+export const dynamic = 'force-dynamic' // ← ADD THIS
+
 async function createTeeSet(formData: FormData) {
   "use server";
   const supabase = await createServerSupabase();

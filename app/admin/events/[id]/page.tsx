@@ -4,6 +4,8 @@ import { revalidatePath } from "next/cache";
 import NavAdmin from "../../NavAdmin";
 import { createServerSupabase } from "@/lib/supabase/server";
 
+export const dynamic = 'force-dynamic' // ← ADD THIS
+
 async function fetchAll(id: string) {
   const supabase = await createServerSupabase();
 

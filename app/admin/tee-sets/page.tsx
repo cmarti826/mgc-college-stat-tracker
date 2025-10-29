@@ -5,6 +5,8 @@ import { useEffect, useMemo, useRef, useState } from 'react';
 import Link from 'next/link';
 import { createBrowserSupabase } from '@/lib/supabase';
 
+export const dynamic = 'force-dynamic' // ← ADD THIS
+
 type TeeSet = {
   id: string;
   name: string;

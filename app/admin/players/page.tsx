@@ -6,6 +6,8 @@ import { createBrowserSupabase } from '@/lib/supabase';
 import Link from 'next/link';
 import NavAdmin from '../NavAdmin';
 
+export const dynamic = 'force-dynamic' // ← ADD THIS
+
 type PlayerRow = {
   id: string;
   full_name: string;

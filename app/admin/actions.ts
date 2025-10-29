@@ -5,6 +5,8 @@ import { revalidatePath } from "next/cache";
 import { createServerSupabase } from "@/lib/supabase/server";
 import { createClient as createcreateClient } from "@supabase/supabase-js";
 
+export const dynamic = 'force-dynamic' // ← ADD THIS
+
 /* ----------------------- helpers ----------------------- */
 function txt(x: FormDataEntryValue | null) {
   const s = (x ?? "").toString().trim();

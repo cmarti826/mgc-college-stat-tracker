@@ -4,6 +4,8 @@ import { createServerSupabase } from "@/lib/supabase/server";
 import NavAdmin from "../../NavAdmin";
 import CourseTeePicker from "../CourseTeePicker";
 
+export const dynamic = 'force-dynamic' // ← ADD THIS
+
 async function createRound(formData: FormData) {
   "use server";
   const supabase = await createServerSupabase();

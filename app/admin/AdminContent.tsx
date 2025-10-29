@@ -1,5 +1,5 @@
 // app/admin/AdminContent.tsx
-import { createServerSupabase, withMgcSchema } from "@/lib/supabase/server";
+import { createServerSupabase } from "@/lib/supabase/server";
 import {
   createPlayer,
   deletePlayer,
@@ -32,32 +32,20 @@ export default async function AdminContent() {
     profilesResult,
     roundsResult,
   ] = await Promise.all([
-    withMgcSchema(supabase, async () =>
-      await supabase.from("players").select("id, full_name, grad_year").order("full_name")
-    ),
-    withMgcSchema(supabase, async () =>
-      await supabase.from("courses").select("id, name, city, state").order("name")
-    ),
-    withMgcSchema(supabase, async () =>
-      await supabase.from("tee_sets").select("id, name, course_id, par, rating, slope").order("name")
-    ),
-    withMgcSchema(supabase, async () =>
-      await supabase.from("teams").select("id, name, school, created_at").order("name")
-    ),
-    withMgcSchema(supabase, async () =>
-      await supabase
-        .from("team_members")
-        .select("id, team_id, user_id, player_id, role, created_at")
-        .order("created_at", { ascending: false })
-    ),
-    supabase.from("profiles").select("id, full_name, default_team_id").order("full_name"),
-    withMgcSchema(supabase, async () =>
-      await supabase
-        .from("scheduled_rounds")
-        .select("id, date, player_id, course_id, tee_set_id, team_id, type, status, name, created_at")
-        .order("created_at", { ascending: false })
-        .limit(25)
-    ),
+    supabase.from("mgc.players").select("id, full_name, grad_year").order("full_name"),
+    supabase.from("mgc.courses").select("id, name, city, state").order("name"),
+    supabase.from("mgc.tee_sets").select("id, name, course_id, par, rating, slope").order("name"),
+    supabase.from("mgc.teams").select("id, name, school, created_at").order("name"),
+    supabase
+      .from("mgc.team_members")
+      .select("id, team_id, user_id, player_id, role, created_at")
+      .order("created_at", { ascending: false }),
+    supabase.from("mgc.profiles").select("id, full_name, default_team_id").order("full_name"),
+    supabase
+      .from("mgc.scheduled_rounds")
+      .select("id, date, player_id, course_id, tee_set_id, team_id, type, status, name, created_at")
+      .order("created_at", { ascending: false })
+      .limit(25),
   ]);
 
   const players = (playersResult as { data: any[] | null }).data;

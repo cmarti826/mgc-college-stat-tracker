@@ -63,7 +63,7 @@ export async function createPlayer(formData: FormData): Promise<void> {
     });
     if (adminErr) {
       // Roll back the player we just created to keep things tidy? Optional.
-      // await supabase.from("players").schema("mgc").delete().eq("id", playerRow.id);
+      
       throw new Error(adminErr.message);
     }
     const user = created.user;

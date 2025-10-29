@@ -18,7 +18,7 @@ export default async function CoursesPage() {
   // supabase client typing can be ambiguous in this context; cast to any to ensure callable methods
   const sb: any = supabase;
   const res = await sb
-    .from("courses").schema("mgc")
+    .from("mgc.courses")
     .select("id, name, city, state, created_at")
     .order("name", { ascending: true });
 

@@ -1,10 +1,13 @@
 // app/(auth)/login/LoginInner.tsx
 'use client'
 
-import { useState } from 'react'
+import { useState, useEffect } from 'react'
+import { useRouter, useSearchParams } from 'next/navigation'
 import { createBrowserSupabase } from '@/lib/supabase/client'
 
 export default function LoginInner() {
+  const router = useRouter()
+  const searchParams = useSearchParams()
   const [email, setEmail] = useState('')
   const [password, setPassword] = useState('')
   const [isSignUp, setIsSignUp] = useState(false)
@@ -13,6 +16,29 @@ export default function LoginInner() {
 
   const supabase = createBrowserSupabase()
 
+  // Handle redirect errors (e.g. ?error=invalid_token)
+  useEffect(() => {
+    const error = searchParams.get('error')
+    if (error === 'invalid_token') {
+      setMessage('Login failed: Invalid or expired link. Please try again.')
+      router.replace('/login', undefined)
+    } else if (error === 'server_error') {
+      setMessage('Server error. Please try again later.')
+      router.replace('/login', undefined)
+    }
+  }, [searchParams, router])
+
+  // Auto-redirect if already logged in
+  useEffect(() => {
+    const checkSession = async () => {
+      const { data } = await supabase.auth.getSession()
+      if (data.session) {
+        router.replace('/')
+      }
+    }
+    checkSession()
+  }, [router, supabase])
+
   const handleEmailAuth = async (e: React.FormEvent) => {
     e.preventDefault()
     setLoading(true)
@@ -20,46 +46,58 @@ export default function LoginInner() {
 
     try {
       if (isSignUp) {
-        const { error } = await supabase.auth.signUp({
+        const { data, error } = await supabase.auth.signUp({
           email,
           password,
           options: {
             emailRedirectTo: `${window.location.origin}/auth/callback`,
           },
         })
+
         if (error) throw error
-        setMessage('Check your email for confirmation link!')
+        if (data.user && !data.user.identities?.length) {
+          setMessage('Email already registered. Try logging in.')
+        } else {
+          setMessage('Check your email for the confirmation link!')
+        }
       } else {
         const { error } = await supabase.auth.signInWithPassword({
           email,
           password,
         })
         if (error) throw error
-        window.location.href = '/'
+        router.replace('/')
       }
     } catch (error: any) {
-      setMessage(error.message)
+      setMessage(error.message || 'An error occurred. Please try again.')
     } finally {
       setLoading(false)
     }
   }
 
   const handleGoogleLogin = async () => {
+    setLoading(true)
+    setMessage('')
+
     const { error } = await supabase.auth.signInWithOAuth({
       provider: 'google',
       options: {
         redirectTo: `${window.location.origin}/auth/callback`,
       },
     })
+
     if (error) {
       console.error('Google login error:', error)
-      setMessage('Google login failed')
+      setMessage('Google login failed. Please try again.')
+      setLoading(false)
     }
+    // Success: redirect handled by Supabase
   }
 
   return (
     <div className="flex min-h-screen flex-col items-center justify-center bg-gradient-to-br from-green-50 to-green-100 p-4">
       <div className="w-full max-w-md space-y-8 rounded-xl bg-white p-8 shadow-xl">
+        {/* Header */}
         <div className="text-center">
           <h1 className="text-3xl font-bold text-gray-900">MGC Stats</h1>
           <p className="mt-2 text-sm text-gray-600">
@@ -70,24 +108,32 @@ export default function LoginInner() {
         {/* Email + Password Form */}
         <form onSubmit={handleEmailAuth} className="space-y-4">
           <div>
-            <label className="block text-sm font-medium text-gray-700">Email</label>
+            <label htmlFor="email" className="block text-sm font-medium text-gray-700">
+              Email
+            </label>
             <input
+              id="email"
               type="email"
               value={email}
               onChange={(e) => setEmail(e.target.value)}
               required
+              autoComplete="email"
               className="mt-1 block w-full rounded-md border border-gray-300 px-3 py-2 shadow-sm focus:border-green-500 focus:outline-none focus:ring-green-500"
             />
           </div>
 
           <div>
-            <label className="block text-sm font-medium text-gray-700">Password</label>
+            <label htmlFor="password" className="block text-sm font-medium text-gray-700">
+              Password
+            </label>
             <input
+              id="password"
               type="password"
               value={password}
               onChange={(e) => setPassword(e.target.value)}
               required
               minLength={6}
+              autoComplete={isSignUp ? 'new-password' : 'current-password'}
               className="mt-1 block w-full rounded-md border border-gray-300 px-3 py-2 shadow-sm focus:border-green-500 focus:outline-none focus:ring-green-500"
             />
           </div>
@@ -95,17 +141,21 @@ export default function LoginInner() {
           <button
             type="submit"
             disabled={loading}
-            className="w-full rounded-md bg-green-600 px-4 py-2 text-white font-medium hover:bg-green-700 disabled:opacity-50"
+            className="w-full rounded-md bg-green-600 px-4 py-2 text-white font-medium hover:bg-green-700 focus:outline-none focus:ring-2 focus:ring-green-500 focus:ring-offset-2 disabled:opacity-50"
           >
-            {loading ? 'Loading...' : isSignUp ? 'Sign Up' : 'Log In'}
+            {loading ? 'Loading...' : isSignUp ? 'Create Account' : 'Log In'}
           </button>
         </form>
 
+        {/* Toggle Sign Up / Log In */}
         <div className="text-center text-sm">
           <button
             type="button"
-            onClick={() => setIsSignUp(!isSignUp)}
-            className="text-green-600 hover:underline"
+            onClick={() => {
+              setIsSignUp(!isSignUp)
+              setMessage('')
+            }}
+            className="text-green-600 hover:underline focus:outline-none"
           >
             {isSignUp ? 'Already have an account? Log in' : "Don't have an account? Sign up"}
           </button>
@@ -124,7 +174,8 @@ export default function LoginInner() {
         {/* Google Login */}
         <button
           onClick={handleGoogleLogin}
-          className="flex w-full items-center justify-center gap-3 rounded-lg border border-gray-300 bg-white px-5 py-3 text-sm font-medium text-gray-700 shadow-md transition hover:bg-gray-50"
+          disabled={loading}
+          className="flex w-full items-center justify-center gap-3 rounded-lg border border-gray-300 bg-white px-5 py-3 text-sm font-medium text-gray-700 shadow-md transition hover:bg-gray-50 focus:outline-none focus:ring-2 focus:ring-green-500 focus:ring-offset-2 disabled:opacity-50"
         >
           <svg className="h-5 w-5" viewBox="0 0 24 24">
             <path
@@ -147,12 +198,20 @@ export default function LoginInner() {
           Continue with Google
         </button>
 
+        {/* Message (Success / Error) */}
         {message && (
-          <p className={`mt-4 text-center text-sm ${message.includes('Check') ? 'text-green-600' : 'text-red-600'}`}>
+          <p
+            className={`mt-4 text-center text-sm font-medium ${
+              message.includes('Check') || message.includes('created')
+                ? 'text-green-600'
+                : 'text-red-600'
+            }`}
+          >
             {message}
           </p>
         )}
 
+        {/* Footer */}
         <p className="mt-6 text-center text-xs text-gray-500">
           By continuing, you agree to our{' '}
           <a href="#" className="underline hover:text-gray-700">

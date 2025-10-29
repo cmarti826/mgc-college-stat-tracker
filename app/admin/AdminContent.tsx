@@ -24,13 +24,13 @@ export default async function AdminContent() {
   const supabase = createServerSupabase();
 
   const [
-    playersResult,
-    coursesResult,
-    teeSetsResult,
-    teamsResult,
-    teamMembersResult,
-    profilesResult,
-    roundsResult,
+    { data: players },
+    { data: courses },
+    { data: teeSets },
+    { data: teams },
+    { data: teamMembers },
+    { data: profiles },
+    { data: rounds },
   ] = await Promise.all([
     supabase.from("mgc.players").select("id, full_name, grad_year").order("full_name"),
     supabase.from("mgc.courses").select("id, name, city, state").order("name"),
@@ -40,21 +40,13 @@ export default async function AdminContent() {
       .from("mgc.team_members")
       .select("id, team_id, user_id, player_id, role, created_at")
       .order("created_at", { ascending: false }),
-    supabase.from("mgc.profiles").select("id, full_name, default_team_id").order("full_name"),
+    supabase.from("profiles").select("id, full_name, default_team_id").order("full_name"),
     supabase
       .from("mgc.scheduled_rounds")
       .select("id, date, player_id, course_id, tee_set_id, team_id, type, status, name, created_at")
       .order("created_at", { ascending: false })
       .limit(25),
   ]);
-
-  const players = (playersResult as { data: any[] | null }).data;
-  const courses = (coursesResult as { data: any[] | null }).data;
-  const teeSets = (teeSetsResult as { data: any[] | null }).data;
-  const teams = (teamsResult as { data: any[] | null }).data;
-  const teamMembers = (teamMembersResult as { data: any[] | null }).data;
-  const profiles = (profilesResult as { data: any[] | null }).data;
-  const rounds = (roundsResult as { data: any[] | null }).data;
 
   return (
     <div className="mx-auto max-w-6xl p-6 space-y-10">

@@ -11,7 +11,7 @@ const items = [
   { href: "/rounds", label: "Rounds" },
   { href: "/events", label: "Events" },
   { href: "/courses", label: "Courses" },
-  { href: "/tees", label: "Tees" },
+  { href: "/tee-sets", label: "Tees" },
   { href: "/rounds/new", label: "Create Round" },
   { href: "/admin", label: "Admin" },
 ];

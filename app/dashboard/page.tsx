@@ -28,15 +28,14 @@ export default async function DashboardPage() {
     data: { user },
   } = await supabase.auth.getUser();
 
-// app/dashboard/page.tsx  (UPDATE THIS LINE)
+  if (!user) {
+    redirect('/(auth)/login');
+  }
 
-if (!user) {
-  redirect('/(auth)/login');  // ← CHANGE TO THIS
-}
   // Fetch stats
   const [
-    { count: totalCourses = 0 },
-    { count: totalUsers = 0 },
+    { count: totalCourses },
+    { count: totalUsers },
     { data: courses = [] },
   ] = await Promise.all([
     supabase.from('mgc.courses').select('*', { count: 'exact', head: true }),
@@ -49,9 +48,9 @@ if (!user) {
   ]);
 
   const stats: Stats = {
-    totalCourses,
-    totalUsers,
-    activeSessions: 0, // Placeholder — track via Supabase Realtime or sessions table
+    totalCourses: totalCourses ?? 0,
+    totalUsers: totalUsers ?? 0,
+    activeSessions: 0, // Placeholder
   };
 
   const recentCourses = courses as Course[];
@@ -133,7 +132,7 @@ if (!user) {
               href="/courses"
               className="text-sm text-blue-600 hover:underline font-medium"
             >
-              View all courses →
+              View all courses
             </Link>
           </div>
         )}

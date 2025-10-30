@@ -34,9 +34,9 @@ export default async function DashboardPage() {
 
   // Fetch stats
   const [
-    { count: totalCourses },
-    { count: totalUsers },
-    { data: courses = [] },
+    { count: totalCoursesCount },
+    { count: totalUsersCount },
+    { data: coursesData },
   ] = await Promise.all([
     supabase.from('mgc.courses').select('*', { count: 'exact', head: true }),
     supabase.from('auth.users').select('*', { count: 'exact', head: true }),
@@ -48,12 +48,12 @@ export default async function DashboardPage() {
   ]);
 
   const stats: Stats = {
-    totalCourses: totalCourses ?? 0,
-    totalUsers: totalUsers ?? 0,
-    activeSessions: 0, // Placeholder
+    totalCourses: totalCoursesCount ?? 0,
+    totalUsers: totalUsersCount ?? 0,
+    activeSessions: 0,
   };
 
-  const recentCourses = courses as Course[];
+  const recentCourses: Course[] = (coursesData ?? []) as Course[];
 
   return (
     <div className="space-y-6">

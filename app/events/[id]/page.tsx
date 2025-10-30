@@ -1,192 +1,216 @@
 // app/events/[id]/page.tsx
-'use client'
 
-import { useEffect, useMemo, useState } from 'react'
-import Link from 'next/link'
-import { useParams } from 'next/navigation'
-import { createBrowserSupabase } from '@/lib/supabase';
-const supabase = createBrowserSupabase();
+'use client';
+
+import { useEffect, useState } from 'react';
+import Link from 'next/link';
+import { useParams } from 'next/navigation';
+import { createBrowserSupabase } from '@/lib/supabase/client';
 
 type EventHeader = {
-  id: string
-  name: string
-  event_type: 'TOURNAMENT'|'QUALIFYING'|'PRACTICE'|null
-  start_date: string|null
-  end_date: string|null
-  course_name: string|null
-  team_name: string|null
-}
+  id: string;
+  name: string;
+  event_type: 'TOURNAMENT' | 'QUALIFYING' | 'PRACTICE' | null;
+  start_date: string | null;
+  end_date: string | null;
+  course_name: string | null;
+  team_name: string | null;
+};
 
 type PlayerRound = {
-  event_id: string
-  round_id: string
-  round_number: number | null
-  day: string | null
-  player_id: string | null
-  player_name: string | null
-  team_id: string | null
-  team_name: string | null
-  created_at: string | null
-  to_par: number | null
-  sg_total: number | null
-  sg_ott: number | null
-  sg_app: number | null
-  sg_arg: number | null
-  sg_putt: number | null
-  round_index: number | null
-}
+  event_id: string;
+  round_id: string;
+  round_number: number | null;
+  day: string | null;
+  player_id: string | null;
+  player_name: string | null;
+  team_id: string | null;
+  team_name: string | null;
+  created_at: string | null;
+  to_par: number | null;
+  sg_total: number | null;
+  sg_ott: number | null;
+  sg_app: number | null;
+  sg_arg: number | null;
+  sg_putt: number | null;
+  round_index: number | null;
+};
 
 type LbRow = {
-  event_id: string
-  player_id: string
-  player_name: string
-  team_id: string | null
-  team_name: string | null
-  rounds: number
-  total_to_par: number
-  avg_to_par: number
-  avg_sg_total: number | null
-  avg_sg_ott: number | null
-  avg_sg_app: number | null
-  avg_sg_arg: number | null
-  avg_sg_putt: number | null
-  best_round_to_par: number | null
-  last_played: string | null
-  position: number
-}
+  event_id: string;
+  player_id: string;
+  player_name: string;
+  team_id: string | null;
+  team_name: string | null;
+  rounds: number;
+  total_to_par: number;
+  avg_to_par: number;
+  avg_sg_total: number | null;
+  avg_sg_ott: number | null;
+  avg_sg_app: number | null;
+  avg_sg_arg: number | null;
+  avg_sg_putt: number | null;
+  best_round_to_par: number | null;
+  last_played: string | null;
+  position: number;
+};
 
 type ERoundBase = {
-  round_id: string
-  created_at: string | null
-  player_id: string | null
-  player_name: string | null
-  team_name: string | null
-  to_par: number | null
-  sg_total: number | null
-}
+  round_id: string;
+  created_at: string | null;
+  player_id: string | null;
+  player_name: string | null;
+  team_name: string | null;
+  to_par: number | null;
+  sg_total: number | null;
+};
 
-type ViewMode = 'individuals' | 'teams'
-type TeamMode = 'sum_all' | 'best_n'
+type ViewMode = 'individuals' | 'teams';
+type TeamMode = 'sum_all' | 'best_n';
 
 export default function EventDetailPage() {
-  const { id } = useParams<{ id: string }>()
-  const supabase = useMemo(() => createBrowserSupabase(), [])
+  const { id } = useParams<{ id: string }>();
+  const supabase = createBrowserSupabase(); // ← Safe in client
 
-  const [hdr, setHdr] = useState<EventHeader | null>(null)
-  const [leader, setLeader] = useState<LbRow[]>([])
-  const [playerRounds, setPlayerRounds] = useState<PlayerRound[]>([])
-  const [attached, setAttached] = useState<ERoundBase[]>([])
-  const [recent, setRecent] = useState<ERoundBase[]>([])
-  const [loading, setLoading] = useState(true)
-  const [error, setError] = useState<string | null>(null)
+  const [hdr, setHdr] = useState<EventHeader | null>(null);
+  const [leader, setLeader] = useState<LbRow[]>([]);
+  const [playerRounds, setPlayerRounds] = useState<PlayerRound[]>([]);
+  const [attached, setAttached] = useState<ERoundBase[]>([]);
+  const [recent, setRecent] = useState<ERoundBase[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
 
-  // toggles
-  const [viewMode, setViewMode] = useState<ViewMode>('individuals')
-  const [teamMode, setTeamMode] = useState<TeamMode>('best_n')
-  const [bestN, setBestN] = useState<number>(4)
+  const [viewMode, setViewMode] = useState<ViewMode>('individuals');
+  const [teamMode, setTeamMode] = useState<TeamMode>('best_n');
+  const [bestN, setBestN] = useState<number>(4);
 
   async function loadAll() {
-    setLoading(true); setError(null)
+    setLoading(true);
+    setError(null);
 
-    // header
-    const { data: e1 } = await supabase
-      .from('v_events_enriched')
-      .select('*')
-      .eq('id', id)
-      .maybeSingle()
-    setHdr(e1 as any)
+    try {
+      // 1. Header
+      const { data: e1, error: e1Err } = await supabase
+        .from('mgc.v_events_enriched')
+        .select('*')
+        .eq('id', id)
+        .single();
 
-    // leaderboard by player (totals/averages)
-    const { data: lb } = await supabase
-      .from('v_event_leaderboard_by_player')
-      .select('*')
-      .eq('event_id', id)
-    const sorted = (lb ?? []).sort((a: any, b: any) => a.position - b.position) as LbRow[]
-    setLeader(sorted)
+      if (e1Err && e1Err.code !== 'PGRST116') throw e1Err; // 116 = no rows
+      setHdr(e1 ?? null);
 
-    // all player-round rows (for per-round columns + team scoring)
-    const { data: pr } = await supabase
-      .from('v_event_player_rounds')
-      .select('*')
-      .eq('event_id', id)
-    setPlayerRounds((pr ?? []) as PlayerRound[])
+      // 2. Leaderboard
+      const { data: lb, error: lbErr } = await supabase
+        .from('mgc.v_event_leaderboard_by_player')
+        .select('*')
+        .eq('event_id', id);
 
-    // attached rounds (for the table below)
-    const { data: er } = await supabase
-      .from('event_rounds')
-      .select('round_id')
-      .eq('event_id', id)
+      if (lbErr) throw lbErr;
+      const sorted = (lb ?? []).sort((a: any, b: any) => a.position - b.position) as LbRow[];
+      setLeader(sorted);
 
-    const attachedIds = (er ?? []).map((r: any) => r.round_id)
-    if (attachedIds.length) {
-      const { data: r1 } = await supabase
-        .from('v_round_leaderboard_base')
+      // 3. Player rounds
+      const { data: pr, error: prErr } = await supabase
+        .from('mgc.v_event_player_rounds')
+        .select('*')
+        .eq('event_id', id);
+
+      if (prErr) throw prErr;
+      setPlayerRounds((pr ?? []) as PlayerRound[]);
+
+      // 4. Attached rounds
+      const { data: er, error: erErr } = await supabase
+        .from('mgc.event_rounds')
+        .select('round_id')
+        .eq('event_id', id);
+
+      if (erErr) throw erErr;
+      const attachedIds = (er ?? []).map((r: any) => r.round_id).filter(Boolean);
+
+      if (attachedIds.length > 0) {
+        const { data: r1, error: r1Err } = await supabase
+          .from('mgc.v_round_leaderboard_base')
+          .select('round_id, created_at, player_id, player_name, team_name, to_par, sg_total')
+          .in('round_id', attachedIds)
+          .order('created_at', { ascending: true });
+
+        if (r1Err) throw r1Err;
+        setAttached((r1 ?? []) as ERoundBase[]);
+      } else {
+        setAttached([]);
+      }
+
+      // 5. Recent candidate rounds
+      const start = e1?.start_date ?? null;
+      const end = e1?.end_date ?? null;
+      let q = supabase
+        .from('mgc.v_round_leaderboard_base')
         .select('round_id, created_at, player_id, player_name, team_name, to_par, sg_total')
-        .in('round_id', attachedIds)
-        .order('created_at', { ascending: true })
-      setAttached((r1 ?? []) as ERoundBase[])
-    } else {
-      setAttached([])
+        .order('created_at', { ascending: false })
+        .limit(200);
+
+      if (start) q = q.gte('created_at', start);
+      if (end) q = q.lte('created_at', `${end}T23:59:59.999Z`);
+
+      const { data: r2, error: r2Err } = await q;
+      if (r2Err) throw r2Err;
+
+      const candidates = (r2 ?? []).filter(
+        (r: any) => r.round_id && !attachedIds.includes(r.round_id)
+      ) as ERoundBase[];
+      setRecent(candidates);
+    } catch (err: any) {
+      console.error(err);
+      setError(err.message || 'Failed to load event');
+    } finally {
+      setLoading(false);
     }
-
-    // quick-pick: recent rounds in date window, not attached yet
-    const start = (e1 as any)?.start_date ?? null
-    const end = (e1 as any)?.end_date ?? null
-    let q = supabase
-      .from('v_round_leaderboard_base')
-      .select('round_id, created_at, player_id, player_name, team_name, to_par, sg_total')
-      .order('created_at', { ascending: false })
-      .limit(200)
-    if (start) q = q.gte('created_at', start)
-    if (end) q = q.lte('created_at', end + 'T23:59:59')
-    const { data: r2 } = await q
-    const cand = ((r2 ?? []) as ERoundBase[]).filter(r => !attachedIds.includes(r.round_id))
-    setRecent(cand)
-
-    setLoading(false)
   }
 
-  useEffect(() => { loadAll() }, [id])
+  useEffect(() => {
+    if (id) loadAll();
+  }, [id]);
 
   async function attach(roundId: string) {
-    setError(null)
-    const { error: insErr } = await supabase.from('event_rounds').insert({
-      event_id: id, round_id: roundId
-    })
-    if (insErr) { setError(insErr.message); return }
-    await loadAll()
+    setError(null);
+    const { error: insErr } = await supabase
+      .from('mgc.event_rounds')
+      .insert({ event_id: id, round_id: roundId });
+
+    if (insErr) {
+      setError(insErr.message);
+      return;
+    }
+    await loadAll();
   }
 
   async function detach(roundId: string) {
-    setError(null)
-    const { error: delErr } = await supabase.from('event_rounds').delete()
-      .eq('event_id', id).eq('round_id', roundId)
-    if (delErr) { setError(delErr.message); return }
-    await loadAll()
+    setError(null);
+    const { error: delErr } = await supabase
+      .from('mgc.event_rounds')
+      .delete()
+      .eq('event_id', id)
+      .eq('round_id', roundId);
+
+    if (delErr) {
+      setError(delErr.message);
+      return;
+    }
+    await loadAll();
   }
 
-  // ---------- Derived helpers ----------
-  // distinct round indices present in this event, sorted asc
-  const roundIndices = Array.from(new Set(
-    playerRounds
-      .map(r => r.round_index ?? 0)
-      .filter(n => n && Number.isFinite(n))
-  )).sort((a, b) => Number(a) - Number(b)) as number[]
+  // --- Derived Data ---
+  const roundIndices = Array.from(
+    new Set(playerRounds.map((r) => r.round_index).filter((n): n is number => n !== null && n > 0))
+  ).sort((a, b) => a - b);
 
-  // Per-player pivot of to_par by round_index
-  type PivotRow = LbRow & { roundsByIndex: Record<number, number | null> }
+  // Pivot individuals
+  type PivotRow = LbRow & { roundsByIndex: Record<number, number | null> };
   const pivotIndividuals: PivotRow[] = (() => {
-    const byPlayer = new Map<string, PivotRow>()
-    // seed with leaderboard totals for ordering/averages
-    for (const l of leader) {
-      byPlayer.set(l.player_id, {
-        ...l,
-        roundsByIndex: {},
-      })
-    }
-    // fill per-round cells
-    for (const r of playerRounds) {
-      const pid = r.player_id ?? 'unknown'
+    const byPlayer = new Map<string, PivotRow>();
+    leader.forEach((l) => byPlayer.set(l.player_id, { ...l, roundsByIndex: {} }));
+    playerRounds.forEach((r) => {
+      const pid = r.player_id ?? 'unknown';
       if (!byPlayer.has(pid)) {
         byPlayer.set(pid, {
           player_id: pid,
@@ -206,184 +230,161 @@ export default function EventDetailPage() {
           last_played: null,
           position: 9999,
           roundsByIndex: {},
-        } as any)
+        } as any);
       }
-      const row = byPlayer.get(pid)!
-      const idx = Number(r.round_index ?? 0)
-      if (idx) row.roundsByIndex[idx] = r.to_par ?? null
-    }
-    return Array.from(byPlayer.values()).sort((a, b) => a.position - b.position)
-  })()
+      const row = byPlayer.get(pid)!;
+      const idx = r.round_index;
+      if (idx && r.to_par !== null) row.roundsByIndex[idx] = r.to_par;
+    });
+    return Array.from(byPlayer.values()).sort((a, b) => a.position - b.position);
+  })();
 
-  // Team tables
+  // Team scoring
   type TeamAgg = {
-    team_id: string
-    team_name: string | null
-    totalsByIndex: Record<number, number>
-    grandTotal: number
-    includedCount: number
-    avg_sg_total: number | null
-  }
+    team_id: string;
+    team_name: string | null;
+    totalsByIndex: Record<number, number>;
+    grandTotal: number;
+    avg_sg_total: number | null;
+  };
 
   const teamTable: TeamAgg[] = (() => {
-    const byTeam: Map<string, TeamAgg> = new Map()
+    const byTeam = new Map<string, TeamAgg>();
+
     const ensureTeam = (tid: string | null, tname: string | null) => {
-      const key = tid ?? 'unknown'
+      const key = tid ?? 'unknown';
       if (!byTeam.has(key)) {
         byTeam.set(key, {
           team_id: key,
           team_name: tname ?? '—',
           totalsByIndex: {},
           grandTotal: 0,
-          includedCount: 0,
           avg_sg_total: null,
-        })
+        });
       }
-      return byTeam.get(key)!
-    }
+      return byTeam.get(key)!;
+    };
 
     if (teamMode === 'sum_all') {
-      const byTeamRound: Record<string, number> = {}
-      const sgTotals: Record<string, { sum: number; cnt: number }> = {}
+      const roundTotals: Record<string, number> = {};
+      const sgTotals: Record<string, { sum: number; cnt: number }> = {};
 
-      for (const r of playerRounds) {
-        const tid = r.team_id ?? 'unknown'
-        const tname = r.team_name ?? '—'
-        const idx = Number(r.round_index ?? 0)
-        if (!idx || r.to_par === null || r.to_par === undefined) continue
-        const key = `${tid}:${idx}`
-        byTeamRound[key] = (byTeamRound[key] ?? 0) + Number(r.to_par)
+      playerRounds.forEach((r) => {
+        if (r.to_par === null || r.round_index === null) return;
+        const tid = r.team_id ?? 'unknown';
+        const key = `${tid}:${r.round_index}`;
+        roundTotals[key] = (roundTotals[key] ?? 0) + r.to_par;
 
-        if (r.sg_total !== null && r.sg_total !== undefined && Number.isFinite(Number(r.sg_total))) {
-          sgTotals[tid] = sgTotals[tid] || { sum: 0, cnt: 0 }
-          sgTotals[tid].sum += Number(r.sg_total)
-          sgTotals[tid].cnt += 1
+        if (r.sg_total !== null) {
+          sgTotals[tid] = sgTotals[tid] || { sum: 0, cnt: 0 };
+          sgTotals[tid].sum += r.sg_total;
+          sgTotals[tid].cnt += 1;
         }
+        ensureTeam(tid, r.team_name);
+      });
 
-        ensureTeam(tid, tname)
-      }
+      Object.entries(roundTotals).forEach(([key, total]) => {
+        const [tid, idxStr] = key.split(':');
+        const idx = Number(idxStr);
+        const row = ensureTeam(tid, null);
+        row.totalsByIndex[idx] = total;
+      });
 
-      for (const [key, total] of Object.entries(byTeamRound)) {
-        const [tid, idxStr] = key.split(':')
-        const idx = Number(idxStr)
-        const row = ensureTeam(tid, null)
-        row.totalsByIndex[idx] = (row.totalsByIndex[idx] ?? 0) + total
-      }
-
-      for (const row of byTeam.values()) {
-        row.grandTotal = roundIndices.reduce((s, i) => s + (row.totalsByIndex[i] ?? 0), 0)
-        const sg = (sgTotals[row.team_id] ?? null)
-        row.avg_sg_total = sg && sg.cnt ? sg.sum / sg.cnt : null
-        row.includedCount = sg?.cnt ?? 0
-      }
-
+      byTeam.forEach((row) => {
+        row.grandTotal = roundIndices.reduce((s, i) => s + (row.totalsByIndex[i] ?? 0), 0);
+        const sg = sgTotals[row.team_id];
+        row.avg_sg_total = sg ? sg.sum / sg.cnt : null;
+      });
     } else {
-      // best N per round
-      type PR = { to_par: number; sg_total: number | null }
-      const bucketsPR: Record<string, PR[]> = {}
-      for (const r of playerRounds) {
-        const tid = r.team_id ?? 'unknown'
-        const idx = Number(r.round_index ?? 0)
-        if (!idx || r.to_par === null || r.to_par === undefined) continue
-        const key = `${tid}:${idx}`
-        bucketsPR[key] = bucketsPR[key] || []
-        bucketsPR[key].push({
-          to_par: Number(r.to_par),
-          sg_total: (r.sg_total === null || r.sg_total === undefined || !Number.isFinite(Number(r.sg_total))) ? null : Number(r.sg_total)
-        })
-        ensureTeam(tid, r.team_name ?? '—')
-      }
+      // best N
+      const buckets: Record<string, number[]> = {};
+      playerRounds.forEach((r) => {
+        if (r.to_par === null || r.round_index === null) return;
+        const tid = r.team_id ?? 'unknown';
+        const key = `${tid}:${r.round_index}`;
+        buckets[key] = buckets[key] || [];
+        buckets[key].push(r.to_par);
+        ensureTeam(tid, r.team_name);
+      });
 
-      const sgTotalsPerTeam: Record<string, { sum: number; cnt: number }> = {}
-      for (const [key, arr] of Object.entries(bucketsPR)) {
-        const [tid, idxStr] = key.split(':')
-        const idx = Number(idxStr)
-        arr.sort((a, b) => a.to_par - b.to_par)
-        const picked = arr.slice(0, Math.max(1, bestN))
-        const sumRound = picked.reduce((s, x) => s + x.to_par, 0)
-        const row = ensureTeam(tid, null)
-        row.totalsByIndex[idx] = (row.totalsByIndex[idx] ?? 0) + sumRound
+      Object.entries(buckets).forEach(([key, scores]) => {
+        const [tid, idxStr] = key.split(':');
+        const idx = Number(idxStr);
+        scores.sort((a, b) => a - b);
+        const best = scores.slice(0, Math.max(1, bestN));
+        const sum = best.reduce((s, v) => s + v, 0);
+        const row = ensureTeam(tid, null);
+        row.totalsByIndex[idx] = sum;
+      });
 
-        for (const p of picked) {
-          if (p.sg_total !== null) {
-            sgTotalsPerTeam[tid] = sgTotalsPerTeam[tid] || { sum: 0, cnt: 0 }
-            sgTotalsPerTeam[tid].sum += p.sg_total
-            sgTotalsPerTeam[tid].cnt += 1
-          }
-        }
-      }
-
-      for (const row of byTeam.values()) {
-        row.grandTotal = roundIndices.reduce((s, i) => s + (row.totalsByIndex[i] ?? 0), 0)
-        const sg = (sgTotalsPerTeam[row.team_id] ?? null)
-        row.avg_sg_total = sg && sg.cnt ? sg.sum / sg.cnt : null
-        row.includedCount = sg?.cnt ?? 0
-      }
+      byTeam.forEach((row) => {
+        row.grandTotal = roundIndices.reduce((s, i) => s + (row.totalsByIndex[i] ?? 0), 0);
+      });
     }
 
-    return Array.from(byTeam.values()).sort((a, b) => a.grandTotal - b.grandTotal)
-  })()
+    return Array.from(byTeam.values()).sort((a, b) => a.grandTotal - b.grandTotal);
+  })();
+
+  if (loading) return <div className="p-6 text-center">Loading event...</div>;
+  if (error) return <div className="p-6 text-red-600">Error: {error}</div>;
+  if (!hdr) return <div className="p-6 text-center">Event not found.</div>;
 
   return (
-    <div className="space-y-6">
+    <div className="space-y-6 p-4 max-w-7xl mx-auto">
       <div className="flex items-center justify-between">
-        <h1>Event</h1>
+        <h1 className="text-2xl font-bold">Event Detail</h1>
         <div className="flex gap-2">
-          <Link href="/events" className="btn-on-light-outline">All Events</Link>
-          <Link href="/leaderboard" className="btn-on-light-outline">Leaderboard</Link>
+          <Link href="/events" className="px-3 py-1 text-sm border rounded-md">
+            All Events
+          </Link>
         </div>
       </div>
 
-      {/* Header */}
-      <div className="card">
-        {hdr ? (
-          <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2">
-            <div>
-              <div className="text-xl font-bold">{hdr.name}</div>
-              <div className="text-sm text-gray-600">
-                {hdr.event_type ?? '—'} • {(hdr.start_date ?? '—')} — {(hdr.end_date ?? '—')}
-              </div>
-              <div className="text-sm text-gray-600">
-                {hdr.course_name ? `Course: ${hdr.course_name}` : ''} {hdr.team_name ? ` • Host: ${hdr.team_name}` : ''}
-              </div>
-            </div>
-            <div className="flag-accent" />
-          </div>
-        ) : loading ? 'Loading…' : 'Not found.'}
+      {/* Header Card */}
+      <div className="bg-white p-4 rounded-lg border shadow-sm">
+        <div className="text-xl font-bold">{hdr.name}</div>
+        <div className="text-sm text-gray-600">
+          {hdr.event_type ?? '—'} • {hdr.start_date} — {hdr.end_date}
+        </div>
+        <div className="text-sm text-gray-600">
+          {hdr.course_name && `Course: ${hdr.course_name}`}
+          {hdr.team_name && ` • Host: ${hdr.team_name}`}
+        </div>
       </div>
 
-      {/* Attach / Recent rounds */}
-      <div className="card">
-        <div className="card-header">
-          <div className="card-title">Attach Rounds</div>
-          <div className="card-subtle">Pick from recent rounds in the event date window.</div>
-        </div>
-        {error && <div className="mb-3 rounded-xl border border-red-200 bg-red-50 p-3 text-sm text-red-800">{error}</div>}
+      {/* Attach Rounds */}
+      <div className="bg-white p-4 rounded-lg border shadow-sm">
+        <h2 className="text-lg font-semibold mb-2">Attach Rounds</h2>
         {recent.length === 0 ? (
-          <div className="text-sm text-gray-600">No candidate rounds in this date range.</div>
+          <p className="text-sm text-gray-500">No rounds available to attach.</p>
         ) : (
           <div className="overflow-x-auto">
-            <table className="table">
-              <thead>
+            <table className="w-full text-sm">
+              <thead className="bg-gray-50">
                 <tr>
-                  <th>Date</th>
-                  <th>Player</th>
-                  <th>Team</th>
-                  <th>To Par</th>
-                  <th>SG Total</th>
-                  <th></th>
+                  <th className="p-2 text-left">Date</th>
+                  <th className="p-2 text-left">Player</th>
+                  <th className="p-2 text-left">Team</th>
+                  <th className="p-2 text-left">To Par</th>
+                  <th className="p-2 text-left">SG</th>
+                  <th className="p-2 text-right">Action</th>
                 </tr>
               </thead>
               <tbody>
-                {recent.map(r => (
-                  <tr key={r.round_id}>
-                    <td>{r.created_at ? new Date(r.created_at).toLocaleString() : '—'}</td>
-                    <td>{r.player_name ?? '—'}</td>
-                    <td>{r.team_name ?? '—'}</td>
-                    <td>{r.to_par ?? '—'}</td>
-                    <td>{r.sg_total === null ? '—' : Number(r.sg_total).toFixed(2)}</td>
-                    <td className="text-right">
-                      <button className="btn-on-light-outline" onClick={()=>attach(r.round_id)}>Attach</button>
+                {recent.map((r) => (
+                  <tr key={r.round_id} className="border-t">
+                    <td className="p-2">{r.created_at ? new Date(r.created_at).toLocaleDateString() : '—'}</td>
+                    <td className="p-2">{r.player_name ?? '—'}</td>
+                    <td className="p-2">{r.team_name ?? '—'}</td>
+                    <td className="p-2">{r.to_par ?? '—'}</td>
+                    <td className="p-2">{r.sg_total?.toFixed(2) ?? '—'}</td>
+                    <td className="p-2 text-right">
+                      <button
+                        onClick={() => attach(r.round_id)}
+                        className="text-xs px-2 py-1 bg-blue-600 text-white rounded hover:bg-blue-700"
+                      >
+                        Attach
+                      </button>
                     </td>
                   </tr>
                 ))}
@@ -393,31 +394,39 @@ export default function EventDetailPage() {
         )}
       </div>
 
-      {/* Attached rounds */}
-      <div className="card">
-        <div className="card-header">
-          <div className="card-title">Attached Rounds</div>
-        </div>
+      {/* Attached Rounds */}
+      <div className="bg-white p-4 rounded-lg border shadow-sm">
+        <h2 className="text-lg font-semibold mb-2">Attached Rounds</h2>
         {attached.length === 0 ? (
-          <div className="text-sm text-gray-600">No rounds attached yet.</div>
+          <p className="text-sm text-gray-500">No rounds attached.</p>
         ) : (
           <div className="overflow-x-auto">
-            <table className="table">
-              <thead>
+            <table className="w-full text-sm">
+              <thead className="bg-gray-50">
                 <tr>
-                  <th>Date</th><th>Player</th><th>Team</th><th>To Par</th><th>SG Total</th><th></th>
+                  <th className="p-2 text-left">Date</th>
+                  <th className="p-2 text-left">Player</th>
+                  <th className="p-2 text-left">Team</th>
+                  <th className="p-2 text-left">To Par</th>
+                  <th className="p-2 text-left">SG</th>
+                  <th className="p-2 text-right">Action</th>
                 </tr>
               </thead>
               <tbody>
-                {attached.map(r => (
-                  <tr key={r.round_id}>
-                    <td>{r.created_at ? new Date(r.created_at).toLocaleString() : '—'}</td>
-                    <td>{r.player_name ?? '—'}</td>
-                    <td>{r.team_name ?? '—'}</td>
-                    <td>{r.to_par ?? '—'}</td>
-                    <td>{r.sg_total === null ? '—' : Number(r.sg_total).toFixed(2)}</td>
-                    <td className="text-right">
-                      <button className="btn-on-light-outline" onClick={()=>detach(r.round_id)}>Detach</button>
+                {attached.map((r) => (
+                  <tr key={r.round_id} className="border-t">
+                    <td className="p-2">{r.created_at ? new Date(r.created_at).toLocaleDateString() : '—'}</td>
+                    <td className="p-2">{r.player_name ?? '—'}</td>
+                    <td className="p-2">{r.team_name ?? '—'}</td>
+                    <td className="p-2">{r.to_par ?? '—'}</td>
+                    <td className="p-2">{r.sg_total?.toFixed(2) ?? '—'}</td>
+                    <td className="p-2 text-right">
+                      <button
+                        onClick={() => detach(r.round_id)}
+                        className="text-xs px-2 py-1 bg-red-600 text-white rounded hover:bg-red-700"
+                      >
+                        Detach
+                      </button>
                     </td>
                   </tr>
                 ))}
@@ -427,129 +436,129 @@ export default function EventDetailPage() {
         )}
       </div>
 
-      {/* Leaderboard with toggles */}
-      <div className="card">
-        <div className="card-header">
-          <div className="card-title">Leaderboard</div>
-          <div className="flex items-center gap-2">
+      {/* Leaderboard */}
+      <div className="bg-white p-4 rounded-lg border shadow-sm">
+        <div className="flex justify-between items-center mb-3">
+          <h2 className="text-lg font-semibold">Leaderboard</h2>
+          <div className="flex gap-2 items-center">
             <button
-              className={['px-3 py-1.5 rounded-full text-sm border', viewMode === 'individuals' ? 'bg-[#3C3B6E] text-white border-[#3C3B6E]' : 'bg-white text-[#3C3B6E] border-gray-300 hover:bg-gray-50'].join(' ')}
               onClick={() => setViewMode('individuals')}
+              className={`px-3 py-1 rounded text-sm ${viewMode === 'individuals' ? 'bg-blue-600 text-white' : 'bg-gray-100'}`}
             >
               Individuals
             </button>
             <button
-              className={['px-3 py-1.5 rounded-full text-sm border', viewMode === 'teams' ? 'bg-[#3C3B6E] text-white border-[#3C3B6E]' : 'bg-white text-[#3C3B6E] border-gray-300 hover:bg-gray-50'].join(' ')}
               onClick={() => setViewMode('teams')}
+              className={`px-3 py-1 rounded text-sm ${viewMode === 'teams' ? 'bg-blue-600 text-white' : 'bg-gray-100'}`}
             >
               Teams
             </button>
-
             {viewMode === 'teams' && (
-              <div className="ml-4 flex items-center gap-2">
-                <span className="text-sm text-gray-700">Scoring:</span>
+              <>
                 <button
-                  className={['px-3 py-1.5 rounded-full text-sm border', teamMode === 'sum_all' ? 'bg-[#B22234] text-white border-[#B22234]' : 'bg-white text-[#3C3B6E] border-gray-300 hover:bg-gray-50'].join(' ')}
                   onClick={() => setTeamMode('sum_all')}
+                  className={`px-3 py-1 rounded text-sm ${teamMode === 'sum_all' ? 'bg-red-600 text-white' : 'bg-gray-100'}`}
                 >
                   Sum All
                 </button>
                 <button
-                  className={['px-3 py-1.5 rounded-full text-sm border', teamMode === 'best_n' ? 'bg-[#B22234] text-white border-[#B22234]' : 'bg-white text-[#3C3B6E] border-gray-300 hover:bg-gray-50'].join(' ')}
                   onClick={() => setTeamMode('best_n')}
+                  className={`px-3 py-1 rounded text-sm ${teamMode === 'best_n' ? 'bg-red-600 text-white' : 'bg-gray-100'}`}
                 >
                   Best N
                 </button>
                 {teamMode === 'best_n' && (
-                  <div className="flex items-center gap-2">
-                    <span className="text-sm text-gray-700">N</span>
-                    <input
-                      type="number"
-                      min={1}
-                      max={10}
-                      value={bestN}
-                      onChange={e => setBestN(Math.max(1, Math.min(10, Number(e.target.value || 1))))}
-                      className="input w-20"
-                    />
-                  </div>
+                  <input
+                    type="number"
+                    min="1"
+                    max="10"
+                    value={bestN}
+                    onChange={(e) => setBestN(Math.max(1, Math.min(10, Number(e.target.value) || 1)))}
+                    className="w-16 px-2 py-1 border rounded text-sm"
+                  />
                 )}
-              </div>
+              </>
             )}
           </div>
         </div>
 
-        {/* INDIVIDUALS TABLE */}
-        {viewMode === 'individuals' && (
+        {viewMode === 'individuals' && pivotIndividuals.length === 0 && (
+          <p className="text-sm text-gray-500">No individual scores.</p>
+        )}
+        {viewMode === 'teams' && teamTable.length === 0 && (
+          <p className="text-sm text-gray-500">No team scores.</p>
+        )}
+
+        {viewMode === 'individuals' && pivotIndividuals.length > 0 && (
           <div className="overflow-x-auto">
-            {leader.length === 0 ? (
-              <div className="text-sm text-gray-600 p-2">No leaderboard yet.</div>
-            ) : (
-              <table className="table">
-                <thead>
-                  <tr>
-                    <th>Pos</th>
-                    <th>Player</th>
-                    <th>Team</th>
-                    {roundIndices.map(i => (<th key={`ri-${i}`}>R{i}</th>))}
-                    <th>Total To Par</th>
-                    <th>Avg To Par</th>
-                    <th>Avg SG Total</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {pivotIndividuals.map((r) => (
-                    <tr key={r.player_id}>
-                      <td>{r.position}</td>
-                      <td>{r.player_name}</td>
-                      <td>{r.team_name ?? '—'}</td>
-                      {roundIndices.map(i => (
-                        <td key={`cell-${r.player_id}-${i}`}>{r.roundsByIndex[i] ?? '—'}</td>
-                      ))}
-                      <td>{r.total_to_par}</td>
-                      <td>{r.avg_to_par.toFixed(2)}</td>
-                      <td>{r.avg_sg_total === null ? '—' : r.avg_sg_total.toFixed(2)}</td>
-                    </tr>
+            <table className="w-full text-sm">
+              <thead className="bg-gray-50">
+                <tr>
+                  <th className="p-2 text-left">Pos</th>
+                  <th className="p-2 text-left">Player</th>
+                  <th className="p-2 text-left">Team</th>
+                  {roundIndices.map((i) => (
+                    <th key={i} className="p-2 text-center">R{i}</th>
                   ))}
-                </tbody>
-              </table>
-            )}
+                  <th className="p-2 text-left">Total</th>
+                  <th className="p-2 text-left">Avg</th>
+                  <th className="p-2 text-left">SG Avg</th>
+                </tr>
+              </thead>
+              <tbody>
+                {pivotIndividuals.map((r) => (
+                  <tr key={r.player_id} className="border-t">
+                    <td className="p-2">{r.position}</td>
+                    <td className="p-2">{r.player_name}</td>
+                    <td className="p-2">{r.team_name ?? '—'}</td>
+                    {roundIndices.map((i) => (
+                      <td key={i} className="p-2 text-center">
+                        {r.roundsByIndex[i] ?? '—'}
+                      </td>
+                    ))}
+                    <td className="p-2">{r.total_to_par}</td>
+                    <td className="p-2">{r.avg_to_par.toFixed(1)}</td>
+                    <td className="p-2">{r.avg_sg_total?.toFixed(2) ?? '—'}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
           </div>
         )}
 
-        {/* TEAMS TABLE */}
-        {viewMode === 'teams' && (
+        {viewMode === 'teams' && teamTable.length > 0 && (
           <div className="overflow-x-auto">
-            {teamTable.length === 0 ? (
-              <div className="text-sm text-gray-600 p-2">No team scoring yet.</div>
-            ) : (
-              <table className="table">
-                <thead>
-                  <tr>
-                    <th>Pos</th>
-                    <th>Team</th>
-                    {roundIndices.map(i => (<th key={`tri-${i}`}>R{i}</th>))}
-                    <th>Total To Par</th>
-                    <th>Avg SG Total</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {teamTable.map((t, idx) => (
-                    <tr key={t.team_id}>
-                      <td>{idx + 1}</td>
-                      <td>{t.team_name ?? '—'}</td>
-                      {roundIndices.map(i => (
-                        <td key={`tcell-${t.team_id}-${i}`}>{(t.totalsByIndex[i] ?? null) === null ? '—' : (t.totalsByIndex[i]).toFixed(0)}</td>
-                      ))}
-                      <td>{t.grandTotal.toFixed(0)}</td>
-                      <td>{t.avg_sg_total === null ? '—' : t.avg_sg_total.toFixed(2)}</td>
-                    </tr>
+            <table className="w-full text-sm">
+              <thead className="bg-gray-50">
+                <tr>
+                  <th className="p-2 text-left">Pos</th>
+                  <th className="p-2 text-left">Team</th>
+                  {roundIndices.map((i) => (
+                    <th key={i} className="p-2 text-center">R{i}</th>
                   ))}
-                </tbody>
-              </table>
-            )}
+                  <th className="p-2 text-left">Total</th>
+                  <th className="p-2 text-left">SG Avg</th>
+                </tr>
+              </thead>
+              <tbody>
+                {teamTable.map((t, idx) => (
+                  <tr key={t.team_id} className="border-t">
+                    <td className="p-2">{idx + 1}</td>
+                    <td className="p-2">{t.team_name}</td>
+                    {roundIndices.map((i) => (
+                      <td key={i} className="p-2 text-center">
+                        {t.totalsByIndex[i]?.toFixed(0) ?? '—'}
+                      </td>
+                    ))}
+                    <td className="p-2">{t.grandTotal.toFixed(0)}</td>
+                    <td className="p-2">{t.avg_sg_total?.toFixed(2) ?? '—'}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
           </div>
         )}
       </div>
     </div>
-  )
+  );
 }

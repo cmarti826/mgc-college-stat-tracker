@@ -1,69 +1,76 @@
-// app/courses/new/page.tsx 
+// app/courses/new/page.tsx
 
-'use client'
+'use client';
 
-import { useMemo, useState } from 'react'
-import { useRouter } from 'next/navigation'
-import { createBrowserSupabase } from '@/lib/supabase';
-const supabase = createBrowserSupabase();
+import { useState } from 'react';
+import { useRouter } from 'next/navigation';
+import { createBrowserSupabase } from '@/lib/supabase/client';
 
-type Hole = { number: number; par: number }
+type Hole = { number: number; par: number };
 
 export default function NewCoursePage() {
-  const supabase = useMemo(() => createBrowserSupabase(), [])
-  const router = useRouter()
-  const [submitting, setSubmitting] = useState(false)
+  const supabase = createBrowserSupabase(); // ← Safe: runs only in browser
+  const router = useRouter();
+  const [submitting, setSubmitting] = useState(false);
 
-  const [name, setName] = useState('')
-  const [city, setCity] = useState('')
-  const [state, setState] = useState('')
+  const [name, setName] = useState('');
+  const [city, setCity] = useState('');
+  const [state, setState] = useState('');
 
   const [holes, setHoles] = useState<Hole[]>(
     Array.from({ length: 18 }, (_, i) => ({ number: i + 1, par: 4 }))
-  )
+  );
 
   function setPar(i: number, v: number) {
-    setHoles(prev => {
-      const copy = [...prev]
-      copy[i] = { ...copy[i], par: Math.max(3, Math.min(5, Number(v) || 4)) }
-      return copy
-    })
+    setHoles((prev) => {
+      const copy = [...prev];
+      const val = Number(v) || 4;
+      copy[i] = { ...copy[i], par: Math.max(3, Math.min(5, val)) };
+      return copy;
+    });
   }
 
   async function handleSubmit(e: React.FormEvent) {
-    e.preventDefault()
-    if (!name.trim()) { alert('Course name is required.'); return }
-    setSubmitting(true)
+    e.preventDefault();
+    if (!name.trim()) {
+      alert('Course name is required.');
+      return;
+    }
+
+    setSubmitting(true);
     try {
-      // 1) create course
+      // 1. Insert course
       const { data: course, error: cErr } = await supabase
-        .from('courses')
+        .from('mgc.courses') // ← Fixed table name
         .insert({
           name: name.trim(),
-          city: city || null,
-          state: state || null,
+          city: city.trim() || null,
+          state: state.trim() || null,
         })
         .select('id')
-        .single()
+        .single();
 
-      if (cErr) throw cErr
+      if (cErr || !course) {
+        throw cErr || new Error('Failed to create course');
+      }
 
-      // 2) insert 18 holes (number, par)
-      const rows = holes.map(h => ({
-        course_id: course!.id,
-        number: h.number, // NOTE: this table uses `number`
+      // 2. Insert holes
+      const rows = holes.map((h) => ({
+        course_id: course.id,
+        number: h.number,
         par: h.par,
-      }))
+      }));
 
-      const { error: hErr } = await supabase.from('holes').insert(rows)
-      if (hErr) throw hErr
+      const { error: hErr } = await supabase.from('mgc.holes').insert(rows);
+      if (hErr) throw hErr;
 
-      alert('Course created!')
-      router.push('/tee-sets/new') // take user straight to tee set creation
+      alert('Course created successfully!');
+      router.push('/tee-sets/new');
     } catch (err: any) {
-      console.error(err); alert(err.message ?? 'Failed to create course.')
+      console.error('Course creation error:', err);
+      alert(err.message || 'Failed to create course.');
     } finally {
-      setSubmitting(false)
+      setSubmitting(false);
     }
   }
 
@@ -74,16 +81,32 @@ export default function NewCoursePage() {
       <form onSubmit={handleSubmit} className="space-y-5">
         <div className="grid md:grid-cols-3 gap-3">
           <div>
-            <label className="block text-sm font-medium mb-1">Name</label>
-            <input className="w-full rounded-xl border p-2" value={name} onChange={e=>setName(e.target.value)} required />
+            <label className="block text-sm font-medium mb-1">Name *</label>
+            <input
+              className="w-full rounded-xl border p-2"
+              value={name}
+              onChange={(e) => setName(e.target.value)}
+              required
+              disabled={submitting}
+            />
           </div>
           <div>
             <label className="block text-sm font-medium mb-1">City</label>
-            <input className="w-full rounded-xl border p-2" value={city} onChange={e=>setCity(e.target.value)} />
+            <input
+              className="w-full rounded-xl border p-2"
+              value={city}
+              onChange={(e) => setCity(e.target.value)}
+              disabled={submitting}
+            />
           </div>
           <div>
             <label className="block text-sm font-medium mb-1">State</label>
-            <input className="w-full rounded-xl border p-2" value={state} onChange={e=>setState(e.target.value)} />
+            <input
+              className="w-full rounded-xl border p-2"
+              value={state}
+              onChange={(e) => setState(e.target.value)}
+              disabled={submitting}
+            />
           </div>
         </div>
 
@@ -98,13 +121,16 @@ export default function NewCoursePage() {
             <tbody>
               {holes.map((h, i) => (
                 <tr key={h.number} className="odd:bg-white even:bg-gray-50">
-                  <td className="p-2">{h.number}</td>
+                  <td className="p-2 font-medium">{h.number}</td>
                   <td className="p-2">
                     <input
-                      type="number" min={3} max={5}
+                      type="number"
+                      min={3}
+                      max={5}
                       className="w-20 rounded-lg border p-1 text-center"
                       value={h.par}
-                      onChange={e => setPar(i, Number(e.target.value))}
+                      onChange={(e) => setPar(i, Number(e.target.value))}
+                      disabled={submitting}
                     />
                   </td>
                 </tr>
@@ -113,10 +139,14 @@ export default function NewCoursePage() {
           </table>
         </div>
 
-        <button type="submit" disabled={submitting} className="rounded-2xl px-4 py-2 border shadow disabled:opacity-60">
-          {submitting ? 'Saving…' : 'Create Course'}
+        <button
+          type="submit"
+          disabled={submitting}
+          className="rounded-2xl px-6 py-2 bg-blue-600 text-white font-medium shadow hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed transition"
+        >
+          {submitting ? 'Creating Course...' : 'Create Course'}
         </button>
       </form>
     </div>
-  )
+  );
 }

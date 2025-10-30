@@ -1,59 +1,104 @@
 // app/teams/page.tsx
 
 import Link from "next/link";
-import { createBrowserSupabase } from '@/lib/supabase/client';
+import { createBrowserSupabase } from "@/lib/supabase/client";
+import { format } from "date-fns";
 
 export const dynamic = "force-dynamic";
 
 export default async function TeamsPage() {
   const supabase = createBrowserSupabase();
 
-  const { data: teams, error } = await supabase
-    .from("mgc.teams")
-    .select("id, name, school, created_at")
-    .order("name", { ascending: true });
+  const [{ data: teams, error: teamsError }, { data: roster }] = await Promise.all([
+    supabase
+      .from("mgc.teams")
+      .select("id, name, school, created_at")
+      .order("name", { ascending: true }),
+    supabase.from("mgc.team_members").select("team_id, player_id"),
+  ]);
 
-  if (error) {
-    return <div className="text-red-600">Error loading teams: {error.message}</div>;
+  if (teamsError) {
+    return (
+      <div className="p-4 text-red-600 bg-red-50 rounded-lg">
+        Failed to load teams: {teamsError.message}
+      </div>
+    );
   }
 
-  const { data: roster } = await supabase.from("mgc.team_members").select("team_id, player_id");
+  // Build roster count map
   const rosterCounts = new Map<string, number>();
-  (roster ?? []).forEach((r) => {
-    rosterCounts.set(r.team_id, (rosterCounts.get(r.team_id) ?? 0) + 1);
+  (roster ?? []).forEach(({ team_id }) => {
+    rosterCounts.set(team_id, (rosterCounts.get(team_id) ?? 0) + 1);
   });
 
+  const hasTeams = teams && teams.length > 0;
+
   return (
-    <div>
-      <h1 className="text-xl font-semibold mb-4">Teams</h1>
-      <div className="rounded-lg border bg-white overflow-hidden">
-        <table className="w-full text-sm">
-          <thead className="bg-neutral-50">
-            <tr>
-              <th className="text-left p-3">Team</th>
-              <th className="text-left p-3">School</th>
-              <th className="text-left p-3">Roster</th>
-              <th className="text-left p-3">Created</th>
-            </tr>
-          </thead>
-          <tbody>
-            {(teams ?? []).map((t) => (
-              <tr key={t.id} className="border-t">
-                <td className="p-3">
-                  <Link href={`/teams/${t.id}`} className="underline">
-                    {t.name}
-                  </Link>
-                </td>
-                <td className="p-3">{t.school ?? "-"}</td>
-                <td className="p-3">{rosterCounts.get(t.id) ?? 0}</td>
-                <td className="p-3">{new Date(t.created_at).toLocaleDateString()}</td>
+    <div className="space-y-6">
+      <div className="flex items-center justify-between">
+        <h1 className="text-2xl font-bold text-gray-900">Teams</h1>
+        <Link
+          href="/teams/new"
+          className="px-4 py-2 text-sm font-medium text-white bg-blue-600 rounded-md hover:bg-blue-700 transition-colors"
+        >
+          Add Team
+        </Link>
+      </div>
+
+      <div className="bg-white rounded-xl shadow-sm border border-gray-200 overflow-hidden">
+        {hasTeams ? (
+          <table className="w-full divide-y divide-gray-200">
+            <thead className="bg-gray-50">
+              <tr>
+                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                  Team
+                </th>
+                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                  School
+                </th>
+                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                  Roster
+                </th>
+                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                  Created
+                </th>
               </tr>
-            ))}
-            {(!teams || teams.length === 0) && (
-              <tr><td className="p-3" colSpan={4}>No teams yet.</td></tr>
-            )}
-          </tbody>
-        </table>
+            </thead>
+            <tbody className="bg-white divide-y divide-gray-200">
+              {teams.map((team) => (
+                <tr key={team.id} className="hover:bg-gray-50 transition-colors">
+                  <td className="px-6 py-4 whitespace-nowrap">
+                    <Link
+                      href={`/teams/${team.id}`}
+                      className="text-blue-600 hover:text-blue-800 font-medium transition-colors"
+                    >
+                      {team.name}
+                    </Link>
+                  </td>
+                  <td className="px-6 py-4 whitespace-nowrap text-gray-700">
+                    {team.school || "—"}
+                  </td>
+                  <td className="px-6 py-4 whitespace-nowrap text-gray-900">
+                    {rosterCounts.get(team.id) ?? 0}
+                  </td>
+                  <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
+                    {format(new Date(team.created_at), "MMM d, yyyy")}
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        ) : (
+          <div className="text-center py-12">
+            <p className="text-gray-500 mb-4">No teams have been created yet.</p>
+            <Link
+              href="/teams/new"
+              className="inline-flex items-center px-4 py-2 text-sm font-medium text-white bg-blue-600 rounded-md hover:bg-blue-700 transition-colors"
+            >
+              Create Your First Team
+            </Link>
+          </div>
+        )}
       </div>
     </div>
   );

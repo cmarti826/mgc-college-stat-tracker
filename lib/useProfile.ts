@@ -1,7 +1,8 @@
 // lib/useProfile.ts
+
 "use client";
 
-import { createBrowserSupabase } from "@/lib/supabase";
+import { createBrowserSupabase } from "@/lib/supabase/client";
 import { useEffect, useState } from "react";
 
 export type Role = "admin" | "coach" | "player";
@@ -10,6 +11,7 @@ interface Profile {
   loading: boolean;
   role: Role | null;
   playerId: string | null;
+  error: Error | null; // ← ADD THIS
 }
 
 export function useProfile(): Profile {
@@ -17,57 +19,81 @@ export function useProfile(): Profile {
     loading: true,
     role: null,
     playerId: null,
+    error: null, // ← ADD THIS
   });
 
   useEffect(() => {
-    const supabase = createBrowserSupabase();
+    let isMounted = true;
 
     const fetchProfile = async () => {
-      const { data: { user } } = await supabase.auth.getUser();
-      if (!user) {
-        setProfile({ loading: false, role: null, playerId: null });
-        return;
+      try {
+        const supabase = createBrowserSupabase();
+
+        const { data: authData, error: authError } = await supabase.auth.getUser();
+        if (authError) throw authError;
+        if (!authData.user) {
+          if (isMounted) {
+            setProfile({ loading: false, role: null, playerId: null, error: null });
+          }
+          return;
+        }
+
+        const { data: link, error: linkError } = await supabase
+          .from("mgc.user_players")
+          .select("player_id")
+          .eq("user_id", authData.user.id)
+          .maybeSingle();
+
+        if (linkError && linkError.code !== "PGRST116") throw linkError;
+        if (!link?.player_id) {
+          if (isMounted) {
+            setProfile({ loading: false, role: null, playerId: null, error: null });
+          }
+          return;
+        }
+
+        const { data: player, error: playerError } = await supabase
+          .from("mgc.players")
+          .select("id")
+          .eq("id", link.player_id)
+          .single();
+
+        if (playerError) throw playerError;
+
+        const { data: membership, error: membershipError } = await supabase
+          .from("mgc.team_members")
+          .select("role")
+          .eq("player_id", player.id)
+          .maybeSingle();
+
+        if (membershipError && membershipError.code !== "PGRST116") throw membershipError;
+
+        const role = (membership?.role as Role | undefined) ?? "player";
+
+        if (isMounted) {
+          setProfile({
+            loading: false,
+            role,
+            playerId: player.id,
+            error: null,
+          });
+        }
+      } catch (err) {
+        if (isMounted) {
+          setProfile((prev) => ({
+            ...prev,
+            loading: false,
+            error: err instanceof Error ? err : new Error("Failed to load profile"),
+          }));
+        }
       }
-
-      const { data: link } = await supabase
-        .from("mgc.user_players")
-        .select("player_id")
-        .eq("user_id", user.id)
-        .single();
-
-      if (!link?.player_id) {
-        setProfile({ loading: false, role: null, playerId: null });
-        return;
-      }
-
-      const { data: player } = await supabase
-        .from("mgc.players")
-        .select("id")
-        .eq("id", link.player_id)
-        .single();
-
-      if (!player) {
-        setProfile({ loading: false, role: null, playerId: null });
-        return;
-      }
-
-      // Check team membership for role
-      const { data: membership } = await supabase
-        .from("team_members")
-        .select("role")
-        .eq("player_id", player.id)
-        .single();
-
-      const role = membership?.role as Role | null;
-
-      setProfile({
-        loading: false,
-        role: role || "player",
-        playerId: player.id,
-      });
     };
 
     fetchProfile();
+
+    return () => {
+      isMounted = false;
+    };
   }, []);
 
   return profile;

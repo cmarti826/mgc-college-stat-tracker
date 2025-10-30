@@ -1,151 +1,186 @@
 // app/courses/new/page.tsx
 
-'use client';
+import { redirect } from "next/navigation";
+import { revalidatePath } from "next/cache";
+import { createServerSupabase } from "@/lib/supabase/server";
+import Link from "next/link";
 
-import { useState } from 'react';
-import { useRouter } from 'next/navigation';
-import { createBrowserSupabase } from '@/lib/supabase/client';
+// Server Action: Create Course + 18 Holes
+async function createCourse(formData: FormData) {
+  "use server";
 
-type Hole = { number: number; par: number };
+  const supabase = await createServerSupabase();
+  if (!supabase) throw new Error("Database connection failed.");
 
-export default function NewCoursePage() {
-  const supabase = createBrowserSupabase(); // ← Safe: runs only in browser
-  const router = useRouter();
-  const [submitting, setSubmitting] = useState(false);
+  const name = String(formData.get("name") || "").trim();
+  const city = String(formData.get("city") || "").trim() || null;
+  const state = String(formData.get("state") || "").trim() || null;
 
-  const [name, setName] = useState('');
-  const [city, setCity] = useState('');
-  const [state, setState] = useState('');
+  if (!name) throw new Error("Course name is required.");
 
-  const [holes, setHoles] = useState<Hole[]>(
-    Array.from({ length: 18 }, (_, i) => ({ number: i + 1, par: 4 }))
-  );
-
-  function setPar(i: number, v: number) {
-    setHoles((prev) => {
-      const copy = [...prev];
-      const val = Number(v) || 4;
-      copy[i] = { ...copy[i], par: Math.max(3, Math.min(5, val)) };
-      return copy;
-    });
+  // Parse hole pars (1–18)
+  const holes: { number: number; par: number }[] = [];
+  for (let i = 1; i <= 18; i++) {
+    const parStr = formData.get(`hole-${i}`);
+    const par = parStr ? parseInt(String(parStr), 10) : 4;
+    if (isNaN(par) || par < 3 || par > 5) {
+      throw new Error(`Hole ${i}: Par must be 3, 4, or 5.`);
+    }
+    holes.push({ number: i, par });
   }
 
-  async function handleSubmit(e: React.FormEvent) {
-    e.preventDefault();
-    if (!name.trim()) {
-      alert('Course name is required.');
-      return;
-    }
+  // Insert course
+  const { data: course, error: courseError } = await supabase
+    .from("mgc.courses")
+    .insert({ name, city, state })
+    .select("id")
+    .single();
 
-    setSubmitting(true);
-    try {
-      // 1. Insert course
-      const { data: course, error: cErr } = await supabase
-        .from('mgc.courses') // ← Fixed table name
-        .insert({
-          name: name.trim(),
-          city: city.trim() || null,
-          state: state.trim() || null,
-        })
-        .select('id')
-        .single();
+  if (courseError) throw courseError;
 
-      if (cErr || !course) {
-        throw cErr || new Error('Failed to create course');
-      }
+  // Insert holes
+  const holeRows = holes.map((h) => ({
+    course_id: course.id,
+    number: h.number,
+    par: h.par,
+  }));
 
-      // 2. Insert holes
-      const rows = holes.map((h) => ({
-        course_id: course.id,
-        number: h.number,
-        par: h.par,
-      }));
+  const { error: holesError } = await supabase
+    .from("mgc.holes")
+    .insert(holeRows);
 
-      const { error: hErr } = await supabase.from('mgc.holes').insert(rows);
-      if (hErr) throw hErr;
+  if (holesError) throw holesError;
 
-      alert('Course created successfully!');
-      router.push('/tee-sets/new');
-    } catch (err: any) {
-      console.error('Course creation error:', err);
-      alert(err.message || 'Failed to create course.');
-    } finally {
-      setSubmitting(false);
-    }
-  }
+  revalidatePath("/courses");
+  redirect("/tee-sets/new?course=" + course.id);
+}
 
+export default async function NewCoursePage() {
   return (
-    <div className="mx-auto max-w-3xl p-6 space-y-6">
-      <h1 className="text-2xl font-semibold">New Course</h1>
-
-      <form onSubmit={handleSubmit} className="space-y-5">
-        <div className="grid md:grid-cols-3 gap-3">
-          <div>
-            <label className="block text-sm font-medium mb-1">Name *</label>
-            <input
-              className="w-full rounded-xl border p-2"
-              value={name}
-              onChange={(e) => setName(e.target.value)}
-              required
-              disabled={submitting}
-            />
-          </div>
-          <div>
-            <label className="block text-sm font-medium mb-1">City</label>
-            <input
-              className="w-full rounded-xl border p-2"
-              value={city}
-              onChange={(e) => setCity(e.target.value)}
-              disabled={submitting}
-            />
-          </div>
-          <div>
-            <label className="block text-sm font-medium mb-1">State</label>
-            <input
-              className="w-full rounded-xl border p-2"
-              value={state}
-              onChange={(e) => setState(e.target.value)}
-              disabled={submitting}
-            />
-          </div>
+    <div className="max-w-4xl mx-auto p-6 space-y-8">
+      {/* Header */}
+      <div className="flex items-center justify-between">
+        <div>
+          <h1 className="text-3xl font-bold text-gray-900">Create New Course</h1>
+          <p className="mt-1 text-sm text-gray-600">
+            Add a course and define par for all 18 holes.
+          </p>
         </div>
-
-        <div className="rounded-2xl border overflow-hidden">
-          <table className="w-full text-sm">
-            <thead className="bg-gray-50">
-              <tr>
-                <th className="p-2 text-left">Hole</th>
-                <th className="p-2">Par</th>
-              </tr>
-            </thead>
-            <tbody>
-              {holes.map((h, i) => (
-                <tr key={h.number} className="odd:bg-white even:bg-gray-50">
-                  <td className="p-2 font-medium">{h.number}</td>
-                  <td className="p-2">
-                    <input
-                      type="number"
-                      min={3}
-                      max={5}
-                      className="w-20 rounded-lg border p-1 text-center"
-                      value={h.par}
-                      onChange={(e) => setPar(i, Number(e.target.value))}
-                      disabled={submitting}
-                    />
-                  </td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        </div>
-
-        <button
-          type="submit"
-          disabled={submitting}
-          className="rounded-2xl px-6 py-2 bg-blue-600 text-white font-medium shadow hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed transition"
+        <Link
+          href="/courses"
+          className="text-sm text-gray-500 hover:text-gray-700 transition-colors"
         >
-          {submitting ? 'Creating Course...' : 'Create Course'}
-        </button>
+          ← Back to Courses
+        </Link>
+      </div>
+
+      {/* Form */}
+      <form action={createCourse} className="space-y-6">
+        <div className="bg-white rounded-xl shadow-sm border border-gray-200 p-6 space-y-6">
+          {/* Course Details */}
+          <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+            <div>
+              <label htmlFor="name" className="block text-sm font-medium text-gray-700 mb-1">
+                Course Name <span className="text-red-600">*</span>
+              </label>
+              <input
+                id="name"
+                name="name"
+                type="text"
+                required
+                placeholder="e.g. Pebble Beach"
+                className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 transition-colors"
+              />
+            </div>
+
+            <div>
+              <label htmlFor="city" className="block text-sm font-medium text-gray-700 mb-1">
+                City
+              </label>
+              <input
+                id="city"
+                name="city"
+                type="text"
+                placeholder="Monterey"
+                className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 transition-colors"
+              />
+            </div>
+
+            <div>
+              <label htmlFor="state" className="block text-sm font-medium text-gray-700 mb-1">
+                State
+              </label>
+              <input
+                id="state"
+                name="state"
+                type="text"
+                placeholder="CA"
+                maxLength={2}
+                className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 transition-colors uppercase"
+              />
+            </div>
+          </div>
+
+          {/* Hole Pars */}
+          <div>
+            <h2 className="text-lg font-semibold text-gray-900 mb-3">
+              Hole Par Settings
+            </h2>
+            <div className="rounded-lg border border-gray-200 overflow-hidden">
+              <table className="w-full text-sm">
+                <thead className="bg-gray-50">
+                  <tr>
+                    <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                      Hole
+                    </th>
+                    <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                      Par
+                    </th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-gray-200">
+                  {Array.from({ length: 18 }, (_, i) => i + 1).map((hole) => (
+                    <tr key={hole} className="hover:bg-gray-50 transition-colors">
+                      <td className="px-4 py-3 font-medium text-gray-700">
+                        Hole {hole}
+                      </td>
+                      <td className="px-4 py-3">
+                        <input
+                          type="number"
+                          name={`hole-${hole}`}
+                          defaultValue={4}
+                          min={3}
+                          max={5}
+                          required
+                          className="w-20 px-2 py-1 text-center border border-gray-300 rounded-md focus:ring-2 focus:ring-blue-500 focus:border-blue-500 transition-colors"
+                        />
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+            <p className="mt-2 text-xs text-gray-500">
+              Par must be 3, 4, or 5 for each hole.
+            </p>
+          </div>
+        </div>
+
+        {/* Actions */}
+        <div className="flex items-center justify-between">
+          <Link
+            href="/courses"
+            className="text-sm text-gray-600 hover:text-gray-800 transition-colors"
+          >
+            Cancel
+          </Link>
+          <button
+            type="submit"
+            className="px-6 py-2.5 text-sm font-medium text-white bg-blue-600 rounded-lg hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500 transition-colors"
+          >
+            Create Course &amp; Add Tee Set
+          </button>
+        </div>
       </form>
     </div>
   );

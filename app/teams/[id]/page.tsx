@@ -1,32 +1,39 @@
 // app/teams/[id]/page.tsx
+
 import Link from "next/link";
 import { createServerSupabase } from "@/lib/supabase/server";
+import { format } from "date-fns";
 
 export const dynamic = "force-dynamic";
 
-// Normalize relation shapes (object | array | null) and safely read a key.
-type Rel = Record<string, any> | Record<string, any>[] | null | undefined;
-function rel(x: Rel, key: "name" | "full_name"): string {
-  if (!x) return "—";
-  if (Array.isArray(x)) return (x[0] && x[0][key]) ? String(x[0][key]) : "—";
-  return (key in x && x[key] != null) ? String(x[key]) : "—";
-}
+// Safely extract a string value from a relation (object, array, or null)
+type Relation = Record<string, any> | Record<string, any>[] | null | undefined;
+const rel = (value: Relation, key: "name" | "full_name"): string => {
+  if (!value) return "—";
+  if (Array.isArray(value)) return value[0]?.[key] ?? "—";
+  return value[key] ?? "—";
+};
 
 export default async function TeamDetail({ params }: { params: { id: string } }) {
   const supabase = createServerSupabase();
   const teamId = params.id;
 
-  const [{ data: team }, { data: roster }, { data: rounds }] = await Promise.all([
+  const [
+    { data: team, error: teamError },
+    { data: roster },
+    { data: rounds, error: roundsError },
+  ] = await Promise.all([
     supabase.from("mgc.teams").select("*").eq("id", teamId).single(),
     supabase
       .from("v_team_roster")
-      .select("*")
+      .select("player_id, full_name, grad_year, role")
       .eq("team_id", teamId)
       .order("full_name", { ascending: true }),
     supabase
       .from("mgc.scheduled_rounds")
       .select(`
-        id, date,
+        id,
+        date,
         players:player_id ( full_name ),
         courses:course_id ( name )
       `)
@@ -34,74 +41,146 @@ export default async function TeamDetail({ params }: { params: { id: string } })
       .order("date", { ascending: false }),
   ]);
 
-  if (!team) return <div className="text-red-600">Team not found.</div>;
+  if (teamError || !team) {
+    return (
+      <div className="p-6 text-center">
+        <p className="text-red-600 font-medium">Team not found.</p>
+        <Link
+          href="/teams"
+          className="mt-4 inline-block text-sm text-blue-600 hover:underline"
+        >
+          ← Back to Teams
+        </Link>
+      </div>
+    );
+  }
+
+  const hasRoster = roster && roster.length > 0;
+  const hasRounds = rounds && rounds.length > 0;
 
   return (
-    <div className="space-y-6">
-      <div>
-        <h1 className="text-xl font-semibold">{team.name}</h1>
-        <p className="text-sm text-neutral-600">School: {team.school ?? "-"}</p>
+    <div className="space-y-8">
+      {/* Header */}
+      <div className="flex items-start justify-between">
+        <div>
+          <h1 className="text-3xl font-bold text-gray-900">{team.name}</h1>
+          <p className="mt-1 text-sm text-gray-600">
+            {team.school ? `School: ${team.school}` : "No school specified"}
+          </p>
+        </div>
+        <Link
+          href="/teams"
+          className="text-sm text-gray-500 hover:text-gray-700 transition-colors"
+        >
+          ← Back to Teams
+        </Link>
       </div>
 
-      <section className="space-y-2">
-        <h2 className="font-medium">Roster</h2>
-        <div className="rounded-lg border bg-white overflow-hidden">
-          <table className="w-full text-sm">
-            <thead className="bg-neutral-50">
-              <tr>
-                <th className="text-left p-3">Player</th>
-                <th className="text-left p-3">Grad Year</th>
-                <th className="text-left p-3">Role</th>
-              </tr>
-            </thead>
-            <tbody>
-              {(roster ?? []).map((r: { player_id: string; full_name?: string | null; grad_year?: number | null; role?: string | null }) => (
-                <tr key={r.player_id} className="border-t">
-                  <td className="p-3">
-                    <Link href={`/players/${r.player_id}`} className="underline">
-                      {r.full_name}
-                    </Link>
-                  </td>
-                  <td className="p-3">{r.grad_year ?? "-"}</td>
-                  <td className="p-3">{r.role}</td>
+      {/* Roster Section */}
+      <section className="space-y-3">
+        <div className="flex items-center justify-between">
+          <h2 className="text-lg font-semibold text-gray-900">Roster</h2>
+          <span className="text-sm text-gray-500">
+            {hasRoster ? `${roster.length} player${roster.length === 1 ? "" : "s"}` : "No players"}
+          </span>
+        </div>
+
+        <div className="bg-white rounded-xl shadow-sm border border-gray-200 overflow-hidden">
+          {hasRoster ? (
+            <table className="w-full divide-y divide-gray-200">
+              <thead className="bg-gray-50">
+                <tr>
+                  <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                    Player
+                  </th>
+                  <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                    Grad Year
+                  </th>
+                  <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                    Role
+                  </th>
                 </tr>
-              ))}
-              {(!roster || roster.length === 0) && (
-                <tr><td className="p-3" colSpan={3}>No players yet.</td></tr>
-              )}
-            </tbody>
-          </table>
+              </thead>
+              <tbody className="bg-white divide-y divide-gray-200">
+                {roster.map((member) => (
+                  <tr key={member.player_id} className="hover:bg-gray-50 transition-colors">
+                    <td className="px-6 py-4 whitespace-nowrap">
+                      <Link
+                        href={`/players/${member.player_id}`}
+                        className="text-blue-600 hover:text-blue-800 font-medium transition-colors"
+                      >
+                        {member.full_name || "Unnamed Player"}
+                      </Link>
+                    </td>
+                    <td className="px-6 py-4 whitespace-nowrap text-gray-700">
+                      {member.grad_year ?? "—"}
+                    </td>
+                    <td className="px-6 py-4 whitespace-nowrap text-gray-600 capitalize">
+                      {member.role || "—"}
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          ) : (
+            <div className="text-center py-10 text-gray-500">
+              No players on this team yet.
+            </div>
+          )}
         </div>
       </section>
 
-      <section className="space-y-2">
-        <h2 className="font-medium">Team Rounds</h2>
-        <div className="rounded-lg border bg-white overflow-hidden">
-          <table className="w-full text-sm">
-            <thead className="bg-neutral-50">
-              <tr>
-                <th className="text-left p-3">Date</th>
-                <th className="text-left p-3">Player</th>
-                <th className="text-left p-3">Course</th>
-              </tr>
-            </thead>
-            <tbody>
-              {(rounds ?? []).map((r: { id: string | number; date?: string | null; players?: Rel; courses?: Rel }) => (
-                <tr key={r.id} className="border-t">
-                  <td className="p-3">
-                    <Link href={`/rounds/${r.id}`} className="underline">
-                      {r.date ? new Date(r.date).toLocaleDateString() : "—"}
-                    </Link>
-                  </td>
-                  <td className="p-3">{rel(r.players as Rel, "full_name")}</td>
-                  <td className="p-3">{rel(r.courses as Rel, "name")}</td>
+      {/* Rounds Section */}
+      <section className="space-y-3">
+        <div className="flex items-center justify-between">
+          <h2 className="text-lg font-semibold text-gray-900">Team Rounds</h2>
+          <span className="text-sm text-gray-500">
+            {hasRounds ? `${rounds.length} round${rounds.length === 1 ? "" : "s"}` : "No rounds"}
+          </span>
+        </div>
+
+        <div className="bg-white rounded-xl shadow-sm border border-gray-200 overflow-hidden">
+          {hasRounds ? (
+            <table className="w-full divide-y divide-gray-200">
+              <thead className="bg-gray-50">
+                <tr>
+                  <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                    Date
+                  </th>
+                  <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                    Player
+                  </th>
+                  <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                    Course
+                  </th>
                 </tr>
-              ))}
-              {(!rounds || rounds.length === 0) && (
-                <tr><td className="p-3" colSpan={3}>No rounds yet.</td></tr>
-              )}
-            </tbody>
-          </table>
+              </thead>
+              <tbody className="bg-white divide-y divide-gray-200">
+                {rounds.map((round) => (
+                  <tr key={round.id} className="hover:bg-gray-50 transition-colors">
+                    <td className="px-6 py-4 whitespace-nowrap">
+                      <Link
+                        href={`/rounds/${round.id}`}
+                        className="text-blue-600 hover:text-blue-800 font-medium transition-colors"
+                      >
+                        {round.date ? format(new Date(round.date), "MMM d, yyyy") : "—"}
+                      </Link>
+                    </td>
+                    <td className="px-6 py-4 whitespace-nowrap text-gray-700">
+                      {rel(round.players, "full_name")}
+                    </td>
+                    <td className="px-6 py-4 whitespace-nowrap text-gray-700">
+                      {rel(round.courses, "name")}
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          ) : (
+            <div className="text-center py-10 text-gray-500">
+              No rounds scheduled for this team.
+            </div>
+          )}
         </div>
       </section>
     </div>

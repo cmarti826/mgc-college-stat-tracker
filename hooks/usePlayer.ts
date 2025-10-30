@@ -1,20 +1,19 @@
 // hooks/usePlayer.ts
 
-'use client';
+"use client";
 
-import { useEffect, useState } from 'react';
-import { createBrowserSupabase } from '@/lib/supabase';
+import { useEffect, useState } from "react";
+import { createBrowserSupabase } from "@/lib/supabase/client";
 
-type Result = {
+export interface UsePlayerResult {
   userId: string | null;
   playerId: string | null;
   loading: boolean;
   error: string | null;
-};
+}
 
-export function usePlayer(): Result {
-  const supabase = createBrowserSupabase();
-  const [state, setState] = useState<Result>({
+export function usePlayer(): UsePlayerResult {
+  const [state, setState] = useState<UsePlayerResult>({
     userId: null,
     playerId: null,
     loading: true,
@@ -22,39 +21,67 @@ export function usePlayer(): Result {
   });
 
   useEffect(() => {
-    let ignore = false;
+    let isMounted = true;
 
-    (async () => {
+    const fetchPlayer = async () => {
       try {
-        const { data: { user }, error: uerr } = await supabase.auth.getUser();
-        if (uerr) throw uerr;
+        const supabase = createBrowserSupabase();
+
+        // 1. Get current user
+        const {
+          data: { user },
+          error: authError,
+        } = await supabase.auth.getUser();
+
+        if (authError) throw authError;
         if (!user) {
-          if (!ignore) setState({ userId: null, playerId: null, loading: false, error: null });
+          if (isMounted) {
+            setState({
+              userId: null,
+              playerId: null,
+              loading: false,
+              error: null,
+            });
+          }
           return;
         }
-        const { data, error } = await supabase
-          .from('user_players')
-          .select('player_id')
-          .eq('user_id', user.id)
+
+        // 2. Get player link
+        const { data: link, error: linkError } = await supabase
+          .from("mgc.user_players")
+          .select("player_id")
+          .eq("user_id", user.id)
           .maybeSingle();
-        if (error) throw error;
-        if (!ignore) {
+
+        if (linkError && linkError.code !== "PGRST116") {
+          throw linkError; // PGRST116 = no rows → not an error
+        }
+
+        if (isMounted) {
           setState({
             userId: user.id,
-            playerId: data?.player_id ?? null,
+            playerId: link?.player_id ?? null,
             loading: false,
             error: null,
           });
         }
-      } catch (e: any) {
-        if (!ignore) setState((s) => ({ ...s, loading: false, error: e?.message ?? 'Error' }));
+      } catch (err: any) {
+        if (isMounted) {
+          setState((prev) => ({
+            ...prev,
+            loading: false,
+            error: err?.message ?? "Failed to load player profile",
+          }));
+        }
       }
-    })();
+    };
+
+    fetchPlayer();
 
     return () => {
-      ignore = true;
+      isMounted = false;
     };
-  }, [supabase]);
+  }, []);
 
   return state;
 }

@@ -1,40 +1,49 @@
 // app/rounds/_components/RoundEntry.tsx
-
 "use client";
 
 import { useEffect, useMemo, useRef, useState, useTransition } from "react";
 import { ChevronLeft, ChevronRight, Save, Send } from "lucide-react";
 import { z } from "zod";
-import { createRoundAction, updateRoundAction } from "./actions";
-import { createBrowserSupabase } from '@/lib/supabase';
 
-/* Zod */
+import { createRoundAction, updateRoundAction } from "./actions";
+import { createBrowserSupabase } from "@/lib/supabase/client";
+
+/* ---------- Zod ---------- */
 const HoleSchema = z.object({
-  hole_number: z.number(),
-  par: z.number().min(3).max(6),
-  yards: z.number().optional().nullable(),
-  strokes: z.number().optional().nullable(),
-  putts: z.number().optional().nullable(),
-  fir: z.boolean().optional().nullable(),
-  gir: z.boolean().optional().nullable(),
-  up_down: z.boolean().optional().nullable(),
-  sand_save: z.boolean().optional().nullable(),
-  penalty: z.boolean().optional().nullable(),
+  hole_number: z.number().int().min(1).max(18),
+  par: z.number().int().min(3).max(6),
+  yards: z.number().int().positive().nullable().optional(),
+  strokes: z.number().int().min(0).nullable().optional(),
+  putts: z.number().int().min(0).nullable().optional(),
+  fir: z.boolean().nullable().optional(),
+  gir: z.boolean().nullable().optional(),
+  up_down: z.boolean().nullable().optional(),
+  sand_save: z.boolean().nullable().optional(),
+  penalty: z.boolean().nullable().optional(),
 });
+
 const RoundSchema = z.object({
   id: z.string().uuid().optional(),
-  player_id: z.string().uuid(),
-  course_id: z.string().uuid(),
-  tee_id: z.string().uuid(),
-  date: z.string(),
-  notes: z.string().optional().nullable(),
+  player_id: z.string().uuid("Player ID must be a UUID"),
+  course_id: z.string().uuid("Course ID must be a UUID"),
+  tee_id: z.string().uuid("Tee ID must be a UUID"),
+  date: z.string().regex(/^\d{4}-\d{2}-\d{2}$/, "Date must be YYYY-MM-DD"),
+  notes: z.string().nullable().optional(),
   event_id: z.string().uuid().nullable().optional(),
-  holes: z.array(HoleSchema).length(18),
+  holes: z
+    .array(HoleSchema)
+    .length(18, "Exactly 18 holes required")
+    .refine(
+      (holes) =>
+        holes.every((h, i) => h.hole_number === i + 1),
+      "Hole numbers must be 1-18 in order"
+    ),
 });
+
 export type HoleInput = z.infer<typeof HoleSchema>;
 export type RoundInput = z.infer<typeof RoundSchema>;
 
-/* helpers */
+/* ---------- Helpers ---------- */
 function empty18(): HoleInput[] {
   return Array.from({ length: 18 }, (_, i) => ({
     hole_number: i + 1,
@@ -52,9 +61,15 @@ function empty18(): HoleInput[] {
 
 async function fetchHoleDefs(teeId?: string, courseId?: string) {
   const supabase = createBrowserSupabase();
-  const trySelect = async (table: string, whereCol: string, whereVal: string, selectExpr: string, orderCol: string) => {
+  const trySelect = async (
+    table: string,
+    whereCol: string,
+    whereVal: string,
+    selectExpr: string,
+    orderCol: string
+  ) => {
     const { data, error } = await supabase
-      .from(table)
+      .from(`mgc.${table}`)
       .select(selectExpr)
       .eq(whereCol, whereVal)
       .order(orderCol);
@@ -77,7 +92,10 @@ async function fetchHoleDefs(teeId?: string, courseId?: string) {
   return [];
 }
 
-function applyHoleDefs(current: HoleInput[], defs: Array<{ hole_number: number; par: number | null; yards: number | null }>) {
+function applyHoleDefs(
+  current: HoleInput[],
+  defs: Array<{ hole_number: number; par: number | null; yards: number | null }>
+) {
   const map = new Map(defs.map((d) => [d.hole_number, d]));
   return current.map((h) => {
     const m = map.get(h.hole_number);
@@ -85,20 +103,24 @@ function applyHoleDefs(current: HoleInput[], defs: Array<{ hole_number: number; 
   });
 }
 
-/* component */
+/* ---------- Component ---------- */
+// app/rounds/_components/RoundEntry.tsx
+type Props = {
+  mode: "create" | "edit";
+  initialRound: null | { round: any; holes: any[] };
+  players: Array<{ id: string; first_name: string; last_name: string; grad_year?: number }>;
+  courses: Array<{ id: string; name: string }>;
+  teeSets: Array<{ id: string; course_id: string; name: string; rating?: number; slope?: number; par?: number }>;
+};
+
+
 export default function RoundEntry({
   mode,
   initialRound,
   players,
   courses,
   teeSets,
-}: {
-  mode: "create" | "edit";
-  initialRound: null | { round: any; holes: HoleInput[] };
-  players: any[];
-  courses: any[];
-  teeSets: any[];
-}) {
+}: Props) {
   const [step, setStep] = useState(1);
   const [isPending, startTransition] = useTransition();
 
@@ -106,10 +128,9 @@ export default function RoundEntry({
   const [courseId, setCourseId] = useState<string | undefined>(initialRound?.round?.course_id);
   const [teeId, setTeeId] = useState<string | undefined>(initialRound?.round?.tee_id ?? initialRound?.round?.tee_set_id);
   const [roundDate, setRoundDate] = useState<string>(
-    initialRound?.round?.round_date ??
-      initialRound?.round?.date ??
+    initialRound?.round?.date ??
+      initialRound?.round?.round_date ??
       initialRound?.round?.played_on ??
-      initialRound?.round?.played_at ??
       new Date().toISOString().slice(0, 10)
   );
   const [notes, setNotes] = useState<string>(initialRound?.round?.notes ?? "");
@@ -117,7 +138,9 @@ export default function RoundEntry({
 
   const teeOptions = useMemo(() => teeSets.filter((t) => t.course_id === courseId), [teeSets, courseId]);
 
-  const [holes, setHoles] = useState<HoleInput[]>(initialRound?.holes?.length === 18 ? initialRound.holes : empty18());
+  const [holes, setHoles] = useState<HoleInput[]>(
+    initialRound?.holes?.length === 18 ? initialRound.holes : empty18()
+  );
 
   const totals = useMemo(() => {
     const s = holes.reduce(
@@ -157,8 +180,16 @@ export default function RoundEntry({
   }
 
   function pasteScores(text: string) {
-    const nums = text.replace(/\n/g, " ").split(/[^0-9]+/).filter(Boolean).map(Number);
-    if (nums.length >= 18) setHoles((prev) => prev.map((h, i) => ({ ...h, strokes: nums[i] ?? h.strokes })));
+    const nums = text
+      .replace(/\n/g, " ")
+      .split(/[^0-9]+/)
+      .filter(Boolean)
+      .map(Number);
+    if (nums.length >= 18) {
+      setHoles((prev) =>
+        prev.map((h, i) => ({ ...h, strokes: nums[i] ?? h.strokes }))
+      );
+    }
   }
 
   async function handleSave(finalize: boolean) {
@@ -175,12 +206,16 @@ export default function RoundEntry({
 
     const parsed = RoundSchema.safeParse(payload);
     if (!parsed.success) {
-      alert("Please complete player, date, course, tee and 18 holes.");
+      const msg = parsed.error.issues[0]?.message ?? "Invalid data";
+      alert(msg);
       return;
     }
 
     startTransition(async () => {
-      const res = mode === "create" ? await createRoundAction(payload) : await updateRoundAction(payload);
+      const res =
+        mode === "create"
+          ? await createRoundAction(payload)
+          : await updateRoundAction(payload);
       if (res?.error) {
         alert(res.error);
         return;
@@ -189,6 +224,7 @@ export default function RoundEntry({
     });
   }
 
+  // Auto-fill hole par/yardage when tee/course changes
   useEffect(() => {
     (async () => {
       const defs = await fetchHoleDefs(teeId, courseId);
@@ -198,8 +234,8 @@ export default function RoundEntry({
     })();
   }, [teeId, courseId]);
 
-  // keyboard nav
-  const refs = useRef<HTMLInputElement[][]>([]);
+  // Keyboard navigation
+  const refs = useRef<(HTMLInputElement | null)[][]>([]);
   const reg = (r: number, c: number) => (el: HTMLInputElement | null) => {
     if (!el) return;
     if (!refs.current[r]) refs.current[r] = [];
@@ -234,53 +270,57 @@ export default function RoundEntry({
 
   return (
     <div className="space-y-6">
+      {/* Sticky header */}
       <div className="sticky top-0 z-10 bg-white/80 backdrop-blur border-b p-4 rounded-xl shadow-sm">
         <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-          <h1 className="text-2xl font-semibold">{mode === "create" ? "New Round" : "Edit Round"}</h1>
+          <h1 className="text-2xl font-semibold">
+            {mode === "create" ? "New Round" : "Edit Round"}
+          </h1>
           <div className="flex items-center gap-2">
             <button
               onClick={() => handleSave(false)}
-              className="inline-flex items-center gap-2 rounded-2xl px-4 py-2 border hover:shadow disabled:opacity-50"
               disabled={isPending}
+              className="inline-flex items-center gap-2 rounded-2xl px-4 py-2 border hover:shadow disabled:opacity-50"
             >
               <Save className="h-4 w-4" /> Save Draft
             </button>
             <button
               onClick={() => handleSave(true)}
-              className="inline-flex items-center gap-2 rounded-2xl px-4 py-2 bg-black text-white hover:opacity-90 disabled:opacity-50"
               disabled={isPending}
+              className="inline-flex items-center gap-2 rounded-2xl px-4 py-2 bg-black text-white hover:opacity-90 disabled:opacity-50"
             >
               <Send className="h-4 w-4" /> Save & Finish
             </button>
           </div>
         </div>
+
+        {/* Stepper */}
         <div className="mt-3 flex items-center gap-2 text-sm">
-          <button
-            onClick={() => setStep(1)}
-            className={`rounded-full px-3 py-1 border ${step === 1 ? "bg-black text-white" : ""}`}
-          >
-            1. Details
-          </button>
-          <ChevronRight className="h-4 w-4" />
-          <button
-            onClick={() => setStep(2)}
-            className={`rounded-full px-3 py-1 border ${step === 2 ? "bg-black text-white" : ""}`}
-          >
-            2. Holes
-          </button>
-          <ChevronRight className="h-4 w-4" />
-          <button
-            onClick={() => setStep(3)}
-            className={`rounded-full px-3 py-1 border ${step === 3 ? "bg-black text-white" : ""}`}
-          >
-            3. Review
-          </button>
+          {[1, 2, 3].map((s) => (
+            <button
+              key={s}
+              onClick={() => setStep(s)}
+              className={`rounded-full px-3 py-1 border ${
+                step === s ? "bg-black text-white" : ""
+              }`}
+            >
+              {s}. {s === 1 ? "Details" : s === 2 ? "Holes" : "Review"}
+            </button>
+          )).reduce((prev, curr) => (
+            <>
+              {prev}
+              <ChevronRight className="h-4 w-4" />
+              {curr}
+            </>
+          ))}
         </div>
       </div>
 
+      {/* ---------- STEP 1: Details ---------- */}
       {step === 1 && (
         <section className="space-y-4">
           <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
+            {/* Player */}
             <div className="flex flex-col">
               <label className="text-sm font-medium">Player</label>
               <select
@@ -290,17 +330,18 @@ export default function RoundEntry({
               >
                 <option value="">Select player…</option>
                 {players.map((p) => {
-                  const label = p.full_name ?? p.name ?? p.display_name ?? "Player";
                   const gy = p.grad_year ? ` ’${String(p.grad_year).slice(2)}` : "";
                   return (
                     <option key={p.id} value={p.id}>
-                      {`${label}${gy}`}
+                      {p.first_name} {p.last_name}
+                      {gy}
                     </option>
                   );
                 })}
               </select>
             </div>
 
+            {/* Date */}
             <div className="flex flex-col">
               <label className="text-sm font-medium">Date</label>
               <input
@@ -311,6 +352,7 @@ export default function RoundEntry({
               />
             </div>
 
+            {/* Course */}
             <div className="flex flex-col">
               <label className="text-sm font-medium">Course</label>
               <select
@@ -330,6 +372,7 @@ export default function RoundEntry({
               </select>
             </div>
 
+            {/* Tee */}
             <div className="flex flex-col">
               <label className="text-sm font-medium">Tee</label>
               <select
@@ -339,13 +382,11 @@ export default function RoundEntry({
                 disabled={!courseId}
               >
                 <option value="">Select tee…</option>
-                {teeSets
-                  .filter((t) => t.course_id === courseId)
-                  .map((t) => (
-                    <option key={t.id} value={t.id}>
-                      {t.name} — {t.rating ?? "-"} / {t.slope ?? "-"} (Par {t.par ?? "-"})
-                    </option>
-                  ))}
+                {teeOptions.map((t) => (
+                  <option key={t.id} value={t.id}>
+                    {t.name} — {t.rating ?? "-"} / {t.slope ?? "-"} (Par {t.par ?? "-"})
+                  </option>
+                ))}
               </select>
               <button
                 type="button"
@@ -360,21 +401,23 @@ export default function RoundEntry({
                 }}
                 disabled={!teeId && !courseId}
               >
-                Auto-fill holes from tee/course
+                Auto-fill holes
               </button>
             </div>
 
+            {/* Event (optional) */}
             <div className="flex flex-col">
               <label className="text-sm font-medium">Event (optional)</label>
               <input
                 type="text"
-                placeholder="Paste event UUID if linking"
+                placeholder="Paste event UUID"
                 className="mt-1 rounded-xl border p-2"
                 value={eventId ?? ""}
                 onChange={(e) => setEventId(e.target.value || undefined)}
               />
             </div>
 
+            {/* Notes */}
             <div className="flex flex-col sm:col-span-2 lg:col-span-3">
               <label className="text-sm font-medium">Notes</label>
               <textarea
@@ -387,22 +430,24 @@ export default function RoundEntry({
             </div>
           </div>
 
+          {/* Quick par buttons */}
           <div className="flex items-center gap-2">
-            <button className="rounded-2xl border px-4 py-2" onClick={() => setParForAll(3)}>
-              Set Par 3 for all
-            </button>
-            <button className="rounded-2xl border px-4 py-2" onClick={() => setParForAll(4)}>
-              Set Par 4 for all
-            </button>
-            <button className="rounded-2xl border px-4 py-2" onClick={() => setParForAll(5)}>
-              Set Par 5 for all
-            </button>
+            {[3, 4, 5].map((p) => (
+              <button
+                key={p}
+                className="rounded-2xl border px-4 py-2"
+                onClick={() => setParForAll(p)}
+              >
+                Set Par {p} for all
+              </button>
+            ))}
           </div>
 
+          {/* Paste scores */}
           <div className="flex items-center gap-2">
             <textarea
               className="rounded-xl border p-2 w-full"
-              placeholder="Quick paste 18 scores (e.g. 4 5 3 4 4 5 3 4 4 5 3 4 4 5 3 4 4 5)"
+              placeholder="Paste 18 scores (e.g. 4 5 3 4 4 5 3 4 4 5 3 4 4 5 3 4 4 5)"
               onPaste={(e) => pasteScores(e.clipboardData.getData("text"))}
             />
           </div>
@@ -418,6 +463,7 @@ export default function RoundEntry({
         </section>
       )}
 
+      {/* ---------- STEP 2: Holes ---------- */}
       {step === 2 && (
         <section className="space-y-4">
           <div className="overflow-x-auto rounded-2xl border">
@@ -440,50 +486,71 @@ export default function RoundEntry({
                 {holes.map((h, i) => (
                   <tr key={i} className="border-t">
                     <td className="p-2 font-medium">{h.hole_number}</td>
+
+                    {/* Par */}
                     <td className="p-2">
                       <input
                         ref={reg(i, 0)}
                         onKeyDown={onKey(i, 0)}
                         type="number"
+                        min={3}
+                        max={6}
                         inputMode="numeric"
                         className="w-16 rounded-lg border p-1 text-center"
                         value={h.par}
                         onChange={(e) => updateHole(i, { par: Number(e.target.value) })}
                       />
                     </td>
+
+                    {/* Yards */}
                     <td className="p-2">
                       <input
                         ref={reg(i, 1)}
                         onKeyDown={onKey(i, 1)}
                         type="number"
+                        min={0}
                         inputMode="numeric"
                         className="w-20 rounded-lg border p-1 text-center"
                         value={h.yards ?? ""}
-                        onChange={(e) => updateHole(i, { yards: e.target.value ? Number(e.target.value) : null })}
+                        onChange={(e) =>
+                          updateHole(i, { yards: e.target.value ? Number(e.target.value) : null })
+                        }
                       />
                     </td>
+
+                    {/* Strokes */}
                     <td className="p-2">
                       <input
                         ref={reg(i, 2)}
                         onKeyDown={onKey(i, 2)}
                         type="number"
+                        min={0}
                         inputMode="numeric"
                         className="w-16 rounded-lg border p-1 text-center"
                         value={h.strokes ?? ""}
-                        onChange={(e) => updateHole(i, { strokes: e.target.value ? Number(e.target.value) : null })}
+                        onChange={(e) =>
+                          updateHole(i, { strokes: e.target.value ? Number(e.target.value) : null })
+                        }
                       />
                     </td>
+
+                    {/* Putts */}
                     <td className="p-2">
                       <input
                         ref={reg(i, 3)}
                         onKeyDown={onKey(i, 3)}
                         type="number"
+                        min={0}
                         inputMode="numeric"
                         className="w-16 rounded-lg border p-1 text-center"
                         value={h.putts ?? ""}
-                        onChange={(e) => updateHole(i, { putts: e.target.value ? Number(e.target.value) : null })}
+                        onChange={(e) =>
+                          updateHole(i, { putts: e.target.value ? Number(e.target.value) : null })
+                        }
                       />
                     </td>
+
+                    {/* FIR */}
                     <td className="p-2 text-center">
                       <input
                         type="checkbox"
@@ -495,6 +562,8 @@ export default function RoundEntry({
                         }
                       />
                     </td>
+
+                    {/* GIR */}
                     <td className="p-2 text-center">
                       <input
                         type="checkbox"
@@ -503,6 +572,8 @@ export default function RoundEntry({
                         onChange={(e) => updateHole(i, { gir: e.target.checked })}
                       />
                     </td>
+
+                    {/* Up & Down */}
                     <td className="p-2 text-center">
                       <input
                         type="checkbox"
@@ -511,6 +582,8 @@ export default function RoundEntry({
                         onChange={(e) => updateHole(i, { up_down: e.target.checked })}
                       />
                     </td>
+
+                    {/* Sand Save */}
                     <td className="p-2 text-center">
                       <input
                         type="checkbox"
@@ -519,6 +592,8 @@ export default function RoundEntry({
                         onChange={(e) => updateHole(i, { sand_save: e.target.checked })}
                       />
                     </td>
+
+                    {/* Penalty */}
                     <td className="p-2 text-center">
                       <input
                         type="checkbox"
@@ -530,6 +605,7 @@ export default function RoundEntry({
                   </tr>
                 ))}
               </tbody>
+
               <tfoot className="bg-gray-50">
                 <tr>
                   <td className="p-3 font-medium" colSpan={3}>
@@ -564,6 +640,7 @@ export default function RoundEntry({
         </section>
       )}
 
+      {/* ---------- STEP 3: Review ---------- */}
       {step === 3 && (
         <section className="space-y-4">
           <div className="flex items-center justify-between">
@@ -576,15 +653,15 @@ export default function RoundEntry({
             <div className="flex items-center gap-2">
               <button
                 onClick={() => handleSave(false)}
-                className="inline-flex items-center gap-2 rounded-2xl px-4 py-2 border hover:shadow disabled:opacity-50"
                 disabled={isPending}
+                className="inline-flex items-center gap-2 rounded-2xl px-4 py-2 border hover:shadow disabled:opacity-50"
               >
                 <Save className="h-4 w-4" /> Save Draft
               </button>
               <button
                 onClick={() => handleSave(true)}
-                className="inline-flex items-center gap-2 rounded-2xl px-4 py-2 bg-black text-white hover:opacity-90 disabled:opacity-50"
                 disabled={isPending}
+                className="inline-flex items-center gap-2 rounded-2xl px-4 py-2 bg-black text-white hover:opacity-90 disabled:opacity-50"
               >
                 <Send className="h-4 w-4" /> Save & Finish
               </button>

@@ -1,7 +1,9 @@
 // app/rounds/[id]/page.tsx
+
 import Link from "next/link";
 import { notFound } from "next/navigation";
 import { createServerSupabase } from "@/lib/supabase/server";
+import { format } from "date-fns";
 
 export const dynamic = "force-dynamic";
 export const revalidate = 0;
@@ -14,7 +16,7 @@ type HoleAgg = {
   sg_total: number | null;
 };
 
-function sum<T extends keyof HoleAgg>(rows: HoleAgg[], key: T) {
+function sum<T extends keyof HoleAgg>(rows: HoleAgg[], key: T): number {
   return rows.reduce((acc, r) => acc + (Number(r[key] ?? 0) || 0), 0);
 }
 
@@ -26,56 +28,82 @@ export default async function RoundSummaryPage({
   const supabase = createServerSupabase();
   const roundId = params.id;
 
-  // 1) Load round (NO embedded relations)
-  const { data: round } = await supabase
+  // 1. Load round
+  const { data: round, error: roundErr } = await supabase
     .from("mgc.scheduled_rounds")
     .select("id, date, type, status, notes, player_id, course_id, tee_set_id")
     .eq("id", roundId)
-    .maybeSingle();
+    .single();
 
-  if (!round) return notFound();
+  if (roundErr || !round) {
+    console.error("Round fetch error:", roundErr);
+    notFound();
+  }
 
-  // 2) Related names by ID (no schema-relationship cache needed)
-  const [{ data: player }, { data: course }, { data: tee }] = await Promise.all([
+  // 2. Related names
+  const [
+    { data: player },
+    { data: course },
+    { data: tee },
+  ] = await Promise.all([
     round.player_id
-      ? supabase.from("mgc.players").select("full_name").eq("id", round.player_id).maybeSingle()
+      ? supabase
+          .from("mgc.players")
+          .select("full_name")
+          .eq("id", round.player_id)
+          .single()
       : Promise.resolve({ data: null } as any),
     round.course_id
-      ? supabase.from("mgc.courses").select("name").eq("id", round.course_id).maybeSingle()
+      ? supabase
+          .from("mgc.courses")
+          .select("name")
+          .eq("id", round.course_id)
+          .single()
       : Promise.resolve({ data: null } as any),
     round.tee_set_id
-      ? supabase.from("mgc.tee_sets").select("name").eq("id", round.tee_set_id).maybeSingle()
+      ? supabase
+          .from("mgc.tee_sets")
+          .select("name")
+          .eq("id", round.tee_set_id)
+          .single()
       : Promise.resolve({ data: null } as any),
   ]);
 
-  const playerName = player?.full_name ?? "Player";
-  const courseName = course?.name ?? "Course";
-  const teeName = tee?.name ?? "Tee";
+  const playerName = player?.full_name ?? "Unknown Player";
+  const courseName = course?.name ?? "Unknown Course";
+  const teeName = tee?.name ?? "Unknown Tee";
 
-  // 3) Totals (graceful if null)
-  const { data: totals } = await supabase
+  // 3. Totals from view
+  const { data: totals, error: totalsErr } = await supabase
     .from("mgc.v_round_totals")
     .select(
-      "round_id, strokes, putts, penalty_strokes, sg_total, sg_ott, sg_app, sg_arg, sg_putt"
+      "strokes, putts, penalty_strokes, sg_total, sg_ott, sg_app, sg_arg, sg_putt"
     )
     .eq("round_id", roundId)
-    .maybeSingle();
+    .single();
 
-  // 4) Hole-by-hole
-  const { data: holes } = await supabase
+  if (totalsErr) {
+    console.error("Totals view error:", totalsErr);
+  }
+
+  // 4. Hole-by-hole
+  const { data: holes, error: holesErr } = await supabase
     .from("mgc.v_hole_totals")
     .select("hole_number, strokes, putts, penalty_strokes, sg_total")
     .eq("round_id", roundId)
     .order("hole_number", { ascending: true });
 
-  const holeRows: HoleAgg[] =
-    (holes ?? []).map((h) => ({
-      hole_number: h.hole_number,
-      strokes: h.strokes,
-      putts: h.putts,
-      penalty_strokes: h.penalty_strokes,
-      sg_total: h.sg_total,
-    })) ?? [];
+  if (holesErr) {
+    console.error("Hole totals error:", holesErr);
+  }
+
+  const holeRows: HoleAgg[] = (holes ?? []).map((h) => ({
+    hole_number: h.hole_number,
+    strokes: h.strokes,
+    putts: h.putts,
+    penalty_strokes: h.penalty_strokes,
+    sg_total: h.sg_total,
+  }));
 
   const front = holeRows.filter((h) => h.hole_number <= 9);
   const back = holeRows.filter((h) => h.hole_number >= 10);
@@ -99,123 +127,150 @@ export default async function RoundSummaryPage({
     sg: sum(holeRows, "sg_total"),
   };
 
-  // Null-safe card values (0 stays 0)
-  const strokesValue: number | string = (totals?.strokes ?? allSum.strokes) ?? "—";
-  const puttsValue: number | string = (totals?.putts ?? allSum.putts) ?? "—";
-  const penaltiesValue: number | string =
-    (totals?.penalty_strokes ?? allSum.pens) ?? "—";
-  const sgValue: string | number =
-    typeof (totals?.sg_total ?? allSum.sg) === "number"
-      ? (totals?.sg_total ?? allSum.sg).toFixed(2)
-      : "—";
+  // 5. Card values
+    const strokesValue = totals?.strokes ?? allSum.strokes ?? "—";
+    const puttsValue = totals?.putts ?? allSum.putts ?? "—";
+    const penaltiesValue = totals?.penalty_strokes ?? allSum.pens ?? "—";
+    const sgNum = totals?.sg_total ?? allSum.sg;
+    const sgValue =
+      typeof sgNum === "number" ? sgNum.toFixed(2) : "—";
 
   return (
     <div className="mx-auto max-w-5xl p-6 space-y-6">
       {/* Header */}
-      <div className="flex items-start justify-between gap-4">
+      <div className="flex flex-col sm:flex-row sm:items-start sm:justify-between gap-4">
         <div>
-          <h1 className="text-2xl font-semibold">
+          <h1 className="text-2xl font-bold text-gray-900">
             {playerName} — {courseName} ({teeName})
           </h1>
-          <p className="text-gray-600">
-            Date: {String(round.date)} · Type: {String(round.type)} · Status:{" "}
-            {String(round.status)}
+          <p className="text-sm text-gray-600 mt-1">
+            {round.date ? format(new Date(round.date), "MMMM d, yyyy") : "—"} ·{" "}
+            {round.type} · {round.status}
           </p>
-          {round.notes ? <p className="mt-1 text-gray-700">{round.notes}</p> : null}
+          {round.notes && (
+            <p className="mt-2 text-sm text-gray-700 italic">{round.notes}</p>
+          )}
         </div>
         <div className="flex gap-2">
           <Link
             href={`/rounds/${roundId}/shots`}
-            className="rounded border px-3 py-2 hover:shadow"
+            className="inline-flex items-center gap-2 rounded-xl border px-4 py-2 text-sm font-medium hover:shadow transition"
           >
             Edit Shots
           </Link>
-          <Link href={`/rounds`} className="rounded border px-3 py-2 hover:shadow">
+          <Link
+            href="/rounds"
+            className="inline-flex items-center gap-2 rounded-xl border px-4 py-2 text-sm font-medium hover:shadow transition"
+          >
             All Rounds
           </Link>
         </div>
       </div>
 
-      {/* Quick cards */}
-      <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+      {/* Quick Cards */}
+      <div className="grid grid-cols-2 sm:grid-cols-4 gap-4">
         <Card label="Strokes" value={strokesValue} />
         <Card label="Putts" value={puttsValue} />
         <Card label="Penalties" value={penaltiesValue} />
-        <Card label="Strokes Gained" value={sgValue} />
+        <Card label="SG Total" value={sgValue} />
       </div>
 
-      {/* Hole-by-hole */}
-      <div className="overflow-x-auto rounded border">
-        <table className="min-w-full text-sm">
-          <thead className="bg-gray-50">
-            <tr>
-              <Th>Hole</Th>
-              <Th className="text-right">Strokes</Th>
-              <Th className="text-right">Putts</Th>
-              <Th className="text-right">Pen</Th>
-              <Th className="text-right">SG</Th>
-            </tr>
-          </thead>
-          <tbody>
-            {holeRows.map((h) => (
-              <tr key={h.hole_number} className="border-t">
-                <Td>{h.hole_number}</Td>
-                <Td className="text-right">{h.strokes ?? "—"}</Td>
-                <Td className="text-right">{h.putts ?? "—"}</Td>
-                <Td className="text-right">{h.penalty_strokes ?? "—"}</Td>
+      {/* Hole-by-hole Table */}
+      <div className="bg-white rounded-xl border shadow-sm overflow-hidden">
+        <div className="overflow-x-auto">
+          <table className="w-full text-sm">
+            <thead className="bg-gray-50 text-gray-700 border-b">
+              <tr>
+                <Th>Hole</Th>
+                <Th className="text-right">Strokes</Th>
+                <Th className="text-right">Putts</Th>
+                <Th className="text-right">Pen</Th>
+                <Th className="text-right">SG</Th>
+              </tr>
+            </thead>
+            <tbody className="divide-y divide-gray-200">
+              {holeRows.map((h) => (
+                <tr key={h.hole_number} className="hover:bg-gray-50 transition">
+                  <Td className="font-medium">{h.hole_number}</Td>
+                  <Td className="text-right">{h.strokes ?? "—"}</Td>
+                  <Td className="text-right">{h.putts ?? "—"}</Td>
+                  <Td className="text-right">{h.penalty_strokes ?? "—"}</Td>
+                  <Td className="text-right">
+                    {h.sg_total !== null ? h.sg_total.toFixed(2) : "—"}
+                  </Td>
+                </tr>
+              ))}
+            </tbody>
+            <tfoot>
+              <tr className="bg-gray-50 font-semibold border-t">
+                <Td>Front 9</Td>
+                <Td className="text-right">{frontSum.strokes || "—"}</Td>
+                <Td className="text-right">{frontSum.putts || "—"}</Td>
+                <Td className="text-right">{frontSum.pens || "—"}</Td>
                 <Td className="text-right">
-                  {typeof h.sg_total === "number" ? h.sg_total.toFixed(2) : "—"}
+                  {frontSum.sg ? frontSum.sg.toFixed(2) : "—"}
                 </Td>
               </tr>
-            ))}
-          </tbody>
-          <tfoot className="bg-gray-50">
-            <tr className="border-t">
-              <Td className="font-semibold">Front 9</Td>
-              <Td className="text-right">{frontSum.strokes || "—"}</Td>
-              <Td className="text-right">{frontSum.putts || "—"}</Td>
-              <Td className="text-right">{frontSum.pens || "—"}</Td>
-              <Td className="text-right">
-                {frontSum.sg ? frontSum.sg.toFixed(2) : "—"}
-              </Td>
-            </tr>
-            <tr>
-              <Td className="font-semibold">Back 9</Td>
-              <Td className="text-right">{backSum.strokes || "—"}</Td>
-              <Td className="text-right">{backSum.putts || "—"}</Td>
-              <Td className="text-right">{backSum.pens || "—"}</Td>
-              <Td className="text-right">
-                {backSum.sg ? backSum.sg.toFixed(2) : "—"}
-              </Td>
-            </tr>
-            <tr className="border-t-2">
-              <Td className="font-semibold">Total</Td>
-              <Td className="text-right">{allSum.strokes || "—"}</Td>
-              <Td className="text-right">{allSum.putts || "—"}</Td>
-              <Td className="text-right">{allSum.pens || "—"}</Td>
-              <Td className="text-right">
-                {allSum.sg ? allSum.sg.toFixed(2) : "—"}
-              </Td>
-            </tr>
-          </tfoot>
-        </table>
+              <tr className="bg-gray-50 font-semibold">
+                <Td>Back 9</Td>
+                <Td className="text-right">{backSum.strokes || "—"}</Td>
+                <Td className="text-right">{backSum.putts || "—"}</Td>
+                <Td className="text-right">{backSum.pens || "—"}</Td>
+                <Td className="text-right">
+                  {backSum.sg ? backSum.sg.toFixed(2) : "—"}
+                </Td>
+              </tr>
+              <tr className="bg-indigo-50 font-bold border-t-2">
+                <Td>Total</Td>
+                <Td className="text-right">{allSum.strokes || "—"}</Td>
+                <Td className="text-right">{allSum.putts || "—"}</Td>
+                <Td className="text-right">{allSum.pens || "—"}</Td>
+                <Td className="text-right">
+                  {allSum.sg ? allSum.sg.toFixed(2) : "—"}
+                </Td>
+              </tr>
+            </tfoot>
+          </table>
+        </div>
       </div>
     </div>
   );
 }
 
-// UI helpers
+// UI Components
 function Card({ label, value }: { label: string; value: number | string }) {
   return (
-    <div className="rounded-lg border bg-white p-4">
-      <div className="text-xs uppercase text-gray-500">{label}</div>
-      <div className="text-2xl font-semibold">{value}</div>
+    <div className="bg-white rounded-xl border p-4 shadow-sm">
+      <div className="text-xs font-medium text-gray-500 uppercase tracking-wider">
+        {label}
+      </div>
+      <div className="mt-1 text-2xl font-bold text-gray-900">{value}</div>
     </div>
   );
 }
-function Th({ children, className = "" }: { children: React.ReactNode; className?: string }) {
-  return <th className={`px-2 py-2 text-left ${className}`}>{children}</th>;
+
+function Th({
+  children,
+  className = "",
+}: {
+  children: React.ReactNode;
+  className?: string;
+}) {
+  return (
+    <th
+      className={`px-3 py-2 text-left text-xs font-medium text-gray-700 uppercase tracking-wider ${className}`}
+    >
+      {children}
+    </th>
+  );
 }
-function Td({ children, className = "" }: { children: React.ReactNode; className?: string }) {
-  return <td className={`px-2 py-2 ${className}`}>{children}</td>;
+
+function Td({
+  children,
+  className = "",
+}: {
+  children: React.ReactNode;
+  className?: string;
+}) {
+  return <td className={`px-3 py-2 text-sm ${className}`}>{children}</td>;
 }

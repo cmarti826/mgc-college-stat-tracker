@@ -1,15 +1,16 @@
-"use server";
-// app/rounds/_components/actions.ts 
+// app/rounds/_components/actions.ts
 
-import { createServerSupabase } from "@/lib/supabase/server";
-import { z } from "zod";
+"use server";
+
+import { createServerSupabase } from '@/lib/supabase/server';
+import { z } from 'zod';
 
 const HoleSchema = z.object({
-  hole_number: z.number(),
-  par: z.number().min(3).max(6),
-  yards: z.number().nullable().optional(),
-  strokes: z.number().nullable().optional(),
-  putts: z.number().nullable().optional(),
+  hole_number: z.number().int().min(1).max(18),
+  par: z.number().int().min(3).max(6),
+  yards: z.number().int().positive().nullable().optional(),
+  strokes: z.number().int().positive().nullable().optional(),
+  putts: z.number().int().min(0).nullable().optional(),
   fir: z.boolean().nullable().optional(),
   gir: z.boolean().nullable().optional(),
   up_down: z.boolean().nullable().optional(),
@@ -19,11 +20,18 @@ const HoleSchema = z.object({
 
 const RoundSchema = z.object({
   id: z.string().uuid().optional(),
-  player_id: z.string(), // uuid OR name (RPC will resolve/create)
-  course_id: z.string(), // uuid OR name (RPC will resolve or error)
-  tee_id: z.string().uuid(), // must exist
-  date: z.string(), // yyyy-mm-dd
-  holes: z.array(HoleSchema).length(18),
+  player_id: z.string().min(1, 'Player is required'),
+  course_id: z.string().min(1, 'Course is required'),
+  tee_id: z.string().uuid('Invalid tee ID'),
+  date: z.string().regex(/^\d{4}-\d{2}-\d{2}$/, 'Date must be YYYY-MM-DD'),
+  holes: z
+    .array(HoleSchema)
+    .length(18, 'Must include exactly 18 holes')
+    .refine(
+      (holes) =>
+        holes.every((h, i) => h.hole_number === i + 1),
+      'Hole numbers must be 1–18 in order'
+    ),
 });
 
 export type RoundPayload = z.infer<typeof RoundSchema>;
@@ -31,10 +39,17 @@ export type RoundPayload = z.infer<typeof RoundSchema>;
 export async function createRoundAction(payload: RoundPayload) {
   const supabase = createServerSupabase();
 
+  // 1. Validate
   const parsed = RoundSchema.safeParse(payload);
-  if (!parsed.success) return { error: "Please complete player, course, tee, date and 18 holes." };
+  if (!parsed.success) {
+    const message = parsed.error.issues[0]?.message || 'Invalid input';
+    return { error: message };
+  }
 
-  const holes = payload.holes.map((h) => ({
+  const { player_id, course_id, tee_id, date, holes } = parsed.data;
+
+  // 2. Prepare holes (nullify FIR for non-par 4/5)
+  const p_holes = holes.map((h) => ({
     hole_number: h.hole_number,
     par: h.par,
     yards: h.yards ?? null,
@@ -47,23 +62,41 @@ export async function createRoundAction(payload: RoundPayload) {
     penalty: h.penalty ?? null,
   }));
 
-  const { data, error } = await supabase.rpc("create_round_with_holes", {
-    p_player_key: payload.player_id,   // id OR name
-    p_course_key: payload.course_id,   // id OR name
-    p_tee_id: payload.tee_id,
-    p_date: payload.date,
-    p_holes: holes,
+  // 3. Call RPC
+  const { data, error } = await supabase.rpc('mgc.create_round_with_holes', {
+    p_player_key: player_id,
+    p_course_key: course_id,
+    p_tee_id: tee_id,
+    p_date: date,
+    p_holes,
   });
 
-  if (error) return { error: error.message };
+  if (error) {
+    console.error('create_round_with_holes error:', error);
+    return { error: error.message };
+  }
+
   return { id: data as string };
 }
 
 export async function updateRoundAction(payload: RoundPayload) {
   const supabase = createServerSupabase();
-  if (!payload.id) return { error: "Missing round id" };
 
-  const holes = payload.holes.map((h) => ({
+  if (!payload.id) {
+    return { error: 'Round ID is required for update' };
+  }
+
+  // 1. Validate
+  const parsed = RoundSchema.safeParse(payload);
+  if (!parsed.success) {
+    const message = parsed.error.issues[0]?.message || 'Invalid input';
+    return { error: message };
+  }
+
+  const { id, player_id, course_id, tee_id, date, holes } = parsed.data;
+
+  // 2. Prepare holes
+  const p_holes = holes.map((h) => ({
     hole_number: h.hole_number,
     par: h.par,
     yards: h.yards ?? null,
@@ -76,15 +109,20 @@ export async function updateRoundAction(payload: RoundPayload) {
     penalty: h.penalty ?? null,
   }));
 
-  const { data, error } = await supabase.rpc("update_round_with_holes", {
-    p_round_id: payload.id,
-    p_player_key: payload.player_id,   // id OR name
-    p_course_key: payload.course_id,   // id OR name
-    p_tee_id: payload.tee_id,
-    p_date: payload.date,
-    p_holes: holes,
+  // 3. Call RPC
+  const { data, error } = await supabase.rpc('mgc.update_round_with_holes', {
+    p_round_id: id,
+    p_player_key: player_id,
+    p_course_key: course_id,
+    p_tee_id: tee_id,
+    p_date: date,
+    p_holes,
   });
 
-  if (error) return { error: error.message };
+  if (error) {
+    console.error('update_round_with_holes error:', error);
+    return { error: error.message };
+  }
+
   return { id: data as string };
 }

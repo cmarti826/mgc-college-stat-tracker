@@ -1,4 +1,5 @@
 // app/rounds/new/page.tsx
+
 import { createServerSupabase } from "@/lib/supabase/server";
 import { redirect } from "next/navigation";
 import { revalidatePath } from "next/cache";
@@ -11,53 +12,80 @@ async function createRound(formData: FormData) {
   "use server";
   const supabase = createServerSupabase();
 
-  const player_id  = String(formData.get("player_id") || "");
-  const course_id  = String(formData.get("course_id") || "");
-  const tee_set_id = String(formData.get("tee_set_id") || "");
-  const round_date = String(formData.get("round_date") || "");
-  const name       = String(formData.get("name") || "").trim() || null;
-  const notes      = String(formData.get("notes") || "").trim() || null;
+  const player_id = String(formData.get("player_id") || "").trim();
+  const course_id = String(formData.get("course_id") || "").trim();
+  const tee_set_id = String(formData.get("tee_set_id") || "").trim();
+  const round_date = String(formData.get("round_date") || "").trim();
+  const name = String(formData.get("name") || "").trim() || null;
+  const notes = String(formData.get("notes") || "").trim() || null;
 
   if (!player_id || !course_id || !tee_set_id || !round_date) {
     throw new Error("Player, Course, Tee Set, and Date are required.");
   }
 
-  const { error } = await supabase
+  const { data, error } = await supabase
     .from("mgc.scheduled_rounds")
-    .insert({ player_id, course_id, tee_set_id, round_date, name, notes });
+    .insert({
+      player_id,
+      course_id,
+      tee_set_id,
+      round_date,
+      name,
+      notes,
+      status: "scheduled",
+      type: "PRACTICE",
+    })
+    .select("id")
+    .single();
 
-  if (error) throw error;
+  if (error) {
+    console.error("Round creation error:", error);
+    throw error;
+  }
 
-  revalidatePath("/rounds/new");
-  redirect("/rounds");
+  revalidatePath("/rounds");
+  redirect(`/rounds/${data.id}/shots`);
 }
 
 // Load data for form
 async function loadData() {
   const supabase = createServerSupabase();
 
-  const { data: { user }, error: userErr } = await supabase.auth.getUser();
-  if (userErr) throw userErr;
-  if (!user) redirect("/login?redirectTo=/rounds/new");
+  const {
+    data: { user },
+    error: userErr,
+  } = await supabase.auth.getUser();
+  if (userErr || !user) {
+    redirect("/(auth)/login?redirectTo=/rounds/new");
+  }
 
   const { data: link, error: linkErr } = await supabase
     .from("mgc.user_players")
     .select("player_id")
     .eq("user_id", user.id)
     .maybeSingle();
-  if (linkErr) throw linkErr;
+
+  if (linkErr) {
+    console.error("User-player link error:", linkErr);
+  }
 
   const { data: courses, error: cErr } = await supabase
     .from("mgc.courses")
-    .select("id,name")
-    .order("name");
-  if (cErr) throw cErr;
+    .select("id, name")
+    .order("name", { ascending: true });
+
+  if (cErr) {
+    console.error("Courses fetch error:", cErr);
+  }
 
   const { data: teeSets, error: tErr } = await supabase
     .from("mgc.tee_sets")
-    .select("id,name,course_id")
-    .order("name");
-  if (tErr) throw tErr;
+    .select("id, name, course_id, rating, slope, par")
+    .order("name", { ascending: true });
+
+  if (tErr) {
+    console.error("Tee sets fetch error:", tErr);
+  }
 
   return {
     playerId: link?.player_id ?? null,
@@ -70,52 +98,89 @@ async function loadData() {
 export default async function NewRoundPage() {
   const { playerId, courses, teeSets } = await loadData();
 
-  return (
-    <div className="max-w-2xl mx-auto p-6 space-y-6">
-      <h1 className="text-2xl font-bold">New Round</h1>
-
-      {!playerId && (
-        <div className="rounded-md border border-amber-300 bg-amber-50 p-3 text-sm text-amber-800">
-          Your account isn’t linked to a player yet. Ask an admin to link your user to a player in
-          <code className="mx-1">user_players</code>.
+  if (!playerId) {
+    return (
+      <div className="mx-auto max-w-2xl p-6">
+        <div className="rounded-xl border border-amber-300 bg-amber-50 p-4 text-sm text-amber-800">
+          <p className="font-medium">Player Not Linked</p>
+          <p className="mt-1">
+            Your account isn't linked to a player. Ask an admin to link you in{" "}
+            <code className="font-mono bg-amber-100 px-1 rounded">user_players</code>.
+          </p>
         </div>
-      )}
+      </div>
+    );
+  }
 
-      <form action={createRound} className="space-y-3 rounded-2xl border bg-white p-4">
-        <input type="hidden" name="player_id" value={playerId ?? ""} />
+  return (
+    <div className="mx-auto max-w-2xl p-6 space-y-6">
+      <div>
+        <h1 className="text-2xl font-bold text-gray-900">New Round</h1>
+        <p className="text-sm text-gray-600 mt-1">
+          Schedule a new round and start entering shots.
+        </p>
+      </div>
 
-        <div className="grid grid-cols-2 gap-3">
+      <form action={createRound} className="space-y-5 rounded-xl border bg-white p-5 shadow-sm">
+        <input type="hidden" name="player_id" value={playerId} />
+
+        <div>
+          <label className="block text-sm font-medium text-gray-700 mb-2">
+            Course & Tee
+          </label>
           <CourseTeePicker
             courses={courses}
             tees={teeSets}
-            initialCourseId={courses?.[0]?.id}
+            initialCourseId={courses[0]?.id}
             fieldName="tee_set_id"
           />
         </div>
 
-        <div className="grid grid-cols-2 gap-3">
+        <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
           <div>
-            <label className="block text-sm">Date</label>
-            <input type="date" name="round_date" className="w-full border rounded p-2" required />
+            <label className="block text-sm font-medium text-gray-700 mb-1">
+              Date <span className="text-red-600">*</span>
+            </label>
+            <input
+              type="date"
+              name="round_date"
+              className="w-full rounded-md border border-gray-300 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+              required
+            />
           </div>
+
           <div>
-            <label className="block text-sm">Name (optional)</label>
-            <input name="name" className="w-full border rounded p-2" placeholder="Qualifying Rd 1" />
+            <label className="block text-sm font-medium text-gray-700 mb-1">
+              Round Name (optional)
+            </label>
+            <input
+              name="name"
+              className="w-full rounded-md border border-gray-300 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+              placeholder="e.g. Qualifier Rd 1"
+            />
           </div>
         </div>
 
         <div>
-          <label className="block text-sm">Notes</label>
-          <textarea name="notes" className="w-full border rounded p-2" rows={2} />
+          <label className="block text-sm font-medium text-gray-700 mb-1">
+            Notes
+          </label>
+          <textarea
+            name="notes"
+            rows={3}
+            className="w-full rounded-md border border-gray-300 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+            placeholder="Windy, fast greens..."
+          />
         </div>
 
-        <button
-          className="px-4 py-2 rounded-xl bg-blue-600 text-white disabled:opacity-50"
-          disabled={!playerId}
-          title={!playerId ? "Your account must be linked to a player" : ""}
-        >
-          Create
-        </button>
+        <div className="flex justify-end">
+          <button
+            type="submit"
+            className="inline-flex items-center gap-2 rounded-xl bg-blue-600 px-5 py-2.5 text-sm font-medium text-white shadow-sm hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500 transition"
+          >
+            Create Round & Start Shots
+          </button>
+        </div>
       </form>
     </div>
   );

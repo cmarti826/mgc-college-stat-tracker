@@ -1,67 +1,136 @@
 // app/rounds/page.tsx
 
-import Link from "next/link";
-import { createServerSupabase } from "@/lib/supabase/server";
+import Link from 'next/link';
+import { createServerSupabase } from '@/lib/supabase/server';
+import { format } from 'date-fns';
 
-export const dynamic = "force-dynamic";
+export const dynamic = 'force-dynamic';
 
-type RelName = { name?: string; full_name?: string } | RelName[] | null;
-function rel(x: any, key: "name" | "full_name"): string {
-  if (!x) return "—";
-  if (Array.isArray(x)) return x[0]?.[key] ?? "—";
-  return x[key] ?? "—";
-}
+type Round = {
+  id: string;
+  date: string;
+  status: string;
+  type: string;
+  player: { full_name: string } | null;
+  team: { name: string } | null;
+  course: { name: string } | null;
+};
 
 export default async function RoundsPage() {
   const supabase = createServerSupabase();
 
   const { data: rounds, error } = await supabase
-    .from("mgc.scheduled_rounds")
+    .from('mgc.scheduled_rounds')
     .select(`
-      id, date, status, type,
-      players:player_id ( full_name ),
-      teams:team_id ( name ),
-      courses:course_id ( name )
+      id,
+      date,
+      status,
+      type,
+      player:player_id ( full_name ),
+      team:team_id ( name ),
+      course:course_id ( name )
     `)
-    .order("date", { ascending: false });
+    .order('date', { ascending: false });
 
-  if (error) return <div className="text-red-600">Error loading rounds: {error.message}</div>;
+  if (error) {
+    return (
+      <div className="p-6 text-red-600">
+        Error loading rounds: {error.message}
+      </div>
+    );
+  }
+
+  if (!rounds || rounds.length === 0) {
+    return (
+      <div className="p-6">
+        <h1 className="text-2xl font-bold text-gray-900 mb-6">Rounds</h1>
+        <div className="bg-white rounded-xl border shadow-sm p-12 text-center">
+          <p className="text-gray-500">No rounds scheduled yet.</p>
+        </div>
+      </div>
+    );
+  }
 
   return (
-    <div>
-      <h1 className="text-xl font-semibold mb-4">Rounds</h1>
-      <div className="rounded-lg border bg-white overflow-hidden">
-        <table className="w-full text-sm">
-          <thead className="bg-neutral-50">
-            <tr>
-              <th className="text-left p-3">Date</th>
-              <th className="text-left p-3">Player</th>
-              <th className="text-left p-3">Team</th>
-              <th className="text-left p-3">Course</th>
-              <th className="text-left p-3">Status</th>
-              <th className="text-left p-3">Type</th>
-            </tr>
-          </thead>
-          <tbody>
-            {(rounds ?? []).map((r) => (
-              <tr key={r.id} className="border-t">
-                <td className="p-3">
-                  <Link href={`/rounds/${r.id}`} className="underline">
-                    {r.date ? new Date(r.date).toLocaleDateString() : "—"}
-                  </Link>
-                </td>
-                <td className="p-3">{rel(r.players, "full_name")}</td>
-                <td className="p-3">{rel(r.teams, "name")}</td>
-                <td className="p-3">{rel(r.courses, "name")}</td>
-                <td className="p-3">{r.status}</td>
-                <td className="p-3">{r.type}</td>
+    <div className="p-6 space-y-6">
+      <div className="flex items-center justify-between">
+        <h1 className="text-2xl font-bold text-gray-900">Rounds</h1>
+        <Link
+          href="/rounds/new"
+          className="px-4 py-2 bg-indigo-600 text-white rounded-md text-sm font-medium hover:bg-indigo-700 transition"
+        >
+          Schedule Round
+        </Link>
+      </div>
+
+      <div className="bg-white rounded-xl border shadow-sm overflow-hidden">
+        <div className="overflow-x-auto">
+          <table className="w-full text-sm">
+            <thead className="bg-gray-50 text-gray-700 border-b">
+              <tr>
+                <th className="text-left p-4 font-medium">Date</th>
+                <th className="text-left p-4 font-medium">Player</th>
+                <th className="text-left p-4 font-medium">Team</th>
+                <th className="text-left p-4 font-medium">Course</th>
+                <th className="text-left p-4 font-medium">Status</th>
+                <th className="text-left p-4 font-medium">Type</th>
               </tr>
-            ))}
-            {(!rounds || rounds.length === 0) && (
-              <tr><td className="p-3" colSpan={6}>No rounds yet.</td></tr>
-            )}
-          </tbody>
-        </table>
+            </thead>
+            <tbody className="divide-y divide-gray-200">
+              {rounds.map((r: any) => (
+                <tr key={r.id} className="hover:bg-gray-50 transition">
+                  <td className="p-4">
+                    <Link
+                      href={`/rounds/${r.id}`}
+                      className="font-medium text-indigo-600 hover:text-indigo-800 hover:underline"
+                    >
+                      {r.date ? format(new Date(r.date), 'MMM d, yyyy') : '—'}
+                    </Link>
+                  </td>
+                  <td className="p-4 text-gray-700">
+                    {r.player?.full_name ?? '—'}
+                  </td>
+                  <td className="p-4 text-gray-700">
+                    {r.team?.name ?? '—'}
+                  </td>
+                  <td className="p-4 text-gray-700">
+                    {r.course?.name ?? '—'}
+                  </td>
+                  <td className="p-4">
+                    <span
+                      className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium ${
+                        r.status === 'completed'
+                          ? 'bg-green-100 text-green-800'
+                          : r.status === 'in_progress'
+                          ? 'bg-blue-100 text-blue-800'
+                          : r.status === 'scheduled'
+                          ? 'bg-gray-100 text-gray-800'
+                          : 'bg-yellow-100 text-yellow-800'
+                      }`}
+                    >
+                      {r.status}
+                    </span>
+                  </td>
+                  <td className="p-4">
+                    <span
+                      className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium ${
+                        r.type === 'TOURNAMENT'
+                          ? 'bg-purple-100 text-purple-800'
+                          : r.type === 'QUALIFYING'
+                          ? 'bg-orange-100 text-orange-800'
+                          : r.type === 'PRACTICE'
+                          ? 'bg-teal-100 text-teal-800'
+                          : 'bg-gray-100 text-gray-800'
+                      }`}
+                    >
+                      {r.type}
+                    </span>
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
       </div>
     </div>
   );

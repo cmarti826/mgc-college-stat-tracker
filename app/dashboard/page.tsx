@@ -28,10 +28,11 @@ export default async function DashboardPage() {
     data: { user },
   } = await supabase.auth.getUser();
 
-  if (!user) {
-    redirect('/login');
-  }
+// app/dashboard/page.tsx  (UPDATE THIS LINE)
 
+if (!user) {
+  redirect('/(auth)/login');  // ← CHANGE TO THIS
+}
   // Fetch stats
   const [
     { count: totalCourses = 0 },

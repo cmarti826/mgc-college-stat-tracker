@@ -1,4 +1,4 @@
-// config/nav.ts
+// config/nav.tsx
 
 import {
   Home,
@@ -10,12 +10,11 @@ import {
   Trophy,
   Calendar,
 } from "lucide-react";
-import * as React from "react"; // ← ADD THIS
 
 export type NavItem = {
   href: string;
   label: string;
-  icon?: React.ReactNode; // ← Use React.ReactNode
+  icon?: React.ReactNode;
   roles?: ("admin" | "coach" | "player")[];
   badge?: string;
 };

@@ -31,7 +31,7 @@ async function createCourse(formData: FormData) {
 
   // Insert course
   const { data: course, error: courseError } = await supabase
-    .from("mgc.courses")
+    .from("courses")
     .insert({ name, city, state })
     .select("id")
     .single();
@@ -46,7 +46,7 @@ async function createCourse(formData: FormData) {
   }));
 
   const { error: holesError } = await supabase
-    .from("mgc.holes")
+    .from("holes")
     .insert(holeRows);
 
   if (holesError) throw holesError;

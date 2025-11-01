@@ -15,18 +15,16 @@ export function createServerSupabase() {
           return cookieStore.get(name)?.value;
         },
         set(name: string, value: string, options: any) {
-          try {
-            cookieStore.set({ name, value, ...options });
-          } catch {
-            // Ignore set in Server Components
-          }
+          cookieStore.set({ name, value, ...options });
         },
         remove(name: string, options: any) {
-          try {
-            cookieStore.delete({ name, ...options });
-          } catch {
-            // Ignore delete in Server Components
-          }
+          cookieStore.delete({ name, ...options });
+        },
+      },
+      // THIS IS THE KEY LINE
+      global: {
+        headers: {
+          'supabase-schema': 'mgc', // FORCE mgc schema
         },
       },
     }

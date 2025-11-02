@@ -4,8 +4,7 @@ import { cookies } from "next/headers";
 
 /**
  * Read-only Supabase client for Server Components / loaders.
- * Important: set/remove are NO-OPs to avoid
- * "Cookies can only be modified in a Server Action or Route Handler".
+ * set/remove are NO-OPs => avoids "Cookies can only be modified..." errors.
  */
 export function createServerSupabaseReadOnly() {
   const cookieStore = cookies();
@@ -18,7 +17,6 @@ export function createServerSupabaseReadOnly() {
         get(name: string) {
           return cookieStore.get(name)?.value;
         },
-        // No-ops in Server Components
         set() {
           /* no-op */
         },
@@ -32,7 +30,7 @@ export function createServerSupabaseReadOnly() {
 
 /**
  * Mutable Supabase client for Server Actions / Route Handlers ONLY.
- * Safe to call cookies.set/delete here.
+ * OK to set/delete cookies here.
  */
 export function createServerSupabaseAction() {
   const cookieStore = cookies();
@@ -45,15 +43,21 @@ export function createServerSupabaseAction() {
         get(name: string) {
           return cookieStore.get(name)?.value;
         },
-        set(name: string, value: string, options: any) {
-          // Next.js 14+ accepts object form
+        set(name: string, value: string, options?: any) {
           cookieStore.set({ name, value, ...options });
         },
         remove(name: string) {
-          // Next.js 14+ delete API
           cookieStore.delete(name);
         },
       },
     }
   );
 }
+
+/**
+ * TEMP compatibility alias so existing files that import
+ * `createServerSupabase` keep compiling. It is READ-ONLY.
+ * Migrate call sites that run inside "use server" or Route Handlers
+ * to `createServerSupabaseAction()`.
+ */
+export const createServerSupabase = createServerSupabaseReadOnly;

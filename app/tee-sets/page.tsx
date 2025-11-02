@@ -1,30 +1,50 @@
 // app/tee-sets/page.tsx
 
 import Link from "next/link";
-import { createServerSupabase } from "@/lib/supabase/server";
+import { createServerSupabaseReadOnly } from "@/lib/supabase/server";
 
 export const dynamic = "force-dynamic";
 
+type TeeSetRow = {
+  id: string;
+  course_id: string;
+  name: string | null;
+  tee_name: string | null;
+  rating: number | null;
+  slope: number | null;
+  par: number | null;
+};
+
+type CourseRow = {
+  id: string;
+  name: string;
+};
+
 export default async function TeeSetsIndex() {
-  const supabase = createServerSupabase();
+  // Read-only client prevents cookie writes during Server Component render
+  const supabase = createServerSupabaseReadOnly();
+
+  const teeSetsQuery = supabase
+    .from("mgc.tee_sets")
+    .select("id, course_id, name, tee_name, rating, slope, par")
+    .order("tee_name", { ascending: true })
+    .returns<TeeSetRow[]>();
+
+  const coursesQuery = supabase
+    .from("mgc.courses")
+    .select("id, name")
+    .order("name", { ascending: true })
+    .returns<CourseRow[]>();
 
   const [
     { data: teeSets, error: teeSetsError },
     { data: courses, error: coursesError },
-  ] = await Promise.all([
-    supabase
-      .from("mgc.tee_sets")
-      .select("id, course_id, name, tee_name, rating, slope, par")
-      .order("tee_name", { ascending: true }),
-    supabase.from("mgc.courses").select("id, name").order("name"),
-  ]);
+  ] = await Promise.all([teeSetsQuery, coursesQuery]);
 
   if (teeSetsError || coursesError) {
     return (
       <div className="p-6 text-center">
-        <p className="text-red-600 font-medium">
-          Failed to load tee sets or courses.
-        </p>
+        <p className="text-red-600 font-medium">Failed to load tee sets or courses.</p>
         <p className="text-sm text-gray-500 mt-1">
           {teeSetsError?.message || coursesError?.message}
         </p>
@@ -32,15 +52,13 @@ export default async function TeeSetsIndex() {
     );
   }
 
-  // Build course lookup map for O(1) access
   const courseMap = new Map<string, string>();
   (courses ?? []).forEach((c) => courseMap.set(c.id, c.name));
 
-  const hasTeeSets = teeSets && teeSets.length > 0;
+  const hasTeeSets = (teeSets?.length ?? 0) > 0;
 
   return (
     <div className="max-w-5xl mx-auto p-6 space-y-8">
-      {/* Header */}
       <div className="flex items-center justify-between">
         <h1 className="text-3xl font-bold text-gray-900">Tee Sets</h1>
         <Link
@@ -51,7 +69,6 @@ export default async function TeeSetsIndex() {
         </Link>
       </div>
 
-      {/* Tee Sets List */}
       <div className="bg-white rounded-xl shadow-sm border border-gray-200 overflow-hidden">
         <div className="px-6 py-4 bg-gray-50 border-b border-gray-200">
           <h2 className="text-sm font-semibold text-gray-700 uppercase tracking-wider">
@@ -61,7 +78,7 @@ export default async function TeeSetsIndex() {
 
         {hasTeeSets ? (
           <div className="divide-y divide-gray-200">
-            {teeSets.map((tee) => {
+            {teeSets!.map((tee) => {
               const courseName = courseMap.get(tee.course_id) ?? "—";
               const displayName = tee.tee_name || tee.name || "Unnamed Tee";
 
@@ -74,9 +91,7 @@ export default async function TeeSetsIndex() {
                     <div>
                       <div className="font-medium text-gray-900 flex items-center gap-2">
                         {displayName}
-                        <span className="text-xs font-normal text-gray-500">
-                          • {courseName}
-                        </span>
+                        <span className="text-xs font-normal text-gray-500">• {courseName}</span>
                       </div>
                       <div className="mt-1 text-sm text-gray-600">
                         <span className="inline-block">

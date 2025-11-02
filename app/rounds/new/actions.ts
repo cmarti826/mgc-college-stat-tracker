@@ -1,10 +1,9 @@
 // app/rounds/new/actions.ts
-
 "use server";
 
 import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
-import { createServerSupabase } from "@/lib/supabase/server";
+import { createServerSupabaseAction } from "@/lib/supabase/server";
 import { z } from "zod";
 
 // Zod schema for hole input (from client)
@@ -30,7 +29,8 @@ const SaveRoundPayload = z.object({
 });
 
 export async function saveRoundWithHoles(formData: FormData) {
-  const supabase = createServerSupabase();
+  // This is a Server Action -> use the Action (mutable) client
+  const supabase = createServerSupabaseAction();
 
   // 1. Extract and validate
   const raw = {

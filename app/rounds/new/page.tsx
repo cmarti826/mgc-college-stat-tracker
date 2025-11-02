@@ -1,6 +1,5 @@
 // app/rounds/new/page.tsx
-
-import { createServerSupabase } from "@/lib/supabase/server";
+import { createServerSupabaseReadOnly, createServerSupabaseAction } from "@/lib/supabase/server";
 import { redirect } from "next/navigation";
 import { revalidatePath } from "next/cache";
 import CourseTeePicker from "@/app/admin/rounds/CourseTeePicker";
@@ -10,7 +9,8 @@ export const dynamic = "force-dynamic";
 // Server Action: Create Round
 async function createRound(formData: FormData) {
   "use server";
-  const supabase = createServerSupabase();
+  // Server Action -> use the Action (mutable) client
+  const supabase = createServerSupabaseAction();
 
   const player_id = String(formData.get("player_id") || "").trim();
   const course_id = String(formData.get("course_id") || "").trim();
@@ -47,14 +47,15 @@ async function createRound(formData: FormData) {
   redirect(`/rounds/${data.id}/shots`);
 }
 
-// Load data for form
+// Load data for form (Server Component render) -> read-only client
 async function loadData() {
-  const supabase = createServerSupabase();
+  const supabase = createServerSupabaseReadOnly();
 
   const {
     data: { user },
     error: userErr,
   } = await supabase.auth.getUser();
+
   if (userErr || !user) {
     redirect("/(auth)/login?redirectTo=/rounds/new");
   }
@@ -62,7 +63,7 @@ async function loadData() {
   const { data: link, error: linkErr } = await supabase
     .from("mgc.user_players")
     .select("player_id")
-    .eq("user_id", user.id)
+    .eq("user_id", user!.id)
     .maybeSingle();
 
   if (linkErr) {
@@ -126,7 +127,7 @@ export default async function NewRoundPage() {
 
         <div>
           <label className="block text-sm font-medium text-gray-700 mb-2">
-            Course & Tee
+            Course &amp; Tee
           </label>
           <CourseTeePicker
             courses={courses}
@@ -162,9 +163,7 @@ export default async function NewRoundPage() {
         </div>
 
         <div>
-          <label className="block text-sm font-medium text-gray-700 mb-1">
-            Notes
-          </label>
+          <label className="block text-sm font-medium text-gray-700 mb-1">Notes</label>
           <textarea
             name="notes"
             rows={3}
@@ -178,7 +177,7 @@ export default async function NewRoundPage() {
             type="submit"
             className="inline-flex items-center gap-2 rounded-xl bg-blue-600 px-5 py-2.5 text-sm font-medium text-white shadow-sm hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500 transition"
           >
-            Create Round & Start Shots
+            Create Round &amp; Start Shots
           </button>
         </div>
       </form>

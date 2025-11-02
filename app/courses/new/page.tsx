@@ -31,7 +31,7 @@ async function createCourse(formData: FormData) {
 
   // Insert course
   const { data: course, error: courseError } = await supabase
-    .from("courses")
+    .from("mgc.courses")
     .insert({ name, city, state })
     .select("id")
     .single();
@@ -46,7 +46,7 @@ async function createCourse(formData: FormData) {
   }));
 
   const { error: holesError } = await supabase
-    .from("holes")
+    .from("mgc.holes")
     .insert(holeRows);
 
   if (holesError) throw holesError;
@@ -88,7 +88,7 @@ export default async function NewCoursePage() {
                 name="name"
                 type="text"
                 required
-                placeholder="e.g. Pebble Beach"
+                placeholder="e.g. Hackberry Golf Course"
                 className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 transition-colors"
               />
             </div>
@@ -101,7 +101,7 @@ export default async function NewCoursePage() {
                 id="city"
                 name="city"
                 type="text"
-                placeholder="Monterey"
+                placeholder="Houston"
                 className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 transition-colors"
               />
             </div>
@@ -114,7 +114,7 @@ export default async function NewCoursePage() {
                 id="state"
                 name="state"
                 type="text"
-                placeholder="CA"
+                placeholder="TX"
                 maxLength={2}
                 className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 transition-colors uppercase"
               />

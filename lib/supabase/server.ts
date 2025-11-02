@@ -1,5 +1,3 @@
-// lib/supabase/server.ts
-
 import { createServerClient } from '@supabase/ssr';
 import { cookies } from 'next/headers';
 
@@ -19,11 +17,6 @@ export function createServerSupabase() {
         },
         remove(name: string, options: any) {
           cookieStore.delete({ name, ...options });
-        },
-      },
-      global: {
-        headers: {
-          'supabase-schema': 'mgc',
         },
       },
     }

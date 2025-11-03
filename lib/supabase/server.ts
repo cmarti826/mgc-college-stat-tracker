@@ -4,6 +4,7 @@ import { cookies } from "next/headers";
 
 /**
  * Read-only Supabase client for Server Components / loaders.
+ * Schema is pinned to 'mgc'.
  * set/remove are NO-OPs => avoids "Cookies can only be modified..." errors.
  */
 export function createServerSupabaseReadOnly() {
@@ -13,6 +14,7 @@ export function createServerSupabaseReadOnly() {
     process.env.NEXT_PUBLIC_SUPABASE_URL!,
     process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
     {
+      db: { schema: "mgc" }, // 👈 force all reads to mgc schema
       cookies: {
         get(name: string) {
           return cookieStore.get(name)?.value;
@@ -30,6 +32,7 @@ export function createServerSupabaseReadOnly() {
 
 /**
  * Mutable Supabase client for Server Actions / Route Handlers ONLY.
+ * Schema is pinned to 'mgc'.
  * OK to set/delete cookies here.
  */
 export function createServerSupabaseAction() {
@@ -39,6 +42,7 @@ export function createServerSupabaseAction() {
     process.env.NEXT_PUBLIC_SUPABASE_URL!,
     process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
     {
+      db: { schema: "mgc" }, // 👈 same fix for mutations
       cookies: {
         get(name: string) {
           return cookieStore.get(name)?.value;

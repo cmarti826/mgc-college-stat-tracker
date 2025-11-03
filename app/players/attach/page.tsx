@@ -22,7 +22,7 @@ export default async function AttachPlayerPage() {
 
   // 2. Fetch players
   const { data: players, error: pErr } = await supabase
-    .from('mgc.players')
+    .from('players')
     .select('id, full_name')
     .order('full_name', { ascending: true });
 
@@ -32,7 +32,7 @@ export default async function AttachPlayerPage() {
 
   // 3. Fetch teams
   const { data: teams, error: tErr } = await supabase
-    .from('mgc.teams')
+    .from('teams')
     .select('id, name')
     .order('name', { ascending: true });
 

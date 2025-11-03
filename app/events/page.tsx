@@ -15,7 +15,7 @@ export default async function EventsPage() {
   const supabase = createServerSupabase();
 
   const { data: events, error } = await supabase
-    .from('mgc.events') // ← Fixed: mgc.events
+    .from('events') // ← Fixed: events
     .select(`
       id,
       name,

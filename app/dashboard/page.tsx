@@ -38,10 +38,10 @@ export default async function DashboardPage() {
     { count: totalUsersCount },
     { data: coursesData },
   ] = await Promise.all([
-    supabase.from('mgc.courses').select('*', { count: 'exact', head: true }),
+    supabase.from('courses').select('*', { count: 'exact', head: true }),
     supabase.from('auth.users').select('*', { count: 'exact', head: true }),
     supabase
-      .from('mgc.courses')
+      .from('courses')
       .select('id, name, city, state, created_at')
       .order('name', { ascending: true })
       .limit(5),

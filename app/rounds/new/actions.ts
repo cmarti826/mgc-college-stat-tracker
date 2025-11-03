@@ -78,7 +78,7 @@ export async function saveRoundWithHoles(formData: FormData) {
   }
 
   // 3. Call RPC
-  const { data, error } = await supabase.rpc("mgc.create_round_with_holes", {
+  const { data, error } = await supabase.rpc("create_round_with_holes", {
     p_player_key: playerKey,
     p_course_key: courseKey,
     p_tee_id: teeSetId,

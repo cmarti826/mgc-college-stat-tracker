@@ -65,24 +65,24 @@ export default async function EditRoundPage({ params }: Props) {
     { data: holes, error: hErr },
   ] = await Promise.all([
     supabase
-      .from('mgc.players')
+      .from('players')
       .select('id, first_name, last_name, grad_year')
       .order('last_name', { ascending: true }),
     supabase
-      .from('mgc.courses')
+      .from('courses')
       .select('id, name')
       .order('name', { ascending: true }),
     supabase
-      .from('mgc.tee_sets')
+      .from('tee_sets')
       .select('id, course_id, name, rating, slope, par')
       .order('name', { ascending: true }),
     supabase
-      .from('mgc.scheduled_rounds')
+      .from('scheduled_rounds')
       .select('id, player_id, course_id, tee_set_id, event_id, played_on, notes')
       .eq('id', roundId)
       .single(),
     supabase
-      .from('mgc.round_holes')
+      .from('round_holes')
       .select('hole_number, par, yards, strokes, putts, fir, gir, up_down, sand_save, penalty')
       .eq('round_id', roundId)
       .order('hole_number', { ascending: true }),

@@ -63,7 +63,7 @@ export async function createRoundAction(payload: RoundPayload) {
   }));
 
   // 3. Call RPC
-  const { data, error } = await supabase.rpc('mgc.create_round_with_holes', {
+  const { data, error } = await supabase.rpc('create_round_with_holes', {
     p_player_key: player_id,
     p_course_key: course_id,
     p_tee_id: tee_id,
@@ -110,7 +110,7 @@ export async function updateRoundAction(payload: RoundPayload) {
   }));
 
   // 3. Call RPC
-  const { data, error } = await supabase.rpc('mgc.update_round_with_holes', {
+  const { data, error } = await supabase.rpc('update_round_with_holes', {
     p_round_id: id,
     p_player_key: player_id,
     p_course_key: course_id,

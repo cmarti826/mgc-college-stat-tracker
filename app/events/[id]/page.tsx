@@ -91,7 +91,7 @@ export default function EventDetailPage() {
     try {
       // 1. Header
       const { data: e1, error: e1Err } = await supabase
-        .from('mgc.v_events_enriched')
+        .from('v_events_enriched')
         .select('*')
         .eq('id', id)
         .single();
@@ -101,7 +101,7 @@ export default function EventDetailPage() {
 
       // 2. Leaderboard
       const { data: lb, error: lbErr } = await supabase
-        .from('mgc.v_event_leaderboard_by_player')
+        .from('v_event_leaderboard_by_player')
         .select('*')
         .eq('event_id', id);
 
@@ -111,7 +111,7 @@ export default function EventDetailPage() {
 
       // 3. Player rounds
       const { data: pr, error: prErr } = await supabase
-        .from('mgc.v_event_player_rounds')
+        .from('v_event_player_rounds')
         .select('*')
         .eq('event_id', id);
 
@@ -120,7 +120,7 @@ export default function EventDetailPage() {
 
       // 4. Attached rounds
       const { data: er, error: erErr } = await supabase
-        .from('mgc.event_rounds')
+        .from('event_rounds')
         .select('round_id')
         .eq('event_id', id);
 
@@ -129,7 +129,7 @@ export default function EventDetailPage() {
 
       if (attachedIds.length > 0) {
         const { data: r1, error: r1Err } = await supabase
-          .from('mgc.v_round_leaderboard_base')
+          .from('v_round_leaderboard_base')
           .select('round_id, created_at, player_id, player_name, team_name, to_par, sg_total')
           .in('round_id', attachedIds)
           .order('created_at', { ascending: true });
@@ -144,7 +144,7 @@ export default function EventDetailPage() {
       const start = e1?.start_date ?? null;
       const end = e1?.end_date ?? null;
       let q = supabase
-        .from('mgc.v_round_leaderboard_base')
+        .from('v_round_leaderboard_base')
         .select('round_id, created_at, player_id, player_name, team_name, to_par, sg_total')
         .order('created_at', { ascending: false })
         .limit(200);
@@ -174,7 +174,7 @@ export default function EventDetailPage() {
   async function attach(roundId: string) {
     setError(null);
     const { error: insErr } = await supabase
-      .from('mgc.event_rounds')
+      .from('event_rounds')
       .insert({ event_id: id, round_id: roundId });
 
     if (insErr) {
@@ -187,7 +187,7 @@ export default function EventDetailPage() {
   async function detach(roundId: string) {
     setError(null);
     const { error: delErr } = await supabase
-      .from('mgc.event_rounds')
+      .from('event_rounds')
       .delete()
       .eq('event_id', id)
       .eq('round_id', roundId);

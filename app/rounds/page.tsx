@@ -20,7 +20,7 @@ export default async function RoundsPage() {
   const supabase = createServerSupabase();
 
   const { data: rounds, error } = await supabase
-    .from('mgc.scheduled_rounds')
+    .from('scheduled_rounds')
     .select(`
       id,
       date,

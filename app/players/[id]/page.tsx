@@ -38,7 +38,7 @@ export default async function PlayerDetail({ params }: { params: { id: string } 
 
   // 1. Fetch player with team
   const { data: player, error: playerErr } = await supabase
-    .from('mgc.players')
+    .from('players')
     .select(`
       id,
       full_name,
@@ -56,7 +56,7 @@ export default async function PlayerDetail({ params }: { params: { id: string } 
 
   // 2. Fetch rounds with course and holes
   const { data: rounds, error: roundsErr } = await supabase
-    .from('mgc.rounds')
+    .from('rounds')
     .select(`
       id,
       date,

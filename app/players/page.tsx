@@ -27,7 +27,7 @@ export default async function PlayersPage() {
 
   // 1. Fetch players
   const { data: players, error: pErr } = await supabase
-    .from('mgc.players')
+    .from('players')
     .select('id, full_name, grad_year, created_at')
     .order('full_name', { ascending: true });
 
@@ -52,7 +52,7 @@ export default async function PlayersPage() {
 
   // 2. Fetch team memberships
   const { data: teamMembers, error: tErr } = await supabase
-    .from('mgc.team_members')
+    .from('team_members')
     .select('player_id, team_id');
 
   if (tErr) {
@@ -61,7 +61,7 @@ export default async function PlayersPage() {
 
   // 3. Fetch scheduled rounds
   const { data: scheduledRounds, error: rErr } = await supabase
-    .from('mgc.scheduled_rounds')
+    .from('scheduled_rounds')
     .select('id, player_id');
 
   if (rErr) {

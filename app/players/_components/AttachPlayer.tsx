@@ -40,7 +40,7 @@ export default function AttachPlayer({ players, teams }: Props) {
 
       // 1. Link user → player
       const { error: linkErr } = await supabase
-        .from('mgc.user_players')
+        .from('user_players')
         .upsert(
           { user_id: user.id, player_id: selectedPlayerId },
           { onConflict: 'user_id' }
@@ -50,7 +50,7 @@ export default function AttachPlayer({ players, teams }: Props) {
 
       // 2. Assign player → team
       const { error: teamErr } = await supabase
-        .from('mgc.team_members')
+        .from('team_members')
         .upsert(
           { player_id: selectedPlayerId, team_id: selectedTeamId },
           { onConflict: 'player_id' }

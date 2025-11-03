@@ -87,7 +87,7 @@ export default function LeaderboardPage() {
         let playerId: string | null = null;
         if (user?.id) {
           const { data: map, error: mapErr } = await supabase
-            .from('mgc.user_players') // ← Fixed: mgc. prefix
+            .from('user_players') // ← Fixed: mgc. prefix
             .select('player_id')
             .eq('user_id', user.id)
             .maybeSingle();
@@ -99,7 +99,7 @@ export default function LeaderboardPage() {
         let tids: string[] = [];
         if (playerId) {
           const { data: mem, error: memErr } = await supabase
-            .from('mgc.team_members') // ← Fixed: mgc. prefix
+            .from('team_members') // ← Fixed: mgc. prefix
             .select('team_id')
             .eq('player_id', playerId);
 
@@ -124,7 +124,7 @@ export default function LeaderboardPage() {
         const endExclusive = addDays(endDate, 1);
 
         let query = supabase
-          .from('mgc.v_round_leaderboard_base') // ← Fixed: mgc. prefix
+          .from('v_round_leaderboard_base') // ← Fixed: mgc. prefix
           .select('*')
           .eq('round_type', rtype)
           .gte('created_at', startDate)

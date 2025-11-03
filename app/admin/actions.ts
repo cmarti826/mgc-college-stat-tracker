@@ -19,25 +19,24 @@ function num(x: FormDataEntryValue | null) {
   return Number.isFinite(n) ? n : null;
 }
 
-/** Service-role client (no cookies). Pass schema you want to operate in. */
-function getAdminClient(schema: "mgc" | "public" = "mgc") {
+/** Admin client (service role) — uses public schema */
+function getAdminClient() {
   const url = process.env.NEXT_PUBLIC_SUPABASE_URL!;
   const key = process.env.SUPABASE_SERVICE_ROLE_KEY!;
   if (!url || !key) {
-    throw new Error(
-      "Missing Supabase admin env. Set NEXT_PUBLIC_SUPABASE_URL and SUPABASE_SERVICE_ROLE_KEY."
-    );
+    throw new Error("Missing Supabase env: NEXT_PUBLIC_SUPABASE_URL or SUPABASE_SERVICE_ROLE_KEY");
   }
   return createAdminClient(url, key, {
     auth: { autoRefreshToken: false, persistSession: false },
-    db: { schema }, // <— important
+    db: { schema: "public" }, // ← PUBLIC ONLY
   });
 }
 
-/** Action-scoped anon client locked to mgc schema (cookies allowed). */
+/** Action client (cookie-based) — uses public schema */
 function getActionClient() {
-  // createServerSupabaseAction() already sets db: { schema: "mgc" }
-  return createServerSupabaseAction();
+  const client = createServerSupabaseAction();
+  client.storage.from = (table: string) => client.from(table); // Ensure public
+  return client;
 }
 
 /* ---------------- players / courses / tees ---------------- */
@@ -51,43 +50,44 @@ export async function createPlayer(formData: FormData): Promise<void> {
 
   if (!full_name) throw new Error("Full name is required.");
 
-  // Create player (mgc schema)
+  // 1. Create player in public.players
   const { data: playerRow, error: playerErr } = await supabase
     .from("players")
     .insert({ full_name, grad_year })
     .select("id")
-    .maybeSingle();
+    .single();
+
   if (playerErr) throw new Error(playerErr.message);
   if (!playerRow) throw new Error("Failed to create player.");
 
-  // If email + password are provided, create an auth user and link it.
+  // 2. If email + password → create auth user + link
   if (email && tempPassword) {
-    const adminMgc = getAdminClient("mgc");
-    const adminPublic = getAdminClient("public");
+    const admin = getAdminClient();
 
-    const { data: created, error: adminErr } = await adminPublic.auth.admin.createUser({
+    const { data: created, error: adminErr } = await admin.auth.admin.createUser({
       email,
       password: tempPassword,
       email_confirm: true,
       user_metadata: { full_name },
     });
-    if (adminErr) {
-      // (Optional) you could delete the just-created player here.
-      throw new Error(adminErr.message);
-    }
-    const user = created.user;
-    if (!user) throw new Error("Auth user creation returned no user.");
 
-    // Profile lives in public schema
-    const { error: profErr } = await adminPublic
+    if (adminErr) throw new Error(adminErr.message);
+    if (!created.user) throw new Error("Auth user not created.");
+
+    const user = created.user;
+
+    // 3. Upsert profile in public.profiles
+    const { error: profErr } = await admin
       .from("profiles")
       .upsert({ id: user.id, full_name, role: "player" }, { onConflict: "id" });
+
     if (profErr) throw new Error(profErr.message);
 
-    // Link user ↔ player lives in mgc schema
-    const { error: linkErr } = await adminMgc
+    // 4. Link user ↔ player in public.user_players
+    const { error: linkErr } = await admin
       .from("user_players")
       .upsert({ user_id: user.id, player_id: playerRow.id }, { onConflict: "user_id" });
+
     if (linkErr) throw new Error(linkErr.message);
   }
 
@@ -130,7 +130,6 @@ export async function createTeeSet(formData: FormData): Promise<void> {
   const rating = num(formData.get("rating"));
   const slope = num(formData.get("slope"));
   const par = num(formData.get("par"));
-  const yards = num(formData.get("yards"));
 
   if (!course_id) throw new Error("course_id is required.");
   if (!name) throw new Error("Tee set name is required.");
@@ -142,9 +141,8 @@ export async function createTeeSet(formData: FormData): Promise<void> {
     rating,
     slope,
     par,
-    yards,
-    tee_name: name,
   });
+
   if (error) throw new Error(error.message);
   revalidatePath("/admin");
 }
@@ -182,39 +180,37 @@ export async function deleteTeam(formData: FormData): Promise<void> {
 export async function addTeamMember(formData: FormData): Promise<void> {
   const supabase = getActionClient();
   const team_id = txt(formData.get("team_id"));
-  const user_id = txt(formData.get("user_id"));
   const player_id = txt(formData.get("player_id"));
   const role = (txt(formData.get("role")) ?? "player") as "player" | "coach" | "admin";
 
   if (!team_id) throw new Error("team_id is required.");
-  if (!user_id && !player_id) throw new Error("Choose a user or a player.");
+  if (!player_id) throw new Error("player_id is required.");
 
   const { error } = await supabase.from("team_members").insert({
     team_id,
-    user_id,
     player_id,
     role,
   });
+
   if (error) throw new Error(error.message);
   revalidatePath("/admin");
 }
 
 export async function removeTeamMember(formData: FormData): Promise<void> {
   const supabase = getActionClient();
-  const member_id = txt(formData.get("member_id"));
-  if (!member_id) throw new Error("member_id is required.");
-  const { error } = await supabase.from("team_members").delete().eq("id", member_id);
+  const id = txt(formData.get("id"));
+  if (!id) throw new Error("member_id is required.");
+  const { error } = await supabase.from("team_members").delete().eq("id", id);
   if (error) throw new Error(error.message);
   revalidatePath("/admin");
 }
 
 export async function linkUserToPlayer(formData: FormData): Promise<void> {
-  // Use admin mgc to bypass RLS if needed for back-office linking
-  const adminMgc = getAdminClient("mgc");
+  const admin = getAdminClient();
   const user_id = txt(formData.get("user_id"));
   const player_id = txt(formData.get("player_id"));
   if (!user_id || !player_id) throw new Error("user_id and player_id are required.");
-  const { error } = await adminMgc
+  const { error } = await admin
     .from("user_players")
     .upsert({ user_id, player_id }, { onConflict: "user_id" });
   if (error) throw new Error(error.message);
@@ -222,12 +218,11 @@ export async function linkUserToPlayer(formData: FormData): Promise<void> {
 }
 
 export async function setDefaultTeam(formData: FormData): Promise<void> {
-  // profiles is in public schema
-  const adminPublic = getAdminClient("public");
+  const admin = getAdminClient();
   const user_id = txt(formData.get("user_id"));
   const team_id = txt(formData.get("team_id"));
   if (!user_id || !team_id) throw new Error("user_id and team_id are required.");
-  const { error } = await adminPublic
+  const { error } = await admin
     .from("profiles")
     .update({ default_team_id: team_id })
     .eq("id", user_id);
@@ -259,7 +254,7 @@ export async function createRound(formData: FormData): Promise<void> {
     course_id,
     tee_set_id,
     team_id: team_id ?? null,
-    date: date ?? undefined,
+    round_date: date ?? undefined,
     name: name ?? null,
     notes: notes ?? null,
     type: type ?? undefined,

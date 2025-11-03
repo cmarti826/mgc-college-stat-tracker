@@ -10,7 +10,7 @@ export default async function CoursesPage() {
   const supabase = createServerSupabase();
 
   const { data: courses, error } = await supabase
-    .from("mgc.courses")
+    .from("courses")
     .select("id, name, city, state, created_at")
     .order("name", { ascending: true });
 

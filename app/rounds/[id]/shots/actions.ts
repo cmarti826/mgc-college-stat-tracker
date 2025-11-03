@@ -93,7 +93,7 @@ export async function upsertShots(roundId: string, rows: UpsertShot[]) {
 
   // 3. Upsert to mgc.shots
   const { error } = await supabase
-    .from("mgc.shots")
+    .from("shots")
     .upsert(payload, {
       onConflict: "id",
       ignoreDuplicates: false,
@@ -114,7 +114,7 @@ export async function deleteShot(roundId: string, shotId: string) {
   const supabase = createServerSupabase();
 
   const { error } = await supabase
-    .from("mgc.shots")
+    .from("shots")
     .delete()
     .eq("id", shotId)
     .eq("round_id", roundId);

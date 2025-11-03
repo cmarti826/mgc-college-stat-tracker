@@ -20,14 +20,14 @@ export default async function TeeSetDetailPage({
     { data: holes, error: holesError },
   ] = await Promise.all([
     supabase
-      .from("mgc.tee_sets")
+      .from("tee_sets")
       .select("id, course_id, name, tee_name, rating, slope, par, created_at")
       .eq("id", teeSetId)
       .single(),
     supabase
-      .from("mgc.courses")
+      .from("courses")
       .select("id, name, city, state")
-      .eq("id", (await supabase.from("mgc.tee_sets").select("course_id").eq("id", teeSetId).single()).data?.course_id)
+      .eq("id", (await supabase.from("tee_sets").select("course_id").eq("id", teeSetId).single()).data?.course_id)
       .single(),
     supabase
       .from("tee_set_holes")
@@ -39,7 +39,7 @@ export default async function TeeSetDetailPage({
   // Fallback: fetch course via teeSet if direct failed
   if (!course && teeSet) {
     const { data: fallbackCourse } = await supabase
-      .from("mgc.courses")
+      .from("courses")
       .select("id, name, city, state")
       .eq("id", teeSet.course_id)
       .single();

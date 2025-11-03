@@ -12,8 +12,8 @@ async function getInit() {
 
   const [{ data: events, error: eErr }, { data: courses }, { data: teams }] = await Promise.all([
     supabase.from("v_admin_events").select("*").order("start_date", { ascending: false }),
-    supabase.from("mgc.courses").select("id, name").order("name"),
-    supabase.from("mgc.teams").select("id, name").order("name"),
+    supabase.from("courses").select("id, name").order("name"),
+    supabase.from("teams").select("id, name").order("name"),
   ]);
   if (eErr) throw eErr;
 

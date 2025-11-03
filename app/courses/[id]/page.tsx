@@ -19,12 +19,12 @@ export default async function CourseDetailPage({
     { data: teeSets, error: teeSetsError },
   ] = await Promise.all([
     supabase
-      .from("mgc.courses")
+      .from("courses")
       .select("id, name, city, state, created_at")
       .eq("id", courseId)
       .single(),
     supabase
-      .from("mgc.tee_sets")
+      .from("tee_sets")
       .select("id, name, tee_name, rating, slope, par")
       .eq("course_id", courseId)
       .order("tee_name", { ascending: true }),

@@ -48,7 +48,7 @@ export function usePlayer(): UsePlayerResult {
 
         // 2. Get player link
         const { data: link, error: linkError } = await supabase
-          .from("mgc.user_players")
+          .from("user_players")
           .select("player_id")
           .eq("user_id", user.id)
           .maybeSingle();

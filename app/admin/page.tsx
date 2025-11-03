@@ -49,11 +49,11 @@ async function getDashboardData(): Promise<DashboardData> {
       .select("id, name, start_date, end_date, event_type, rounds_count, players_count")
       .order("start_date", { ascending: false })
       .limit(5),
-    supabase.from("mgc.teams").select("id", { count: "exact", head: true }),
-    supabase.from("mgc.players").select("id", { count: "exact", head: true }),
-    supabase.from("mgc.courses").select("id", { count: "exact", head: true }),
-    supabase.from("mgc.tee_sets").select("id", { count: "exact", head: true }),
-    supabase.from("mgc.scheduled_rounds").select("id", { count: "exact", head: true }),
+    supabase.from("teams").select("id", { count: "exact", head: true }),
+    supabase.from("players").select("id", { count: "exact", head: true }),
+    supabase.from("courses").select("id", { count: "exact", head: true }),
+    supabase.from("tee_sets").select("id", { count: "exact", head: true }),
+    supabase.from("scheduled_rounds").select("id", { count: "exact", head: true }),
   ]);
 
   if (evErr) throw evErr;

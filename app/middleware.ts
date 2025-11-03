@@ -56,14 +56,14 @@ export async function middleware(req: NextRequest) {
   } catch {
     // Option 2: Fallback query
     const { data: link } = await supabase
-      .from("mgc.user_players")
+      .from("user_players")
       .select("player_id")
       .eq("user_id", user.id)
       .single();
 
     if (link?.player_id) {
       const { data: membership } = await supabase
-        .from("mgc.team_members")
+        .from("team_members")
         .select("role")
         .eq("player_id", link.player_id)
         .single();

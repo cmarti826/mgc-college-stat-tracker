@@ -60,7 +60,7 @@ export default async function ShotsPage({ params }: { params: { id: string } }) 
 
   // 1. Fetch round
   const { data: round, error: roundErr } = await supabase
-    .from("mgc.scheduled_rounds")
+    .from("scheduled_rounds")
     .select("id, player_id, course_id, tee_set_id, date")
     .eq("id", roundId)
     .single();
@@ -78,21 +78,21 @@ export default async function ShotsPage({ params }: { params: { id: string } }) 
   ] = await Promise.all([
     round.player_id
       ? supabase
-          .from("mgc.players")
+          .from("players")
           .select("full_name")
           .eq("id", round.player_id)
           .single()
       : Promise.resolve({ data: null } as any),
     round.course_id
       ? supabase
-          .from("mgc.courses")
+          .from("courses")
           .select("name")
           .eq("id", round.course_id)
           .single()
       : Promise.resolve({ data: null } as any),
     round.tee_set_id
       ? supabase
-          .from("mgc.tee_sets")
+          .from("tee_sets")
           .select("name")
           .eq("id", round.tee_set_id)
           .single()
@@ -108,7 +108,7 @@ export default async function ShotsPage({ params }: { params: { id: string } }) 
 
   // 3. Fetch shots
   const { data: shots, error: shotsErr } = await supabase
-    .from("mgc.shots")
+    .from("shots")
     .select(`
       id,
       hole_number,

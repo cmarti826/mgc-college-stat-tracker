@@ -30,7 +30,7 @@ export default async function RoundSummaryPage({
 
   // 1. Load round
   const { data: round, error: roundErr } = await supabase
-    .from("mgc.scheduled_rounds")
+    .from("scheduled_rounds")
     .select("id, date, type, status, notes, player_id, course_id, tee_set_id")
     .eq("id", roundId)
     .single();
@@ -48,21 +48,21 @@ export default async function RoundSummaryPage({
   ] = await Promise.all([
     round.player_id
       ? supabase
-          .from("mgc.players")
+          .from("players")
           .select("full_name")
           .eq("id", round.player_id)
           .single()
       : Promise.resolve({ data: null } as any),
     round.course_id
       ? supabase
-          .from("mgc.courses")
+          .from("courses")
           .select("name")
           .eq("id", round.course_id)
           .single()
       : Promise.resolve({ data: null } as any),
     round.tee_set_id
       ? supabase
-          .from("mgc.tee_sets")
+          .from("tee_sets")
           .select("name")
           .eq("id", round.tee_set_id)
           .single()
@@ -75,7 +75,7 @@ export default async function RoundSummaryPage({
 
   // 3. Totals from view
   const { data: totals, error: totalsErr } = await supabase
-    .from("mgc.v_round_totals")
+    .from("v_round_totals")
     .select(
       "strokes, putts, penalty_strokes, sg_total, sg_ott, sg_app, sg_arg, sg_putt"
     )
@@ -88,7 +88,7 @@ export default async function RoundSummaryPage({
 
   // 4. Hole-by-hole
   const { data: holes, error: holesErr } = await supabase
-    .from("mgc.v_hole_totals")
+    .from("v_hole_totals")
     .select("hole_number, strokes, putts, penalty_strokes, sg_total")
     .eq("round_id", roundId)
     .order("hole_number", { ascending: true });

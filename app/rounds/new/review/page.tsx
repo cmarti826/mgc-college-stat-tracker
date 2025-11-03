@@ -37,7 +37,7 @@ export default async function ReviewRound() {
 
   // 2. Get latest round for this user
   const { data: userPlayer, error: linkErr } = await supabase
-    .from("mgc.user_players")
+    .from("user_players")
     .select("player_id")
     .eq("user_id", user.id)
     .single();
@@ -57,7 +57,7 @@ export default async function ReviewRound() {
   }
 
   const { data: round, error: roundErr } = await supabase
-    .from("mgc.scheduled_rounds")
+    .from("scheduled_rounds")
     .select(
       "id, player_id, course_id, tee_set_id, round_date, name, notes, status, type, created_at"
     )
@@ -89,17 +89,17 @@ export default async function ReviewRound() {
     { data: tee },
   ] = await Promise.all([
     supabase
-      .from("mgc.players")
+      .from("players")
       .select("full_name")
       .eq("id", round.player_id)
       .single(),
     supabase
-      .from("mgc.courses")
+      .from("courses")
       .select("name")
       .eq("id", round.course_id)
       .single(),
     supabase
-      .from("mgc.tee_sets")
+      .from("tee_sets")
       .select("name")
       .eq("id", round.tee_set_id)
       .single(),

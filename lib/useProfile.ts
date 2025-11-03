@@ -39,7 +39,7 @@ export function useProfile(): Profile {
         }
 
         const { data: link, error: linkError } = await supabase
-          .from("mgc.user_players")
+          .from("user_players")
           .select("player_id")
           .eq("user_id", authData.user.id)
           .maybeSingle();
@@ -53,7 +53,7 @@ export function useProfile(): Profile {
         }
 
         const { data: player, error: playerError } = await supabase
-          .from("mgc.players")
+          .from("players")
           .select("id")
           .eq("id", link.player_id)
           .single();
@@ -61,7 +61,7 @@ export function useProfile(): Profile {
         if (playerError) throw playerError;
 
         const { data: membership, error: membershipError } = await supabase
-          .from("mgc.team_members")
+          .from("team_members")
           .select("role")
           .eq("player_id", player.id)
           .maybeSingle();

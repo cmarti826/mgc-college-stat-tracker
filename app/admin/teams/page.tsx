@@ -8,7 +8,7 @@ export const dynamic = 'force-dynamic' // ← ADD THIS
 
 async function loadData() {
   const supabase = await createServerSupabase();
-  const teamQuery = supabase.from("mgc.teams").select("id, name, school, created_at").order("name");
+  const teamQuery = supabase.from("teams").select("id, name, school, created_at").order("name");
   const memberQuery = supabase.from("team_members").select("id, team_id, player_id");
   const [{ data: teams }, { data: members }] = await Promise.all([teamQuery, memberQuery]);
   const counts = new Map<string, number>();
@@ -22,7 +22,7 @@ async function createTeam(formData: FormData) {
   const name = String(formData.get("name") || "").trim();
   const school = String(formData.get("school") || "").trim() || null;
   if (!name) throw new Error("Team name is required.");
-  const { error } = await supabase.from("mgc.teams").insert({ name, school });
+  const { error } = await supabase.from("teams").insert({ name, school });
   if (error) throw error;
   revalidatePath("/admin/teams");
 }
@@ -31,7 +31,7 @@ async function deleteTeam(teamId: string) {
   "use server";
   const supabase = await createServerSupabase();
   await supabase.from("team_members").delete().eq("team_id", teamId);
-  const { error } = await supabase.from("mgc.teams").delete().eq("id", teamId);
+  const { error } = await supabase.from("teams").delete().eq("id", teamId);
   if (error) throw error;
   revalidatePath("/admin/teams");
 }

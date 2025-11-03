@@ -25,13 +25,13 @@ export default async function TeeSetsIndex() {
   const supabase = createServerSupabaseReadOnly();
 
   const teeSetsQuery = supabase
-    .from("mgc.tee_sets")
+    .from("tee_sets")
     .select("id, course_id, name, tee_name, rating, slope, par")
     .order("tee_name", { ascending: true })
     .returns<TeeSetRow[]>();
 
   const coursesQuery = supabase
-    .from("mgc.courses")
+    .from("courses")
     .select("id, name")
     .order("name", { ascending: true })
     .returns<CourseRow[]>();

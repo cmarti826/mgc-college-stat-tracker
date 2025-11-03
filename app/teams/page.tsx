@@ -11,10 +11,10 @@ export default async function TeamsPage() {
 
   const [{ data: teams, error: teamsError }, { data: roster }] = await Promise.all([
     supabase
-      .from("mgc.teams")
+      .from("teams")
       .select("id, name, school, created_at")
       .order("name", { ascending: true }),
-    supabase.from("mgc.team_members").select("team_id, player_id"),
+    supabase.from("team_members").select("team_id, player_id"),
   ]);
 
   if (teamsError) {

@@ -46,7 +46,7 @@ async function createTeeSet(formData: FormData) {
 
   // Insert tee set
   const { data: teeSet, error: insertError } = await supabase
-    .from("mgc.tee_sets")
+    .from("tee_sets")
     .insert({
       course_id,
       name,
@@ -89,7 +89,7 @@ export default async function CreateTeeSetPage() {
   }
 
   const { data: courses, error } = await supabase
-    .from("mgc.courses")
+    .from("courses")
     .select("id, name")
     .order("name", { ascending: true });
 

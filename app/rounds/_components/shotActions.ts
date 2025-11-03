@@ -142,7 +142,7 @@ export async function saveShotsAction(input: UiPayload) {
   );
 
   const { error: delErr } = await supabase
-    .from("mgc.shots") // ← Fixed: mgc.shots
+    .from("shots") // ← Fixed: mgc.shots
     .delete()
     .eq("round_id", roundId)
     .in("hole_number", holesTouched);
@@ -152,7 +152,7 @@ export async function saveShotsAction(input: UiPayload) {
     return { error: `Failed to clear existing shots: ${delErr.message}` };
   }
 
-  const { error: insErr } = await supabase.from("mgc.shots").insert(records);
+  const { error: insErr } = await supabase.from("shots").insert(records);
   if (insErr) {
     console.error("Insert shots error:", insErr);
     return { error: `Failed to save shots: ${insErr.message}` };

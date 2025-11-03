@@ -24,7 +24,7 @@ async function createRound(formData: FormData) {
   }
 
   const { data, error } = await supabase
-    .from("mgc.scheduled_rounds")
+    .from("scheduled_rounds")
     .insert({
       player_id,
       course_id,
@@ -61,7 +61,7 @@ async function loadData() {
   }
 
   const { data: link, error: linkErr } = await supabase
-    .from("mgc.user_players")
+    .from("user_players")
     .select("player_id")
     .eq("user_id", user!.id)
     .maybeSingle();
@@ -71,7 +71,7 @@ async function loadData() {
   }
 
   const { data: courses, error: cErr } = await supabase
-    .from("mgc.courses")
+    .from("courses")
     .select("id, name")
     .order("name", { ascending: true });
 
@@ -80,7 +80,7 @@ async function loadData() {
   }
 
   const { data: teeSets, error: tErr } = await supabase
-    .from("mgc.tee_sets")
+    .from("tee_sets")
     .select("id, name, course_id, rating, slope, par")
     .order("name", { ascending: true });
 

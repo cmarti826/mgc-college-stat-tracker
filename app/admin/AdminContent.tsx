@@ -33,17 +33,17 @@ export default async function AdminContent() {
     { data: profiles },
     { data: rounds },
   ] = await Promise.all([
-    supabase.from("mgc.players").select("id, full_name, grad_year").order("full_name"),
-    supabase.from("mgc.courses").select("id, name, city, state").order("name"),
-    supabase.from("mgc.tee_sets").select("id, name, course_id, par, rating, slope").order("name"),
-    supabase.from("mgc.teams").select("id, name, school, created_at").order("name"),
+    supabase.from("players").select("id, full_name, grad_year").order("full_name"),
+    supabase.from("courses").select("id, name, city, state").order("name"),
+    supabase.from("tee_sets").select("id, name, course_id, par, rating, slope").order("name"),
+    supabase.from("teams").select("id, name, school, created_at").order("name"),
     supabase
-      .from("mgc.team_members")
+      .from("team_members")
       .select("id, team_id, user_id, player_id, role, created_at")
       .order("created_at", { ascending: false }),
     supabase.from("profiles").select("id, full_name, default_team_id").order("full_name"),
     supabase
-      .from("mgc.scheduled_rounds")
+      .from("scheduled_rounds")
       .select("id, date, player_id, course_id, tee_set_id, team_id, type, status, name, created_at")
       .order("created_at", { ascending: false })
       .limit(25),

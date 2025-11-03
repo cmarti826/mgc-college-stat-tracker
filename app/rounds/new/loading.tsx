@@ -42,7 +42,7 @@ export default async function NewRoundPage() {
 
   // 2. Fetch player link
   const { data: userPlayer, error: linkErr } = await supabase
-    .from("mgc.user_players")
+    .from("user_players")
     .select("player_id")
     .eq("user_id", user.id)
     .single();
@@ -68,15 +68,15 @@ export default async function NewRoundPage() {
     { data: teeSets, error: tErr },
   ] = await Promise.all([
     supabase
-      .from("mgc.players")
+      .from("players")
       .select("id, first_name, last_name, grad_year")
       .order("last_name", { ascending: true }),
     supabase
-      .from("mgc.courses")
+      .from("courses")
       .select("id, name")
       .order("name", { ascending: true }),
     supabase
-      .from("mgc.tee_sets")
+      .from("tee_sets")
       .select("id, course_id, name, rating, slope, par")
       .order("name", { ascending: true }),
   ]);

@@ -279,3 +279,4 @@ export async function deleteRound(formData: FormData): Promise<void> {
   revalidatePath("/admin");
   revalidatePath("/rounds");
 }
+

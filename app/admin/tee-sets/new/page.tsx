@@ -1,5 +1,6 @@
 // app/admin/tee-sets/new/page.tsx
-import { revalidatePath, redirect } from "next/navigation";
+import { redirect } from "next/navigation";
+import { revalidatePath } from "next/cache";  // ← FIXED
 import { createServerSupabase } from "@/lib/supabase/server";
 import NavAdmin from "../../NavAdmin";
 
@@ -33,7 +34,7 @@ async function createTeeSet(formData: FormData) {
   if (holesErr) throw holesErr;
 
   revalidatePath("/admin");
-  redirect("/admin");  // ← GOES TO DASHBOARD
+  redirect("/admin");
 }
 
 export default async function AdminNewTeeSet() {

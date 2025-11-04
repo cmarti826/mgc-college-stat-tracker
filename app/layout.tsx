@@ -12,11 +12,11 @@ export const metadata = {
   },
   description: "Advanced stat tracking for high school golf teams and coaches.",
   keywords: ["golf", "stats", "high school", "coach", "player", "MGC", "scorecard"],
-  authors: [{ name: "MGC Golf" }],
+  authors: [{ name: "Chad Marti" }],
   viewport: "width=device-width, initial-scale=1",
   themeColor: "#3C3B6E",
   icons: {
-    icon: "/favicon.ico",
+    icon: "public/favicon.ico",
   },
 };
 
@@ -66,7 +66,7 @@ export default function RootLayout({
         <footer className="mt-16 border-t border-gray-200 bg-white">
           <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-6">
             <div className="flex flex-col sm:flex-row items-center justify-between gap-4 text-sm text-gray-600">
-              <p>© {new Date().getFullYear()} MGC Golf. All rights reserved.</p>
+              <p>© {new Date().getFullYear()} Marti Golf Center. All rights reserved.</p>
               <div className="flex items-center gap-6">
                 <Link href="/privacy" className="hover:text-gray-900 transition-colors">
                   Privacy

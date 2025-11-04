@@ -5,7 +5,7 @@
 import * as React from "react";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
-import { Menu, X, Home, Users, Flag, LayoutDashboard, LogOut, User } from "lucide-react";
+import { Menu, X, Home, Users, Flag, LayoutDashboard, LogOut, User, Edit } from "lucide-react";
 
 // Fallback stub for useUser to avoid build errors when '@supabase/auth-helpers-react' is not installed.
 // Replace this stub with the real auth hook (e.g., from Supabase) when you add that dependency.
@@ -16,10 +16,11 @@ import { Button } from "@/components/Button";
 import LogoutButton from "@/components/LogoutButton";
 
 const NAV_ITEMS = [
-  { href: "/", label: "Home", icon: <Home className="h-4 w-4" /> },
+  { href: "/dashboard", label: "Home", icon: <Home className="h-4 w-4" /> },
   { href: "/teams", label: "Teams", icon: <Users className="h-4 w-4" /> },
   { href: "/rounds", label: "Rounds", icon: <Flag className="h-4 w-4" /> },
   { href: "/courses", label: "Courses", icon: <LayoutDashboard className="h-4 w-4" /> },
+  { href: "/admin", label: "Admin", icon: <Edit className="h-4 w-4" /> },
 ];
 
 export function Nav() {

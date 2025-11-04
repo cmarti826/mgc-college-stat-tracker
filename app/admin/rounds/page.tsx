@@ -13,7 +13,7 @@ async function loadData() {
   const [
     { data: players },
     { data: courses },
-    { data: tees },
+    { data: tee_sets },
     { data: rounds },
   ] = await Promise.all([
     supabase.from("players").select("id, full_name").order("full_name"),
@@ -28,7 +28,7 @@ async function loadData() {
   return { 
     players: players ?? [], 
     courses: courses ?? [], 
-    tees: tees ?? [], 
+    tee_sets: tee_sets ?? [], 
     rounds: rounds ?? [] 
   };
 }
@@ -69,11 +69,11 @@ async function deleteRound(roundId: string) {
 }
 
 export default async function AdminRoundsPage() {
-  const { players, courses, tees, rounds } = await loadData();
+  const { players, courses, tee_sets, rounds } = await loadData();
 
   const playerName = (pid: string) => players.find((p: any) => p.id === pid)?.full_name ?? "—";
   const courseName = (cid: string) => courses.find((c: any) => c.id === cid)?.name ?? "—";
-  const teeName = (tid: string) => tees.find((t: any) => t.id === tid)?.name ?? "—";
+  const teeName = (tid: string) => tee_sets.find((t: any) => t.id === tid)?.name ?? "—";
 
   return (
     <div className="p-6 space-y-6">
@@ -101,7 +101,7 @@ export default async function AdminRoundsPage() {
             </div>
 
             <div className="grid grid-cols-2 gap-3">
-              <CourseTeePicker courses={courses} tees={tees} />
+              <CourseTeePicker courses={courses} tee_sets={tee_sets} />
             </div>
 
             <div className="grid grid-cols-2 gap-3">

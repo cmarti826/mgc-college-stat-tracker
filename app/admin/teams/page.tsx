@@ -3,8 +3,15 @@ import { createServerSupabase } from "@/lib/supabase/server";
 import Link from "next/link";
 import NavAdmin from "../NavAdmin";
 import { revalidatePath } from "next/cache";
+import DeleteTeamButton from "./DeleteTeamButton";
 
 export const dynamic = "force-dynamic";
+
+export const viewport = {
+  width: "device-width",
+  initialScale: 1,
+  maximumScale: 1,
+};
 
 async function createTeam(formData: FormData) {
   "use server";
@@ -15,19 +22,6 @@ async function createTeam(formData: FormData) {
   if (!name) throw new Error("Team name is required.");
 
   const { error } = await supabase.from("teams").insert({ name, school });
-  if (error) throw error;
-
-  revalidatePath("/admin/teams");
-}
-
-async function deleteTeam(formData: FormData) {
-  "use server";
-  const supabase = createServerSupabase();
-  const id = String(formData.get("id") || "");
-
-  if (!id) throw new Error("Team ID is required.");
-
-  const { error } = await supabase.from("teams").delete().eq("id", id);
   if (error) throw error;
 
   revalidatePath("/admin/teams");
@@ -54,7 +48,6 @@ export default async function AdminTeamsPage() {
         </button>
       </div>
 
-      {/* Create Form */}
       <form action={createTeam} className="space-y-3 rounded-2xl border bg-white p-4 max-w-md">
         <div>
           <label className="block text-sm font-medium text-gray-700 mb-1">
@@ -85,7 +78,6 @@ export default async function AdminTeamsPage() {
         </button>
       </form>
 
-      {/* Teams List */}
       <div className="space-y-3">
         {teams?.map((team) => (
           <div
@@ -103,7 +95,6 @@ export default async function AdminTeamsPage() {
             </div>
 
             <div className="flex items-center gap-2">
-              {/* VIEW ROSTER LINK */}
               <Link
                 href={`/admin/teams/${team.id}/roster`}
                 className="px-3 py-1.5 rounded-md border border-gray-300 text-sm font-medium hover:bg-gray-50 transition"
@@ -111,21 +102,7 @@ export default async function AdminTeamsPage() {
                 View Roster
               </Link>
 
-              {/* DELETE BUTTON */}
-              <form action={deleteTeam}>
-                <input type="hidden" name="id" value={team.id} />
-                <button
-                  type="submit"
-                  className="px-3 py-1.5 rounded-md border border-red-300 text-red-700 text-sm font-medium hover:bg-red-50 transition"
-                  onClick={(e) => {
-                    if (!confirm(`Delete team "${team.name}"? This cannot be undone.`)) {
-                      e.preventDefault();
-                    }
-                  }}
-                >
-                  Delete
-                </button>
-              </form>
+              <DeleteTeamButton teamId={team.id} teamName={team.name} />
             </div>
           </div>
         ))}

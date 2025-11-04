@@ -101,7 +101,7 @@ export default async function AdminRoundsPage() {
                 <div>
                   <div className="font-medium">{r.name ?? "Round"}</div>
                   <div className="text-xs text-gray-500">
-                    {r.round_date ?? r.date ?? "—"} • {playerName(r.player_id)} • {courseName(r.course_id)} • {teeName(r.tee_id)}
+                    {r.round_date ?? r.round_date ?? "—"} • {playerName(r.player_id)} • {courseName(r.course_id)} • {teeName(r.tee_id)}
                     {r.event_id ? " • linked to event" : ""}
                   </div>
                 </div>

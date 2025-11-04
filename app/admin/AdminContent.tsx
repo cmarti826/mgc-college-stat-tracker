@@ -32,7 +32,7 @@ export default async function AdminContent() {
     { data: profiles },
     { data: rounds },
   ] = await Promise.all([
-    supabase.from("players").select("id, full_name, grad_year").order("full_name"),
+    supabase.from("players").select("id, full_name, grad_year, user_players!user_id ( user:profiles ( email ) )").order("full_name"),
     supabase.from("courses").select("id, name, city, state").order("name"),
     supabase.from("tee_sets").select("id, name, course_id, par, rating, slope").order("name"),
     supabase.from("teams").select("id, name, school, created_at").order("name"),

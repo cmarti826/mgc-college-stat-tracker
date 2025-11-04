@@ -48,15 +48,21 @@ export async function createPlayer(formData: FormData): Promise<void> {
 
   if (!full_name) throw new Error("Full name is required.");
 
+  // Insert player with email
   const { data: playerRow, error: playerErr } = await supabase
     .from("players")
-    .insert({ full_name, grad_year })
+    .insert({ 
+      full_name, 
+      grad_year,
+      email: email || null  // ← Save email
+    })
     .select("id")
     .single();
 
   if (playerErr) throw new Error(playerErr.message);
   if (!playerRow) throw new Error("Failed to create player.");
 
+  // If password provided → create auth user
   if (email && tempPassword) {
     const admin = getAdminClient();
 
@@ -72,17 +78,13 @@ export async function createPlayer(formData: FormData): Promise<void> {
 
     const user = created.user;
 
-    const { error: profErr } = await admin
+    await admin
       .from("profiles")
       .upsert({ id: user.id, full_name, role: "player" }, { onConflict: "id" });
 
-    if (profErr) throw new Error(profErr.message);
-
-    const { error: linkErr } = await admin
+    await admin
       .from("user_players")
       .upsert({ user_id: user.id, player_id: playerRow.id }, { onConflict: "user_id" });
-
-    if (linkErr) throw new Error(linkErr.message);
   }
 
   revalidatePath("/admin");

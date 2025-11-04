@@ -32,7 +32,7 @@ export default async function AdminContent() {
     { data: profiles },
     { data: rounds },
   ] = await Promise.all([
-    supabase.from("players").select("id, full_name, grad_year, user_players!user_id ( user:profiles ( email ) )").order("full_name"),
+    supabase.from("players").select("id, full_name, grad_year, email").order("full_name"),
     supabase.from("courses").select("id, name, city, state").order("name"),
     supabase.from("tee_sets").select("id, name, course_id, par, rating, slope").order("name"),
     supabase.from("teams").select("id, name, school, created_at").order("name"),
@@ -276,26 +276,27 @@ export default async function AdminContent() {
 
       {/* ======== Lists with Delete buttons ======== */}
       <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-        <Card title="Players">
-          <ul className="divide-y">
-            {(players ?? []).map((p) => (
-              <li key={p.id} className="flex items-center justify-between py-2">
-                <div>
-                  <div className="font-medium">{p.full_name}</div>
-                  <div className="text-xs text-gray-600">grad: {p.grad_year ?? "—"}</div>
-                </div>
-                <div className="flex items-center gap-2">
-                  <code className="rounded bg-gray-100 px-1 py-0.5 text-xs">{p.id}</code>
-                  <form action={deletePlayer}>
-                    <input type="hidden" name="id" value={p.id} />
-                    <Danger>Delete</Danger>
-                  </form>
-                </div>
-              </li>
-            ))}
-            {(!players || players.length === 0) && <li className="py-2 text-sm text-gray-500">No players yet.</li>}
-          </ul>
-        </Card>
+     <Card title="Players">
+  <ul className="divide-y">
+    {(players ?? []).map((p) => (
+      <li key={p.id} className="flex items-center justify-between py-2">
+        <div>
+          <div className="font-medium">{p.full_name}</div>
+          <div className="text-xs text-gray-600">
+            grad: {p.grad_year ?? "—"} · email: {p.email ?? "—"}
+          </div>
+        </div>
+        <div className="flex items-center gap-2">
+          <code className="rounded bg-gray-100 px-1 py-0.5 text-xs">{p.id}</code>
+          <form action={deletePlayer}>
+            <input type="hidden" name="id" value={p.id} />
+            <Danger>Delete</Danger>
+          </form>
+        </div>
+      </li>
+    ))}
+  </ul>
+</Card>
 
         <Card title="Courses">
           <ul className="divide-y">

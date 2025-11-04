@@ -9,21 +9,21 @@ export const dynamic = 'force-dynamic' // ← ADD THIS
 
 export default function CourseTeePicker({
   courses,
-  tees,
+  tee_sets,
   initialCourseId,
-  fieldName = "tee_set_id", // default to tee_set_id
+  fieldName = "tee_sets_id", // default to tee_set_id
 }: {
   courses: Option[];
-  tees: Option[];                // pass tee sets here
+  tee_sets: Option[];                // pass tee sets here
   initialCourseId?: string;
   fieldName?: string;            // allow override (e.g., "tee_id" if needed)
 }) {
   const [courseId, setCourseId] = useState<string | undefined>(initialCourseId);
 
   const filteredTees = useMemo(() => {
-    if (!courseId) return tees;
-    return (tees ?? []).filter((t) => !t.course_id || t.course_id === courseId);
-  }, [tees, courseId]);
+    if (!courseId) return tee_sets;
+    return (tee_sets ?? []).filter((t) => !t.course_id || t.course_id === courseId);
+  }, [tee_sets, courseId]);
 
   return (
     <>

@@ -1,5 +1,5 @@
 // app/admin/tee-sets/new/page.tsx
-import { revalidatePath } from "next/cache";
+import { revalidatePath, redirect } from "next/navigation";
 import { createServerSupabase } from "@/lib/supabase/server";
 import NavAdmin from "../../NavAdmin";
 
@@ -32,7 +32,8 @@ async function createTeeSet(formData: FormData) {
   const { error: holesErr } = await supabase.from("tee_set_holes").insert(rows);
   if (holesErr) throw holesErr;
 
-  revalidatePath("/admin/tee-sets");
+  revalidatePath("/admin");
+  redirect("/admin");  // ← GOES TO DASHBOARD
 }
 
 export default async function AdminNewTeeSet() {
@@ -72,7 +73,7 @@ export default async function AdminNewTeeSet() {
           </div>
         </div>
         <button 
-          type="submit"  // ← THIS WAS MISSING
+          type="submit"
           className="px-4 py-2 rounded-xl bg-blue-600 text-white"
         >
           Create

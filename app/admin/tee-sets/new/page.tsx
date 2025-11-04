@@ -3,7 +3,7 @@ import { revalidatePath } from "next/cache";
 import { createServerSupabase } from "@/lib/supabase/server";
 import NavAdmin from "../../NavAdmin";
 
-export const dynamic = 'force-dynamic' // ← ADD THIS
+export const dynamic = 'force-dynamic'
 
 async function createTeeSet(formData: FormData) {
   "use server";
@@ -11,7 +11,6 @@ async function createTeeSet(formData: FormData) {
 
   const course_id = String(formData.get("course_id") || "");
   const name = String(formData.get("name") || "").trim();
-  
   const rating = formData.get("rating") ? Number(formData.get("rating")) : null;
   const slope = formData.get("slope") ? Number(formData.get("slope")) : null;
   const par = formData.get("par") ? Number(formData.get("par")) : null;
@@ -25,9 +24,10 @@ async function createTeeSet(formData: FormData) {
     .single();
   if (error) throw error;
 
-  // Seed 1..18
   const rows = Array.from({ length: 18 }, (_, i) => ({
-    tee_set_id: inserted.id, hole_number: i + 1, yardage: null,
+    tee_set_id: inserted.id,
+    hole_number: i + 1,
+    yardage: null,
   }));
   const { error: holesErr } = await supabase.from("tee_set_holes").insert(rows);
   if (holesErr) throw holesErr;
@@ -48,7 +48,9 @@ export default async function AdminNewTeeSet() {
           <label className="block text-sm">Course</label>
           <select name="course_id" className="w-full border rounded p-2" required>
             <option value="">Select course…</option>
-            {(courses ?? []).map((c: any) => <option key={c.id} value={c.id}>{c.name}</option>)}
+            {(courses ?? []).map((c: any) => (
+              <option key={c.id} value={c.id}>{c.name}</option>
+            ))}
           </select>
         </div>
         <div>
@@ -69,7 +71,12 @@ export default async function AdminNewTeeSet() {
             <input name="par" type="number" className="w-full border rounded p-2" />
           </div>
         </div>
-        <button className="px-4 py-2 rounded-xl bg-blue-600 text-white">Create</button>
+        <button 
+          type="submit"  // ← THIS WAS MISSING
+          className="px-4 py-2 rounded-xl bg-blue-600 text-white"
+        >
+          Create
+        </button>
       </form>
     </div>
   );

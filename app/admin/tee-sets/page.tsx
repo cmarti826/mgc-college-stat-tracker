@@ -59,7 +59,7 @@ export default function ManageTeeSetsPage() {
         // 2) Load tee sets (NO color here)
         const { data: teeSets, error: tsErr } = await supabase
           .from('tee_sets')
-          .select('id,name,tee_name,course_id,rating,slope,par')
+          .select('id,name,course_id,rating,slope,par')
           .order('name', { ascending: true });
         if (tsErr) throw tsErr;
 

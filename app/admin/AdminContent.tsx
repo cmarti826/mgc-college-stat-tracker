@@ -43,7 +43,7 @@ export default async function AdminContent() {
     supabase.from("profiles").select("id, full_name, default_team_id").order("full_name"),
     supabase
       .from("scheduled_rounds")
-      .select("id, date, player_id, course_id, tee_set_id, team_id, type, status, name, created_at")
+      .select("id, round_date, player_id, course_id, tee_set_id, team_id, type, status, name, created_at")
       .order("created_at", { ascending: false })
       .limit(25),
   ]);
@@ -250,7 +250,7 @@ export default async function AdminContent() {
               <li key={r.id} className="flex items-center justify-between py-2 text-sm">
                 <div>
                   <div className="font-medium">
-                    {r.name ?? "Round"} · {r.date ?? "—"} · {r.type ?? "—"} · {r.status ?? "—"}
+                    {r.name ?? "Round"} · {r.round_date ?? "—"} · {r.type ?? "—"} · {r.status ?? "—"}
                   </div>
                   <div className="text-xs text-gray-600">
                     player:{r.player_id} · team:{r.team_id ?? "—"} · course:{r.course_id} · tee:{r.tee_set_id}

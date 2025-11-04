@@ -8,7 +8,6 @@ import { z } from "zod";
 import { createRoundAction, updateRoundAction } from "./actions";
 import { createBrowserSupabase } from "@/lib/supabase/client";
 
-/* ---------- Zod ---------- */
 const HoleSchema = z.object({
   hole_number: z.number().int().min(1).max(18),
   par: z.number().int().min(3).max(6),
@@ -34,8 +33,7 @@ const RoundSchema = z.object({
     .array(HoleSchema)
     .length(18, "Exactly 18 holes required")
     .refine(
-      (holes) =>
-        holes.every((h, i) => h.hole_number === i + 1),
+      (holes) => holes.every((h, i) => h.hole_number === i + 1),
       "Hole numbers must be 1-18 in order"
     ),
 });
@@ -43,7 +41,6 @@ const RoundSchema = z.object({
 export type HoleInput = z.infer<typeof HoleSchema>;
 export type RoundInput = z.infer<typeof RoundSchema>;
 
-/* ---------- Helpers ---------- */
 function empty18(): HoleInput[] {
   return Array.from({ length: 18 }, (_, i) => ({
     hole_number: i + 1,
@@ -69,7 +66,7 @@ async function fetchHoleDefs(teeId?: string, courseId?: string) {
     orderCol: string
   ) => {
     const { data, error } = await supabase
-      .from(`mgc.${table}`)
+      .from(table)
       .select(selectExpr)
       .eq(whereCol, whereVal)
       .order(orderCol);
@@ -78,15 +75,11 @@ async function fetchHoleDefs(teeId?: string, courseId?: string) {
   };
 
   if (teeId) {
-    const t1 =
-      (await trySelect("holes", "tee_id", teeId, "hole_number:number, par, yards", "number")) ??
-      (await trySelect("holes", "tee_id", teeId, "hole_number, par, yards", "hole_number"));
+    const t1 = await trySelect("tee_set_holes", "tee_set_id", teeId, "hole_number, par, yardage", "hole_number");
     if (t1?.length) return t1;
   }
   if (courseId) {
-    const t2 =
-      (await trySelect("holes", "course_id", courseId, "hole_number:number, par, yards", "number")) ??
-      (await trySelect("holes", "course_id", courseId, "hole_number, par, yards", "hole_number"));
+    const t2 = await trySelect("holes", "course_id", courseId, "hole_number, par", "hole_number");
     if (t2?.length) return t2;
   }
   return [];
@@ -103,8 +96,6 @@ function applyHoleDefs(
   });
 }
 
-/* ---------- Component ---------- */
-// app/rounds/_components/RoundEntry.tsx
 type Props = {
   mode: "create" | "edit";
   initialRound: null | { round: any; holes: any[] };
@@ -112,7 +103,6 @@ type Props = {
   courses: Array<{ id: string; name: string }>;
   teeSets: Array<{ id: string; course_id: string; name: string; rating?: number; slope?: number; par?: number }>;
 };
-
 
 export default function RoundEntry({
   mode,
@@ -126,12 +116,9 @@ export default function RoundEntry({
 
   const [playerId, setPlayerId] = useState<string | undefined>(initialRound?.round?.player_id);
   const [courseId, setCourseId] = useState<string | undefined>(initialRound?.round?.course_id);
-  const [teeId, setTeeId] = useState<string | undefined>(initialRound?.round?.tee_id ?? initialRound?.round?.tee_set_id);
+  const [teeId, setTeeId] = useState<string | undefined>(initialRound?.round?.tee_set_id);
   const [roundDate, setRoundDate] = useState<string>(
-    initialRound?.round?.date ??
-      initialRound?.round?.round_date ??
-      initialRound?.round?.played_on ??
-      new Date().toISOString().slice(0, 10)
+    initialRound?.round?.round_date ?? new Date().toISOString().slice(0, 10)
   );
   const [notes, setNotes] = useState<string>(initialRound?.round?.notes ?? "");
   const [eventId, setEventId] = useState<string | undefined>(initialRound?.round?.event_id ?? undefined);
@@ -224,7 +211,6 @@ export default function RoundEntry({
     });
   }
 
-  // Auto-fill hole par/yardage when tee/course changes
   useEffect(() => {
     (async () => {
       const defs = await fetchHoleDefs(teeId, courseId);
@@ -234,7 +220,6 @@ export default function RoundEntry({
     })();
   }, [teeId, courseId]);
 
-  // Keyboard navigation
   const refs = useRef<(HTMLInputElement | null)[][]>([]);
   const reg = (r: number, c: number) => (el: HTMLInputElement | null) => {
     if (!el) return;
@@ -270,7 +255,6 @@ export default function RoundEntry({
 
   return (
     <div className="space-y-6">
-      {/* Sticky header */}
       <div className="sticky top-0 z-10 bg-white/80 backdrop-blur border-b p-4 rounded-xl shadow-sm">
         <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
           <h1 className="text-2xl font-semibold">
@@ -294,7 +278,6 @@ export default function RoundEntry({
           </div>
         </div>
 
-        {/* Stepper */}
         <div className="mt-3 flex items-center gap-2 text-sm">
           {[1, 2, 3].map((s) => (
             <button
@@ -316,11 +299,9 @@ export default function RoundEntry({
         </div>
       </div>
 
-      {/* ---------- STEP 1: Details ---------- */}
       {step === 1 && (
         <section className="space-y-4">
           <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
-            {/* Player */}
             <div className="flex flex-col">
               <label className="text-sm font-medium">Player</label>
               <select
@@ -341,7 +322,6 @@ export default function RoundEntry({
               </select>
             </div>
 
-            {/* Date */}
             <div className="flex flex-col">
               <label className="text-sm font-medium">Date</label>
               <input
@@ -352,7 +332,6 @@ export default function RoundEntry({
               />
             </div>
 
-            {/* Course */}
             <div className="flex flex-col">
               <label className="text-sm font-medium">Course</label>
               <select
@@ -372,7 +351,6 @@ export default function RoundEntry({
               </select>
             </div>
 
-            {/* Tee */}
             <div className="flex flex-col">
               <label className="text-sm font-medium">Tee</label>
               <select
@@ -405,7 +383,6 @@ export default function RoundEntry({
               </button>
             </div>
 
-            {/* Event (optional) */}
             <div className="flex flex-col">
               <label className="text-sm font-medium">Event (optional)</label>
               <input
@@ -417,7 +394,6 @@ export default function RoundEntry({
               />
             </div>
 
-            {/* Notes */}
             <div className="flex flex-col sm:col-span-2 lg:col-span-3">
               <label className="text-sm font-medium">Notes</label>
               <textarea
@@ -430,7 +406,6 @@ export default function RoundEntry({
             </div>
           </div>
 
-          {/* Quick par buttons */}
           <div className="flex items-center gap-2">
             {[3, 4, 5].map((p) => (
               <button
@@ -443,7 +418,6 @@ export default function RoundEntry({
             ))}
           </div>
 
-          {/* Paste scores */}
           <div className="flex items-center gap-2">
             <textarea
               className="rounded-xl border p-2 w-full"
@@ -463,7 +437,6 @@ export default function RoundEntry({
         </section>
       )}
 
-      {/* ---------- STEP 2: Holes ---------- */}
       {step === 2 && (
         <section className="space-y-4">
           <div className="overflow-x-auto rounded-2xl border">
@@ -487,7 +460,6 @@ export default function RoundEntry({
                   <tr key={i} className="border-t">
                     <td className="p-2 font-medium">{h.hole_number}</td>
 
-                    {/* Par */}
                     <td className="p-2">
                       <input
                         ref={reg(i, 0)}
@@ -502,7 +474,6 @@ export default function RoundEntry({
                       />
                     </td>
 
-                    {/* Yards */}
                     <td className="p-2">
                       <input
                         ref={reg(i, 1)}
@@ -518,7 +489,6 @@ export default function RoundEntry({
                       />
                     </td>
 
-                    {/* Strokes */}
                     <td className="p-2">
                       <input
                         ref={reg(i, 2)}
@@ -534,7 +504,6 @@ export default function RoundEntry({
                       />
                     </td>
 
-                    {/* Putts */}
                     <td className="p-2">
                       <input
                         ref={reg(i, 3)}
@@ -550,7 +519,6 @@ export default function RoundEntry({
                       />
                     </td>
 
-                    {/* FIR */}
                     <td className="p-2 text-center">
                       <input
                         type="checkbox"
@@ -563,7 +531,6 @@ export default function RoundEntry({
                       />
                     </td>
 
-                    {/* GIR */}
                     <td className="p-2 text-center">
                       <input
                         type="checkbox"
@@ -573,7 +540,6 @@ export default function RoundEntry({
                       />
                     </td>
 
-                    {/* Up & Down */}
                     <td className="p-2 text-center">
                       <input
                         type="checkbox"
@@ -583,7 +549,6 @@ export default function RoundEntry({
                       />
                     </td>
 
-                    {/* Sand Save */}
                     <td className="p-2 text-center">
                       <input
                         type="checkbox"
@@ -593,7 +558,6 @@ export default function RoundEntry({
                       />
                     </td>
 
-                    {/* Penalty */}
                     <td className="p-2 text-center">
                       <input
                         type="checkbox"
@@ -640,7 +604,6 @@ export default function RoundEntry({
         </section>
       )}
 
-      {/* ---------- STEP 3: Review ---------- */}
       {step === 3 && (
         <section className="space-y-4">
           <div className="flex items-center justify-between">

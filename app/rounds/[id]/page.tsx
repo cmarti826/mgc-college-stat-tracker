@@ -1,8 +1,7 @@
 // app/rounds/[id]/page.tsx
-
 import Link from "next/link";
 import { notFound } from "next/navigation";
-import { createServerSupabase } from "@/lib/supabase/server";
+import { createServerSupabase } from "lib/supabase/server";
 import { format } from "date-fns";
 
 export const dynamic = "force-dynamic";
@@ -28,10 +27,9 @@ export default async function RoundSummaryPage({
   const supabase = createServerSupabase();
   const roundId = params.id;
 
-  // 1. Load round
   const { data: round, error: roundErr } = await supabase
     .from("scheduled_rounds")
-    .select("id, date, type, status, notes, player_id, course_id, tee_set_id")
+    .select("id, round_date, type, status, notes, player_id, course_id, tee_set_id")
     .eq("id", roundId)
     .single();
 
@@ -40,32 +38,19 @@ export default async function RoundSummaryPage({
     notFound();
   }
 
-  // 2. Related names
   const [
     { data: player },
     { data: course },
     { data: tee },
   ] = await Promise.all([
     round.player_id
-      ? supabase
-          .from("players")
-          .select("full_name")
-          .eq("id", round.player_id)
-          .single()
+      ? supabase.from("players").select("full_name").eq("id", round.player_id).single()
       : Promise.resolve({ data: null } as any),
     round.course_id
-      ? supabase
-          .from("courses")
-          .select("name")
-          .eq("id", round.course_id)
-          .single()
+      ? supabase.from("courses").select("name").eq("id", round.course_id).single()
       : Promise.resolve({ data: null } as any),
     round.tee_set_id
-      ? supabase
-          .from("tee_sets")
-          .select("name")
-          .eq("id", round.tee_set_id)
-          .single()
+      ? supabase.from("tee_sets").select("name").eq("id", round.tee_set_id).single()
       : Promise.resolve({ data: null } as any),
   ]);
 
@@ -73,29 +58,21 @@ export default async function RoundSummaryPage({
   const courseName = course?.name ?? "Unknown Course";
   const teeName = tee?.name ?? "Unknown Tee";
 
-  // 3. Totals from view
   const { data: totals, error: totalsErr } = await supabase
     .from("v_round_totals")
-    .select(
-      "strokes, putts, penalty_strokes, sg_total, sg_ott, sg_app, sg_arg, sg_putt"
-    )
+    .select("strokes, putts, penalty_strokes, sg_total, sg_ott, sg_app, sg_arg, sg_putt")
     .eq("round_id", roundId)
     .single();
 
-  if (totalsErr) {
-    console.error("Totals view error:", totalsErr);
-  }
+  if (totalsErr) console.error("Totals view error:", totalsErr);
 
-  // 4. Hole-by-hole
   const { data: holes, error: holesErr } = await supabase
     .from("v_hole_totals")
     .select("hole_number, strokes, putts, penalty_strokes, sg_total")
     .eq("round_id", roundId)
     .order("hole_number", { ascending: true });
 
-  if (holesErr) {
-    console.error("Hole totals error:", holesErr);
-  }
+  if (holesErr) console.error("Hole totals error:", holesErr);
 
   const holeRows: HoleAgg[] = (holes ?? []).map((h) => ({
     hole_number: h.hole_number,
@@ -127,24 +104,21 @@ export default async function RoundSummaryPage({
     sg: sum(holeRows, "sg_total"),
   };
 
-  // 5. Card values
-    const strokesValue = totals?.strokes ?? allSum.strokes ?? "—";
-    const puttsValue = totals?.putts ?? allSum.putts ?? "—";
-    const penaltiesValue = totals?.penalty_strokes ?? allSum.pens ?? "—";
-    const sgNum = totals?.sg_total ?? allSum.sg;
-    const sgValue =
-      typeof sgNum === "number" ? sgNum.toFixed(2) : "—";
+  const strokesValue = totals?.strokes ?? allSum.strokes ?? "—";
+  const puttsValue = totals?.putts ?? allSum.putts ?? "—";
+  const penaltiesValue = totals?.penalty_strokes ?? allSum.pens ?? "—";
+  const sgNum = totals?.sg_total ?? allSum.sg;
+  const sgValue = typeof sgNum === "number" ? sgNum.toFixed(2) : "—";
 
   return (
     <div className="mx-auto max-w-5xl p-6 space-y-6">
-      {/* Header */}
       <div className="flex flex-col sm:flex-row sm:items-start sm:justify-between gap-4">
         <div>
           <h1 className="text-2xl font-bold text-gray-900">
             {playerName} — {courseName} ({teeName})
           </h1>
           <p className="text-sm text-gray-600 mt-1">
-            {round.date ? format(new Date(round.date), "MMMM d, yyyy") : "—"} ·{" "}
+            {round.round_date ? format(new Date(round.round_date), "MMMM d, yyyy") : "—"} ·{" "}
             {round.type} · {round.status}
           </p>
           {round.notes && (
@@ -167,7 +141,6 @@ export default async function RoundSummaryPage({
         </div>
       </div>
 
-      {/* Quick Cards */}
       <div className="grid grid-cols-2 sm:grid-cols-4 gap-4">
         <Card label="Strokes" value={strokesValue} />
         <Card label="Putts" value={puttsValue} />
@@ -175,7 +148,6 @@ export default async function RoundSummaryPage({
         <Card label="SG Total" value={sgValue} />
       </div>
 
-      {/* Hole-by-hole Table */}
       <div className="bg-white rounded-xl border shadow-sm overflow-hidden">
         <div className="overflow-x-auto">
           <table className="w-full text-sm">
@@ -237,7 +209,6 @@ export default async function RoundSummaryPage({
   );
 }
 
-// UI Components
 function Card({ label, value }: { label: string; value: number | string }) {
   return (
     <div className="bg-white rounded-xl border p-4 shadow-sm">
@@ -249,28 +220,14 @@ function Card({ label, value }: { label: string; value: number | string }) {
   );
 }
 
-function Th({
-  children,
-  className = "",
-}: {
-  children: React.ReactNode;
-  className?: string;
-}) {
+function Th({ children, className = "" }: { children: React.ReactNode; className?: string }) {
   return (
-    <th
-      className={`px-3 py-2 text-left text-xs font-medium text-gray-700 uppercase tracking-wider ${className}`}
-    >
+    <th className={`px-3 py-2 text-left text-xs font-medium text-gray-700 uppercase tracking-wider ${className}`}>
       {children}
     </th>
   );
 }
 
-function Td({
-  children,
-  className = "",
-}: {
-  children: React.ReactNode;
-  className?: string;
-}) {
+function Td({ children, className = "" }: { children: React.ReactNode; className?: string }) {
   return <td className={`px-3 py-2 text-sm ${className}`}>{children}</td>;
 }

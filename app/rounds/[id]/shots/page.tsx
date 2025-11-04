@@ -1,5 +1,4 @@
 // app/rounds/[id]/shots/page.tsx
-
 import Link from "next/link";
 import { createServerSupabase } from "@/lib/supabase/server";
 import { notFound } from "next/navigation";
@@ -61,7 +60,7 @@ export default async function ShotsPage({ params }: { params: { id: string } }) 
   // 1. Fetch round
   const { data: round, error: roundErr } = await supabase
     .from("scheduled_rounds")
-    .select("id, player_id, course_id, tee_set_id, date")
+    .select("id, player_id, course_id, tee_set_id, round_date")
     .eq("id", roundId)
     .single();
 
@@ -77,25 +76,13 @@ export default async function ShotsPage({ params }: { params: { id: string } }) 
     { data: tee },
   ] = await Promise.all([
     round.player_id
-      ? supabase
-          .from("players")
-          .select("full_name")
-          .eq("id", round.player_id)
-          .single()
+      ? supabase.from("players").select("full_name").eq("id", round.player_id).single()
       : Promise.resolve({ data: null } as any),
     round.course_id
-      ? supabase
-          .from("courses")
-          .select("name")
-          .eq("id", round.course_id)
-          .single()
+      ? supabase.from("courses").select("name").eq("id", round.course_id).single()
       : Promise.resolve({ data: null } as any),
     round.tee_set_id
-      ? supabase
-          .from("tee_sets")
-          .select("name")
-          .eq("id", round.tee_set_id)
-          .single()
+      ? supabase.from("tee_sets").select("name").eq("id", round.tee_set_id).single()
       : Promise.resolve({ data: null } as any),
   ]);
 
@@ -103,7 +90,7 @@ export default async function ShotsPage({ params }: { params: { id: string } }) 
     player_name: player?.full_name ?? "Unknown Player",
     course_name: course?.name ?? "Unknown Course",
     tee_name: tee?.name ?? "Unknown Tee",
-    round_date: round.date ? new Date(round.date).toLocaleDateString() : "—",
+    round_date: round.round_date ? new Date(round.round_date).toLocaleDateString() : "—",
   };
 
   // 3. Fetch shots
@@ -134,7 +121,6 @@ export default async function ShotsPage({ params }: { params: { id: string } }) 
 
   if (shotsErr) {
     console.error("Shots fetch error:", shotsErr);
-    // Continue with empty shots
   }
 
   // 4. Convert to ShotEditor format
@@ -150,7 +136,7 @@ export default async function ShotsPage({ params }: { params: { id: string } }) 
       note: s.note ?? undefined,
       lie: toUI(s.start_lie),
       result_lie: toUI(s.end_lie),
-      distance_to_hole_m: null, // Not used in ShotEditor
+      distance_to_hole_m: null,
       result_distance_to_hole_m: null,
       putt: s.putt,
       penalty_strokes: s.penalty_strokes,

@@ -1,5 +1,4 @@
 // app/rounds/page.tsx
-
 import Link from 'next/link';
 import { createServerSupabase } from '@/lib/supabase/server';
 import { format } from 'date-fns';
@@ -30,7 +29,7 @@ export default async function RoundsPage() {
       team:team_id ( name ),
       course:course_id ( name )
     `)
-    .order('date', { ascending: false });
+    .order('round_date', { ascending: false }); // ← FIXED
 
   if (error) {
     return (

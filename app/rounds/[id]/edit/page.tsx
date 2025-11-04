@@ -1,5 +1,4 @@
 // app/rounds/[id]/edit/page.tsx
-
 import { createServerSupabase } from '@/lib/supabase/server';
 import { notFound } from 'next/navigation';
 import RoundEntry from '../../_components/RoundEntry';
@@ -31,7 +30,7 @@ type Round = {
   course_id: string;
   tee_set_id: string;
   event_id?: string | null;
-  played_on: string;
+  round_date: string;
   notes?: string | null;
 };
 
@@ -56,7 +55,6 @@ export default async function EditRoundPage({ params }: Props) {
   const supabase = createServerSupabase();
   const roundId = params.id;
 
-  // 1. Fetch all required data
   const [
     { data: players, error: pErr },
     { data: courses, error: cErr },
@@ -78,7 +76,7 @@ export default async function EditRoundPage({ params }: Props) {
       .order('name', { ascending: true }),
     supabase
       .from('scheduled_rounds')
-      .select('id, player_id, course_id, tee_set_id, event_id, played_on, notes')
+      .select('id, player_id, course_id, tee_set_id, event_id, round_date, notes')
       .eq('id', roundId)
       .single(),
     supabase
@@ -88,7 +86,6 @@ export default async function EditRoundPage({ params }: Props) {
       .order('hole_number', { ascending: true }),
   ]);
 
-  // 2. Handle errors
   if (rErr || !round) {
     console.error('Round fetch error:', rErr);
     notFound();
@@ -99,7 +96,6 @@ export default async function EditRoundPage({ params }: Props) {
   if (tErr) console.error('Tee sets fetch error:', tErr);
   if (hErr) console.error('Holes fetch error:', hErr);
 
-  // 3. Format holes to match RoundEntry expectations
   const formattedHoles = (holes ?? []).map((h: Hole) => ({
     hole_number: h.hole_number,
     par: h.par,
@@ -113,7 +109,6 @@ export default async function EditRoundPage({ params }: Props) {
     penalty: h.penalty ?? null,
   }));
 
-  // 4. Format players to include first_name/last_name for RoundEntry
   const formattedPlayers = (players ?? []).map((p: any) => ({
     id: p.id,
     first_name: p.first_name ?? '',

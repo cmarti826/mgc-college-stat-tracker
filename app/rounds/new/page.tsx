@@ -6,10 +6,8 @@ import CourseTeePicker from "@/app/admin/rounds/CourseTeePicker";
 
 export const dynamic = "force-dynamic";
 
-// Server Action: Create Round
 async function createRound(formData: FormData) {
   "use server";
-  // Server Action -> use the Action (mutable) client
   const supabase = createServerSupabaseAction();
 
   const player_id = String(formData.get("player_id") || "").trim();
@@ -38,16 +36,12 @@ async function createRound(formData: FormData) {
     .select("id")
     .single();
 
-  if (error) {
-    console.error("Round creation error:", error);
-    throw error;
-  }
+  if (error) throw error;
 
   revalidatePath("/rounds");
   redirect(`/rounds/${data.id}/shots`);
 }
 
-// Load data for form (Server Component render) -> read-only client
 async function loadData() {
   const supabase = createServerSupabaseReadOnly();
 
@@ -60,33 +54,21 @@ async function loadData() {
     redirect("/(auth)/login?redirectTo=/rounds/new");
   }
 
-  const { data: link, error: linkErr } = await supabase
+  const { data: link } = await supabase
     .from("user_players")
     .select("player_id")
     .eq("user_id", user!.id)
     .maybeSingle();
 
-  if (linkErr) {
-    console.error("User-player link error:", linkErr);
-  }
-
-  const { data: courses, error: cErr } = await supabase
+  const { data: courses } = await supabase
     .from("courses")
     .select("id, name")
-    .order("name", { ascending: true });
+    .order("name");
 
-  if (cErr) {
-    console.error("Courses fetch error:", cErr);
-  }
-
-  const { data: teeSets, error: tErr } = await supabase
+  const { data: teeSets } = await supabase
     .from("tee_sets")
     .select("id, name, course_id, rating, slope, par")
-    .order("name", { ascending: true });
-
-  if (tErr) {
-    console.error("Tee sets fetch error:", tErr);
-  }
+    .order("name");
 
   return {
     playerId: link?.player_id ?? null,
@@ -95,7 +77,6 @@ async function loadData() {
   };
 }
 
-// MAIN PAGE COMPONENT
 export default async function NewRoundPage() {
   const { playerId, courses, teeSets } = await loadData();
 

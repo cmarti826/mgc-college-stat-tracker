@@ -84,7 +84,7 @@ export default async function RoundsPage() {
                       href={`/rounds/${r.id}`}
                       className="font-medium text-indigo-600 hover:text-indigo-800 hover:underline"
                     >
-                      {r.date ? format(new Date(r.date), 'MMM d, yyyy') : '—'}
+                      {r.round_date ? format(new Date(r.round_date), 'MMM d, yyyy') : '—'}
                     </Link>
                   </td>
                   <td className="p-4 text-gray-700">

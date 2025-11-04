@@ -18,7 +18,7 @@ async function loadData() {
     supabase.from("players").select("id, full_name").order("full_name"),
     supabase.from("courses").select("id, name").order("name"),
     supabase.from("v_tees_simple").select("id, name, course_id").order("name"),
-    supabase.from("scheduled_rounds").select("id, name, player_id, course_id, tee_id, round_date, date, created_at, event_id").order("created_at", { ascending: false }).limit(50),
+    supabase.from("scheduled_rounds").select("id, name, player_id, course_id, tee_id, round_date, created_at, event_id").order("created_at", { ascending: false }).limit(50),
   ]);
   return { players: players ?? [], courses: courses ?? [], tees: tees ?? [], rounds: rounds ?? [] };
 }

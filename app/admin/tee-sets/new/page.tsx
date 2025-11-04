@@ -11,7 +11,7 @@ async function createTeeSet(formData: FormData) {
 
   const course_id = String(formData.get("course_id") || "");
   const name = String(formData.get("name") || "").trim();
-  const tee_name = String(formData.get("tee_name") || "").trim() || null;
+  
   const rating = formData.get("rating") ? Number(formData.get("rating")) : null;
   const slope = formData.get("slope") ? Number(formData.get("slope")) : null;
   const par = formData.get("par") ? Number(formData.get("par")) : null;
@@ -20,7 +20,7 @@ async function createTeeSet(formData: FormData) {
 
   const { data: inserted, error } = await supabase
     .from("tee_sets")
-    .insert({ course_id, name, tee_name, rating, slope, par })
+    .insert({ course_id, name, rating, slope, par })
     .select("id")
     .single();
   if (error) throw error;

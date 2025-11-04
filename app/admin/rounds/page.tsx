@@ -5,7 +5,8 @@ import NavAdmin from "../NavAdmin";
 import Link from "next/link";
 import CourseTeePicker from "./CourseTeePicker";
 
-export const dynamic = 'force-dynamic' // ← ADD THIS
+export const dynamic = "force-dynamic";
+export const revalidate = 0;
 
 async function loadData() {
   const supabase = await createServerSupabase();
@@ -17,10 +18,19 @@ async function loadData() {
   ] = await Promise.all([
     supabase.from("players").select("id, full_name").order("full_name"),
     supabase.from("courses").select("id, name").order("name"),
-    supabase.from("v_tees_simple").select("id, name, course_id").order("name"),
-    supabase.from("scheduled_rounds").select("id, name, player_id, course_id, tee_id, round_date, created_at, event_id").order("created_at", { ascending: false }).limit(50),
+    supabase.from("tee_sets").select("id, name, course_id").order("name"),
+    supabase
+      .from("scheduled_rounds")
+      .select("id, name, player_id, course_id, tee_set_id, round_date, created_at")
+      .order("created_at", { ascending: false })
+      .limit(50),
   ]);
-  return { players: players ?? [], courses: courses ?? [], tees: tees ?? [], rounds: rounds ?? [] };
+  return { 
+    players: players ?? [], 
+    courses: courses ?? [], 
+    tees: tees ?? [], 
+    rounds: rounds ?? [] 
+  };
 }
 
 async function createRound(formData: FormData) {
@@ -28,12 +38,24 @@ async function createRound(formData: FormData) {
   const supabase = await createServerSupabase();
   const player_id = String(formData.get("player_id") || "");
   const course_id = String(formData.get("course_id") || "");
-  const tee_id    = String(formData.get("tee_id") || "");
-  const round_date= String(formData.get("round_date") || "");
-  const name      = String(formData.get("name") || "").trim() || null;
-  const notes     = String(formData.get("notes") || "").trim() || null;
-  if (!player_id || !course_id || !tee_id || !round_date) throw new Error("Player, Course, Tee, and Date are required.");
-  const { error } = await supabase.from("scheduled_rounds").insert({ player_id, course_id, tee_id, round_date, name, notes });
+  const tee_set_id = String(formData.get("tee_set_id") || "");
+  const round_date = String(formData.get("round_date") || "");
+  const name = String(formData.get("name") || "").trim() || null;
+  const notes = String(formData.get("notes") || "").trim() || null;
+
+  if (!player_id || !course_id || !tee_set_id || !round_date) {
+    throw new Error("Player, Course, Tee Set, and Date are required.");
+  }
+
+  const { error } = await supabase.from("scheduled_rounds").insert({
+    player_id,
+    course_id,
+    tee_set_id,
+    round_date,
+    name,
+    notes,
+  });
+
   if (error) throw error;
   revalidatePath("/admin/rounds");
 }
@@ -41,7 +63,6 @@ async function createRound(formData: FormData) {
 async function deleteRound(roundId: string) {
   "use server";
   const supabase = await createServerSupabase();
-  await supabase.from("event_rounds").delete().eq("round_id", roundId);
   const { error } = await supabase.from("scheduled_rounds").delete().eq("id", roundId);
   if (error) throw error;
   revalidatePath("/admin/rounds");
@@ -49,19 +70,23 @@ async function deleteRound(roundId: string) {
 
 export default async function AdminRoundsPage() {
   const { players, courses, tees, rounds } = await loadData();
-  const playerName = (pid: string) => players.find((p: any) => p.id === pid)?.full_name ?? pid;
-  const courseName = (cid: string) => courses.find((c: any) => c.id === cid)?.name ?? cid;
-  const teeName    = (tid: string) => tees.find((t: any) => t.id === tid)?.name ?? tid;
+
+  const playerName = (pid: string) => players.find((p: any) => p.id === pid)?.full_name ?? "—";
+  const courseName = (cid: string) => courses.find((c: any) => c.id === cid)?.name ?? "—";
+  const teeName = (tid: string) => tees.find((t: any) => t.id === tid)?.name ?? "—";
 
   return (
     <div className="p-6 space-y-6">
       <NavAdmin />
       <div className="flex items-center justify-between">
         <h1 className="text-2xl font-bold">Manage Rounds</h1>
-        <Link href="/admin/rounds/new" className="px-3 py-2 rounded-lg border hover:bg-gray-50 text-sm">New Round</Link>
+        <Link href="/admin/rounds/new" className="px-3 py-2 rounded-lg border hover:bg-gray-50 text-sm">
+          New Round
+        </Link>
       </div>
 
       <section className="grid md:grid-cols-2 gap-6">
+        {/* Quick Create */}
         <div className="rounded-2xl border p-4 bg-white">
           <h2 className="font-semibold mb-3">Quick Create</h2>
           <form action={createRound} className="space-y-3">
@@ -69,12 +94,16 @@ export default async function AdminRoundsPage() {
               <label className="block text-sm">Player</label>
               <select name="player_id" className="w-full border rounded p-2" required>
                 <option value="">Select player…</option>
-                {players.map((p: any) => <option key={p.id} value={p.id}>{p.full_name}</option>)}
+                {players.map((p: any) => (
+                  <option key={p.id} value={p.id}>{p.full_name}</option>
+                ))}
               </select>
             </div>
+
             <div className="grid grid-cols-2 gap-3">
-              <CourseTeePicker courses={courses} tees={tees} initialCourseId={courses[0]?.id} />
+              <CourseTeePicker courses={courses} tees={tees} />
             </div>
+
             <div className="grid grid-cols-2 gap-3">
               <div>
                 <label className="block text-sm">Date</label>
@@ -85,14 +114,19 @@ export default async function AdminRoundsPage() {
                 <input name="name" className="w-full border rounded p-2" placeholder="Qualifying Rd 1" />
               </div>
             </div>
+
             <div>
               <label className="block text-sm">Notes</label>
               <textarea name="notes" className="w-full border rounded p-2" rows={2} />
             </div>
-            <button className="px-4 py-2 rounded-xl bg-blue-600 text-white">Create</button>
+
+            <button className="px-4 py-2 rounded-xl bg-blue-600 text-white">
+              Create
+            </button>
           </form>
         </div>
 
+        {/* Recent Rounds */}
         <div className="rounded-2xl border p-0 bg-white overflow-hidden">
           <div className="px-4 py-3 border-b font-semibold">Recent Rounds</div>
           <div className="divide-y">
@@ -101,16 +135,17 @@ export default async function AdminRoundsPage() {
                 <div>
                   <div className="font-medium">{r.name ?? "Round"}</div>
                   <div className="text-xs text-gray-500">
-                    {r.round_date ?? r.round_date ?? "—"} • {playerName(r.player_id)} • {courseName(r.course_id)} • {teeName(r.tee_id)}
-                    {r.event_id ? " • linked to event" : ""}
+                    {r.round_date ?? "—"} • {playerName(r.player_id)} • {courseName(r.course_id)} • {teeName(r.tee_set_id)}
                   </div>
                 </div>
                 <form action={deleteRound.bind(null, r.id)}>
-                  <button className="text-red-600">Delete</button>
+                  <button className="text-red-600 hover:underline text-sm">Delete</button>
                 </form>
               </div>
             ))}
-            {rounds.length === 0 && <div className="px-4 py-6 text-sm text-gray-500">No rounds yet.</div>}
+            {rounds.length === 0 && (
+              <div className="px-4 py-6 text-sm text-gray-500">No rounds yet.</div>
+            )}
           </div>
         </div>
       </section>

@@ -16,7 +16,7 @@ export const metadata = {
   viewport: "width=device-width, initial-scale=1",
   themeColor: "#3C3B6E",
   icons: {
-    icon: "public/favicon.ico",
+    icon: "\favicon.ico",
   },
 };
 

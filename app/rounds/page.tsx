@@ -23,7 +23,7 @@ export default async function RoundsPage() {
     .from('scheduled_rounds')
     .select(`
       id,
-      date,
+      round_date,
       status,
       type,
       player:player_id ( full_name ),

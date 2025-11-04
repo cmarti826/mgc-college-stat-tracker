@@ -8,7 +8,7 @@ export const dynamic = 'force-dynamic';
 
 type Round = {
   id: string;
-  date: string;
+  round_date: string;
   status: string;
   type: string;
   player: { full_name: string } | null;

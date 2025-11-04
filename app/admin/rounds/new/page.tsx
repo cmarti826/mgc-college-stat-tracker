@@ -65,7 +65,7 @@ async function loadData() {
     .select("id, name")
     .order("name");
 
-  const { data: teeSets } = await supabase
+  const { data: tee_Sets } = await supabase
     .from("tee_sets")
     .select("id, name, course_id, rating, slope, par")
     .order("name");
@@ -73,12 +73,12 @@ async function loadData() {
   return {
     playerId: link?.player_id ?? null,
     courses: courses ?? [],
-    teeSets: teeSets ?? [],
+    tee_Sets: tee_Sets ?? [],
   };
 }
 
 export default async function NewRoundPage() {
-  const { playerId, courses, teeSets } = await loadData();
+  const { playerId, courses, tee_Sets } = await loadData();
 
   if (!playerId) {
     return (
@@ -112,7 +112,7 @@ export default async function NewRoundPage() {
           </label>
           <CourseTeePicker
             courses={courses}
-            tee_sets={teeSets}  // ← FIXED
+            tee_sets={tee_Sets}  // ← FIXED
             initialCourseId={courses[0]?.id}
             fieldName="tee_set_id"
           />

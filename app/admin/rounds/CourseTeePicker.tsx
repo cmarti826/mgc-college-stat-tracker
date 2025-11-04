@@ -20,7 +20,7 @@ export default function CourseTeePicker({
 }) {
   const [courseId, setCourseId] = useState<string | undefined>(initialCourseId);
 
-  const filteredTees = useMemo(() => {
+  const filteredTee_sets = useMemo(() => {
     if (!courseId) return tee_sets;
     return (tee_sets ?? []).filter((t) => !t.course_id || t.course_id === courseId);
   }, [tee_sets, courseId]);
@@ -49,7 +49,7 @@ export default function CourseTeePicker({
         <label className="block text-sm">Tee Set</label>
         <select name={fieldName} className="w-full border rounded p-2" required>
           <option value="">Select tee set…</option>
-          {filteredTees.map((t) => (
+          {filteredTee_sets.map((t) => (
             <option key={t.id} value={t.id}>
               {t.name}
             </option>

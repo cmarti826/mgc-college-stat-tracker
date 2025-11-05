@@ -1,58 +1,51 @@
 // app/admin/rounds/CourseTeePicker.tsx
 "use client";
 
-import { useMemo, useState } from "react";
-
-type Option = { id: string; name: string; course_id?: string | null };
-
-export const dynamic = 'force-dynamic' // ← ADD THIS
+type Course = { id: string; name: string };
+type TeeSet = { id: string; name: string; course_id: string };
 
 export default function CourseTeePicker({
   courses,
   tee_sets,
   initialCourseId,
-  fieldName = "tee_sets_id", // default to tee_set_id
+  fieldName = "tee_set_id",
+  onCourseChange,
+  onTeeChange,
 }: {
-  courses: Option[];
-  tee_sets: Option[];                // pass tee sets here
+  courses: Course[];
+  tee_sets: TeeSet[];
   initialCourseId?: string;
-  fieldName?: string;            // allow override (e.g., "tee_id" if needed)
+  fieldName?: string;
+  onCourseChange?: (id: string) => void;
+  onTeeChange?: (id: string) => void;
 }) {
-  const [courseId, setCourseId] = useState<string | undefined>(initialCourseId);
-
-  const filteredTee_sets = useMemo(() => {
-    if (!courseId) return tee_sets;
-    return (tee_sets ?? []).filter((t) => !t.course_id || t.course_id === courseId);
-  }, [tee_sets, courseId]);
-
   return (
     <>
       <div>
         <label className="block text-sm">Course</label>
         <select
-          name="course_id"
           className="w-full border rounded p-2"
-          value={courseId ?? ""}
-          onChange={(e) => setCourseId(e.target.value || undefined)}
+          defaultValue={initialCourseId || ""}
+          onChange={(e) => onCourseChange?.(e.target.value)}
           required
         >
           <option value="">Select course…</option>
-          {(courses ?? []).map((c) => (
-            <option key={c.id} value={c.id}>
-              {c.name}
-            </option>
+          {courses.map((c) => (
+            <option key={c.id} value={c.id}>{c.name}</option>
           ))}
         </select>
       </div>
-
       <div>
         <label className="block text-sm">Tee Set</label>
-        <select name={fieldName} className="w-full border rounded p-2" required>
+        <select
+          name={fieldName}
+          className="w-full border rounded p-2"
+          onChange={(e) => onTeeChange?.(e.target.value)}
+          required
+        >
           <option value="">Select tee set…</option>
-          {filteredTee_sets.map((t) => (
-            <option key={t.id} value={t.id}>
-              {t.name}
-            </option>
+          {tee_sets.map((t) => (
+            <option key={t.id} value={t.id}>{t.name}</option>
           ))}
         </select>
       </div>

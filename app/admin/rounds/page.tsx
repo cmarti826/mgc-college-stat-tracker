@@ -37,7 +37,7 @@ async function loadData() {
   const [
     { data: players },
     { data: courses },
-    { data: tees },
+    { data: teeSets },
     { data: rounds },
   ] = await Promise.all([
     supabase.from("players").select("id, full_name").order("full_name"),
@@ -45,11 +45,16 @@ async function loadData() {
     supabase.from("tee_sets").select("id, name, course_id").order("name"),
     supabase.from("scheduled_rounds").select("id, name, player_id, course_id, tee_set_id, round_date").order("created_at", { ascending: false }).limit(50),
   ]);
-  return { players: players ?? [], courses: courses ?? [], tees: tees ?? [], rounds: rounds ?? [] };
+  return { 
+    players: players ?? [], 
+    courses: courses ?? [], 
+    teeSets: teeSets ?? [], 
+    rounds: rounds ?? [] 
+  };
 }
 
 export default async function AdminRoundsPage() {
-  const { players, courses, tees, rounds } = await loadData();
+  const { players, courses, teeSets, rounds } = await loadData();
 
   return (
     <div className="p-6 space-y-6">
@@ -71,8 +76,23 @@ export default async function AdminRoundsPage() {
               </select>
             </div>
 
+            {/* HIDDEN INPUTS — value="" fixes red error */}
+            <input type="hidden" name="course_id" id="hidden-course-id" value="" />
+            <input type="hidden" name="tee_set_id" id="hidden-tee-set-id" value="" />
+
             <div className="grid grid-cols-2 gap-3">
-              <CourseTeePicker courses={courses} tee_sets={tees} />
+              <CourseTeePicker
+                courses={courses}
+                tee_sets={teeSets}
+                onCourseChange={(id) => {
+                  const el = document.getElementById("hidden-course-id") as HTMLInputElement | null;
+                  if (el) el.value = id;
+                }}
+                onTeeChange={(id) => {
+                  const el = document.getElementById("hidden-tee-set-id") as HTMLInputElement | null;
+                  if (el) el.value = id;
+                }}
+              />
             </div>
 
             <div className="grid grid-cols-2 gap-3">
@@ -92,6 +112,7 @@ export default async function AdminRoundsPage() {
           </form>
         </div>
 
+        {/* Recent Rounds */}
         <div className="rounded-2xl border p-0 bg-white overflow-hidden">
           <div className="px-4 py-3 border-b font-semibold">Recent Rounds</div>
           <div className="divide-y">
@@ -100,7 +121,7 @@ export default async function AdminRoundsPage() {
                 <div>
                   <div className="font-medium">{r.name ?? "Round"}</div>
                   <div className="text-xs text-gray-500">
-                    {r.round_date} • {players.find((p: any) => p.id === r.player_id)?.full_name ?? "—"} • {courses.find((c: any) => c.id === r.course_id)?.name ?? "—"} • {tees.find((t: any) => t.id === r.tee_set_id)?.name ?? "—"}
+                    {r.round_date} • {players.find((p: any) => p.id === r.player_id)?.full_name ?? "—"} • {courses.find((c: any) => c.id === r.course_id)?.name ?? "—"} • {teeSets.find((t: any) => t.id === r.tee_set_id)?.name ?? "—"}
                   </div>
                 </div>
                 <form action={async () => { "use server"; await createServerSupabase().from("scheduled_rounds").delete().eq("id", r.id); revalidatePath("/admin/rounds"); }}>

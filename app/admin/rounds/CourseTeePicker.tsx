@@ -7,9 +7,11 @@ type TeeSet = { id: string; name: string; course_id: string };
 export default function CourseTeePicker({
   courses,
   tee_sets,
+  fieldName = "tee_set_id",
 }: {
   courses: Course[];
   tee_sets: TeeSet[];
+  fieldName?: string;
 }) {
   return (
     <>
@@ -18,10 +20,6 @@ export default function CourseTeePicker({
         <select
           name="course_id"
           className="w-full border rounded p-2"
-          onChange={(e) => {
-            const hidden = document.getElementById("hidden-course-id") as HTMLInputElement;
-            if (hidden) hidden.value = e.target.value;
-          }}
           required
         >
           <option value="">Select course…</option>
@@ -33,12 +31,8 @@ export default function CourseTeePicker({
       <div>
         <label className="block text-sm">Tee Set</label>
         <select
-          name="tee_set_id"
+          name={fieldName}
           className="w-full border rounded p-2"
-          onChange={(e) => {
-            const hidden = document.getElementById("hidden-tee-set-id") as HTMLInputElement;
-            if (hidden) hidden.value = e.target.value;
-          }}
           required
         >
           <option value="">Select tee set…</option>

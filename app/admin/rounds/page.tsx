@@ -7,6 +7,13 @@ import CourseTeePicker from "./CourseTeePicker";
 
 export const dynamic = "force-dynamic";
 
+// FIX: Move viewport here
+export const viewport = {
+  width: "device-width",
+  initialScale: 1,
+  maximumScale: 1,
+};
+
 async function createRound(formData: FormData) {
   "use server";
   const supabase = createServerSupabase();
@@ -84,14 +91,6 @@ export default async function AdminRoundsPage() {
               <CourseTeePicker
                 courses={courses}
                 tee_sets={teeSets}
-                onCourseChange={(id) => {
-                  const el = document.getElementById("hidden-course-id") as HTMLInputElement | null;
-                  if (el) el.value = id;
-                }}
-                onTeeChange={(id) => {
-                  const el = document.getElementById("hidden-tee-set-id") as HTMLInputElement | null;
-                  if (el) el.value = id;
-                }}
               />
             </div>
 
@@ -112,7 +111,6 @@ export default async function AdminRoundsPage() {
           </form>
         </div>
 
-        {/* Recent Rounds */}
         <div className="rounded-2xl border p-0 bg-white overflow-hidden">
           <div className="px-4 py-3 border-b font-semibold">Recent Rounds</div>
           <div className="divide-y">

@@ -5,12 +5,11 @@ import { useEffect, useMemo, useRef, useState } from 'react';
 import Link from 'next/link';
 import { createBrowserSupabase } from '@/lib/supabase';
 
-export const dynamic = 'force-dynamic' // ← ADD THIS
+export const dynamic = 'force-dynamic';
 
 type TeeSet = {
   id: string;
   name: string;
-  tee_name?: string | null; // optional in your "new" page
   course_id: string;
   rating: number | null;
   slope: number | null;
@@ -19,7 +18,7 @@ type TeeSet = {
 
 type TeeSetHole = {
   tee_set_id: string;
-  hole_number: number; // 1..18
+  hole_number: number;
   yardage: number | null;
 };
 
@@ -47,34 +46,35 @@ export default function ManageTeeSetsPage() {
       setLoading(true);
       setError(null);
       try {
-        // 1) Load courses -> id -> name map
+        // 1) Load courses
         const { data: courses, error: cErr } = await supabase
           .from('courses')
           .select('id,name');
         if (cErr) throw cErr;
+
         const cmap: Record<string, string> = {};
         (courses ?? []).forEach((c: any) => (cmap[c.id] = c.name));
         setCourseNames(cmap);
 
-        // 2) Load tee sets (NO color here)
+        // 2) Load tee sets
         const { data: teeSets, error: tsErr } = await supabase
           .from('tee_sets')
           .select('id,name,course_id,rating,slope,par')
           .order('name', { ascending: true });
         if (tsErr) throw tsErr;
 
-        // 3) Load hole yardages for each tee set
+        // 3) Load yardages
         const all: TeeSetWithYardages[] = [];
         for (const ts of teeSets ?? []) {
           const { data: holes, error: hErr } = await supabase
             .from('tee_set_holes')
-            .select('tee_set_id,hole_number,yardage')
+            .select('hole_number,yardage')
             .eq('tee_set_id', ts.id)
             .order('hole_number', { ascending: true });
           if (hErr) throw hErr;
 
           const yardages = Array.from({ length: 18 }, () => null as number | null);
-          (holes ?? []).forEach((h: TeeSetHole) => {
+          (holes ?? []).forEach((h: any) => {
             if (h.hole_number >= 1 && h.hole_number <= 18) {
               yardages[h.hole_number - 1] = h.yardage;
             }
@@ -90,26 +90,23 @@ export default function ManageTeeSetsPage() {
         setLoading(false);
       }
     })();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
+  }, [supabase]);
 
-  const handleChange =
-    (teeSetId: string, holeIndex: number) =>
-    (raw: string) => {
-      setItems((prev) =>
-        prev.map((x) =>
-          x.teeSet.id === teeSetId
-            ? {
-                ...x,
-                yardages: x.yardages.map((y, idx) =>
-                  idx === holeIndex ? (raw === '' ? null : Number(raw)) : y
-                ),
-              }
-            : x
-        )
-      );
-      dirtyRef.current[teeSetId] = true;
-    };
+  const handleChange = (teeSetId: string, holeIndex: number) => (raw: string) => {
+    setItems((prev) =>
+      prev.map((x) =>
+        x.teeSet.id === teeSetId
+          ? {
+              ...x,
+              yardages: x.yardages.map((y, idx) =>
+                idx === holeIndex ? (raw === '' ? null : Number(raw)) : y
+              ),
+            }
+          : x
+      )
+    );
+    dirtyRef.current[teeSetId] = true;
+  };
 
   const saveYardages = async (teeSetId: string) => {
     try {
@@ -195,7 +192,6 @@ export default function ManageTeeSetsPage() {
                   <div className="flex flex-wrap items-center gap-2">
                     <span className="text-base font-semibold">
                       {teeSet.name}
-                      {teeSet.tee_name ? ` (${teeSet.tee_name})` : ''}
                       {teeSet.course_id && (
                         <span className="text-sm text-gray-500">
                           {' '}

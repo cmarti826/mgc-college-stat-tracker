@@ -111,12 +111,11 @@ export default async function NewRoundPage() {
             Course &amp; Tee
           </label>
           <CourseTeePicker
-  courses={courses}
-  tee_sets={teeSets}
-  initialCourseId={courses[0]?.id ?? ""}   // ← RED GONE
-  fieldName="tee_set_id"
-/>
-        </div>
+            courses={courses}
+            tee_sets={teeSets}
+            // ← REMOVED: initialCourseId — NOT SUPPORTED
+            />
+          </div>
 
         <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
           <div>

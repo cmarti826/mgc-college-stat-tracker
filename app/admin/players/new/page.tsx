@@ -9,79 +9,76 @@ async function createPlayer(formData: FormData) {
   "use server";
   const supabase = createServerSupabase();
 
-  const full_name = String(formData.get("full_name") || "").trim();
-  const grad_year_raw = formData.get("grad_year");
-  const grad_year = grad_year_raw ? Number(grad_year_raw) : null;
-  const team_id = formData.get("team_id") ? String(formData.get("team_id")).trim() : null;
+  const fullName = String(formData.get("full_name") || "").trim();
+  const gradYearRaw = formData.get("grad_year");
+  const gradYear = gradYearRaw ? Number(gradYearRaw) : null;
+  const teamId = formData.get("team_id") ? String(formData.get("team_id")).trim() : null;
   const email = String(formData.get("email") || "").trim();
-  const password_raw = formData.get("password");
-  const password = password_raw ? String(password_raw).trim() : undefined;
+  const tempPassword = formData.get("password") ? String(formData.get("password")).trim() : null;
 
-  // Split full name
-  const parts = full_name.split(" ");
-  const first_name = parts[0] || "";
-  const last_name = parts.slice(1).join(" ") || "";
-
-  if (!first_name || !last_name || !email) {
-    throw new Error("First name, last name, and email are required.");
+  if (!fullName || !email) {
+    throw new Error("Full name and email are required.");
   }
 
-  // Create auth user
-  const { data: authUser, error: authError } = await supabase.auth.signUp({
+  const [firstName, ...lastNameParts] = fullName.split(" ");
+  const lastName = lastNameParts.join(" ") || firstName;
+
+  // Create Supabase auth user
+  const { data: authData, error: authError } = await supabase.auth.signUp({
     email,
-    password: password ?? undefined,  // ← FIXED: undefined allowed
+    password: tempPassword || undefined, // Let Supabase auto-generate if empty
     options: {
       emailRedirectTo: `${process.env.NEXT_PUBLIC_SITE_URL}/auth/callback`,
     },
   });
 
   if (authError) throw authError;
-  if (!authUser.user) throw new Error("Failed to create user.");
+  if (!authData.user) throw new Error("Failed to create user account.");
 
-  // Create player
+  // Create player record
   const { data: player, error: playerError } = await supabase
     .from("players")
     .insert({
-      first_name,
-      last_name,
+      first_name: firstName,
+      last_name: lastName,
       email,
-      grad_year,
+      grad_year: gradYear,
     })
     .select("id")
     .single();
 
   if (playerError) throw playerError;
 
-  // Link player to user
+  // Link auth user to player
   const { error: linkError } = await supabase
     .from("user_players")
-    .insert({ user_id: authUser.user.id, player_id: player.id });
+    .insert({
+      user_id: authData.user.id,
+      player_id: player.id,
+    });
 
   if (linkError) throw linkError;
 
   // Add to team if selected
-  if (team_id) {
-    const { error: teamError } = await supabase
-      .from("team_members")
-      .insert({
-        team_id,
-        player_id: player.id,
-        role: "player",
-      });
-    if (teamError) throw teamError;
+  if (teamId) {
+    await supabase.from("team_members").insert({
+      team_id: teamId,
+      player_id: player.id,
+      role: "player",
+    });
   }
 
   redirect("/admin/players");
 }
 
-async function loadTeams() {
+async function getTeams() {
   const supabase = createServerSupabase();
   const { data } = await supabase.from("teams").select("id, name").order("name");
   return data ?? [];
 }
 
 export default async function NewPlayerPage() {
-  const teams = await loadTeams();
+  const teams = await getTeams();
 
   return (
     <div className="p-6 space-y-6">
@@ -127,13 +124,13 @@ export default async function NewPlayerPage() {
             name="email"
             type="email"
             className="w-full border rounded p-2"
-            placeholder="cmarti826@gmail.com"
+            placeholder="player@example.com"
             required
           />
         </div>
 
         <div>
-          <label className="block text-sm font-medium mb-1">Temporary Password</label>
+          <label className="block text-sm font-medium mb-1">Temporary Password (optional)</label>
           <input
             name="password"
             type="text"

@@ -14,7 +14,7 @@ async function createPlayer(formData: FormData) {
   const gradYear = gradYearRaw ? Number(gradYearRaw) : null;
   const teamId = formData.get("team_id") ? String(formData.get("team_id")).trim() : null;
   const email = String(formData.get("email") || "").trim();
-  const tempPassword = formData.get("password") ? String(formData.get("password")).trim() : null;
+  const password = formData.get("password") ? String(formData.get("password")).trim() : undefined; // ← FIXED
 
   if (!fullName || !email) {
     throw new Error("Full name and email are required.");
@@ -23,10 +23,9 @@ async function createPlayer(formData: FormData) {
   const [firstName, ...lastNameParts] = fullName.split(" ");
   const lastName = lastNameParts.join(" ") || firstName;
 
-  // Create Supabase auth user
   const { data: authData, error: authError } = await supabase.auth.signUp({
     email,
-    password: tempPassword || undefined, // Let Supabase auto-generate if empty
+    password, // ← Use `password` (already `string | undefined`)
     options: {
       emailRedirectTo: `${process.env.NEXT_PUBLIC_SITE_URL}/auth/callback`,
     },
@@ -35,7 +34,6 @@ async function createPlayer(formData: FormData) {
   if (authError) throw authError;
   if (!authData.user) throw new Error("Failed to create user account.");
 
-  // Create player record
   const { data: player, error: playerError } = await supabase
     .from("players")
     .insert({
@@ -49,7 +47,6 @@ async function createPlayer(formData: FormData) {
 
   if (playerError) throw playerError;
 
-  // Link auth user to player
   const { error: linkError } = await supabase
     .from("user_players")
     .insert({
@@ -59,7 +56,6 @@ async function createPlayer(formData: FormData) {
 
   if (linkError) throw linkError;
 
-  // Add to team if selected
   if (teamId) {
     await supabase.from("team_members").insert({
       team_id: teamId,

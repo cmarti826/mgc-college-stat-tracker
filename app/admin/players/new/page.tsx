@@ -1,145 +1,149 @@
 // app/admin/players/new/page.tsx
-'use client';
+import { createServerSupabase } from "@/lib/supabase/server";
+import { redirect } from "next/navigation";
+import NavAdmin from "../NavAdmin";
 
-import { useState } from 'react';
-import { useRouter } from 'next/navigation';
-import { createBrowserSupabase } from '@/lib/supabase';
-import NavAdmin from '../../NavAdmin';
+export const dynamic = "force-dynamic";
 
-export const dynamic = 'force-dynamic' // ← ADD THIS
+async function createPlayer(formData: FormData) {
+  "use server";
+  const supabase = createServerSupabase();
 
-export default function AdminNewPlayerPage() {
-  const supabase = createBrowserSupabase();
-  const router = useRouter();
-  const [teams, setTeams] = useState<any[]>([]);
-  const [loading, setLoading] = useState(true);
-  const [form, setForm] = useState({
-    name: '',
-    grad_year: '',
-    team_id: '',
-    email: '',
-    password: '',
+  const full_name = String(formData.get("full_name") || "").trim();
+  const grad_year_raw = formData.get("grad_year");
+  const grad_year = grad_year_raw ? Number(grad_year_raw) : null;
+  const team_id = formData.get("team_id") ? String(formData.get("team_id")).trim() : null;
+  const email = String(formData.get("email") || "").trim();
+  const password_raw = formData.get("password");
+  const password = password_raw ? String(password_raw).trim() : undefined;
+
+  // Split full name
+  const parts = full_name.split(" ");
+  const first_name = parts[0] || "";
+  const last_name = parts.slice(1).join(" ") || "";
+
+  if (!first_name || !last_name || !email) {
+    throw new Error("First name, last name, and email are required.");
+  }
+
+  // Create auth user
+  const { data: authUser, error: authError } = await supabase.auth.signUp({
+    email,
+    password,
+    options: {
+      emailRedirectTo: `${process.env.NEXT_PUBLIC_SITE_URL}/auth/callback`,
+    },
   });
-  const [error, setError] = useState<string | null>(null);
-  const [success, setSuccess] = useState<string | null>(null);
 
-  // Load teams
-  useState(() => {
-    (async () => {
-      const { data, error } = await supabase.from('teams').select('id,name').order('name');
-      if (error) console.error(error);
-      setTeams(data ?? []);
-      setLoading(false);
-    })();
-  });
+  if (authError) throw authError;
+  if (!authUser.user) throw new Error("Failed to create user.");
 
-  const handleSubmit = async (e: React.FormEvent) => {
-    e.preventDefault();
-    setError(null);
-    setSuccess(null);
-    try {
-      const res = await fetch('/api/admin/create-player', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(form),
-      });
-      const data = await res.json();
-      if (!res.ok) throw new Error(data.error || 'Failed to create player');
-      setSuccess('Player created successfully!');
-      setForm({ name: '', grad_year: '', team_id: '', email: '', password: '' });
-      router.refresh();
-    } catch (err: any) {
-      setError(err.message);
-    }
-  };
+  // Create player
+  const { data: player, error: playerError } = await supabase
+    .from("players")
+    .insert({
+      first_name,
+      last_name,
+      email,
+      grad_year,
+    })
+    .select("id")
+    .single();
+
+  if (playerError) throw playerError;
+
+  // Link player to user
+  const { error: linkError } = await supabase
+    .from("user_players")
+    .insert({ user_id: authUser.user.id, player_id: player.id });
+
+  if (linkError) throw linkError;
+
+  // Add to team if selected
+  if (team_id) {
+    await supabase.from("team_members").insert({
+      team_id,
+      player_id: player.id,
+      role: "player",
+    });
+  }
+
+  redirect("/admin/players");
+}
+
+async function loadTeams() {
+  const supabase = createServerSupabase();
+  const { data } = await supabase.from("teams").select("id, name").order("name");
+  return data ?? [];
+}
+
+export default async function NewPlayerPage() {
+  const teams = await loadTeams();
 
   return (
     <div className="p-6 space-y-6">
       <NavAdmin />
       <h1 className="text-2xl font-bold">Add New Player</h1>
 
-      <form
-        onSubmit={handleSubmit}
-        className="space-y-4 rounded-2xl border bg-white p-6 max-w-xl"
-      >
+      <form action={createPlayer} className="space-y-4 max-w-md">
         <div>
-          <label className="block text-sm font-medium">Full Name</label>
+          <label className="block text-sm font-medium mb-1">Full Name</label>
           <input
-            type="text"
-            value={form.name}
-            onChange={(e) => setForm({ ...form, name: e.target.value })}
+            name="full_name"
             className="w-full border rounded p-2"
+            placeholder="Chad Test"
             required
           />
         </div>
 
         <div>
-          <label className="block text-sm font-medium">Graduation Year</label>
+          <label className="block text-sm font-medium mb-1">Graduation Year</label>
           <input
+            name="grad_year"
             type="number"
-            value={form.grad_year}
-            onChange={(e) => setForm({ ...form, grad_year: e.target.value })}
+            min="2000"
+            max="2030"
             className="w-full border rounded p-2"
+            placeholder="2028"
           />
         </div>
 
         <div>
-          <label className="block text-sm font-medium">Team</label>
-          <select
-            value={form.team_id}
-            onChange={(e) => setForm({ ...form, team_id: e.target.value })}
-            className="w-full border rounded p-2"
-            required
-          >
-            <option value="">Select team…</option>
+          <label className="block text-sm font-medium mb-1">Team</label>
+          <select name="team_id" className="w-full border rounded p-2">
+            <option value="">No team</option>
             {teams.map((t) => (
-              <option key={t.id} value={t.id}>
-                {t.name}
-              </option>
+              <option key={t.id} value={t.id}>{t.name}</option>
             ))}
           </select>
         </div>
 
         <div>
-          <label className="block text-sm font-medium">Email</label>
+          <label className="block text-sm font-medium mb-1">Email</label>
           <input
+            name="email"
             type="email"
-            value={form.email}
-            onChange={(e) => setForm({ ...form, email: e.target.value })}
             className="w-full border rounded p-2"
+            placeholder="cmarti826@gmail.com"
             required
           />
         </div>
 
         <div>
-          <label className="block text-sm font-medium">Temporary Password</label>
+          <label className="block text-sm font-medium mb-1">Temporary Password</label>
           <input
+            name="password"
             type="text"
-            value={form.password}
-            onChange={(e) => setForm({ ...form, password: e.target.value })}
             className="w-full border rounded p-2"
-            placeholder="e.g. Huskies2025!"
-            required
+            placeholder="Leave blank to auto-generate"
           />
         </div>
 
-        {error && (
-          <div className="rounded-md border border-red-300 bg-red-50 p-2 text-sm text-red-700">
-            {error}
-          </div>
-        )}
-        {success && (
-          <div className="rounded-md border border-green-300 bg-green-50 p-2 text-sm text-green-700">
-            {success}
-          </div>
-        )}
-
         <button
           type="submit"
-          disabled={loading}
-          className="rounded-xl bg-blue-600 px-4 py-2 text-white disabled:opacity-50"
+          className="w-full bg-blue-600 text-white rounded px-4 py-2 hover:bg-blue-700"
         >
-          {loading ? 'Loading…' : 'Create Player'}
+          Create Player
         </button>
       </form>
     </div>

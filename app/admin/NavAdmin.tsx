@@ -2,12 +2,11 @@
 import Link from 'next/link';
 import LogoutButton from '@/components/LogoutButton';
 
-export const dynamic = 'force-dynamic' // ← ADD THIS
+export const dynamic = 'force-dynamic';
 
 export default function NavAdmin() {
   return (
     <nav className="flex items-center justify-between border-b bg-white px-4 py-3">
-      {/* Left side links */}
       <div className="flex items-center gap-4">
         <Link href="/admin" className="text-sm font-medium hover:underline">
           Dashboard
@@ -29,7 +28,6 @@ export default function NavAdmin() {
         </Link>
       </div>
 
-      {/* Right side: Sign out */}
       <div className="flex items-center gap-3">
         <LogoutButton />
       </div>

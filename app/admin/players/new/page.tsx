@@ -14,7 +14,7 @@ async function createPlayer(formData: FormData) {
   const gradYear = gradYearRaw ? Number(gradYearRaw) : null;
   const teamId = formData.get("team_id") ? String(formData.get("team_id")).trim() : null;
   const email = String(formData.get("email") || "").trim();
-  const password = formData.get("password") ? String(formData.get("password")).trim() : undefined;
+  const password = formData.get("password") ? String(formData.get("password")).trim() : null;
 
   if (!fullName || !email) {
     throw new Error("Full name and email are required.");
@@ -23,10 +23,10 @@ async function createPlayer(formData: FormData) {
   const [firstName, ...lastNameParts] = fullName.split(" ");
   const lastName = lastNameParts.join(" ") || firstName;
 
-  // Explicit object — TypeScript happy
+  // Only include password if provided
   const signUpPayload = {
     email,
-    password: password as string | undefined,
+    ...(password && { password }),  // ← FINAL FIX
     options: {
       emailRedirectTo: `${process.env.NEXT_PUBLIC_SITE_URL}/auth/callback`,
     },

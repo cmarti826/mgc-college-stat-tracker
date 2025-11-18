@@ -14,7 +14,8 @@ async function createPlayer(formData: FormData) {
   const gradYear = gradYearRaw ? Number(gradYearRaw) : null;
   const teamId = formData.get("team_id") ? String(formData.get("team_id")).trim() : null;
   const email = String(formData.get("email") || "").trim();
-  const password = formData.get("password") ? String(formData.get("password")).trim() : null;
+  const passwordRaw = formData.get("password");
+  const password = passwordRaw ? String(passwordRaw).trim() : null;
 
   if (!fullName || !email) {
     throw new Error("Full name and email are required.");
@@ -23,14 +24,17 @@ async function createPlayer(formData: FormData) {
   const [firstName, ...lastNameParts] = fullName.split(" ");
   const lastName = lastNameParts.join(" ") || firstName;
 
-  // Only include password if provided
-  const signUpPayload = {
+  // Build signUp payload conditionally
+  const signUpPayload: any = {
     email,
-    ...(password && { password }),  // ← FINAL FIX
     options: {
       emailRedirectTo: `${process.env.NEXT_PUBLIC_SITE_URL}/auth/callback`,
     },
   };
+
+  if (password) {
+    signUpPayload.password = password;
+  }
 
   const { data: authData, error: authError } = await supabase.auth.signUp(signUpPayload);
 

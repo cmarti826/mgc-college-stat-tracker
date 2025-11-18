@@ -14,7 +14,7 @@ async function createPlayer(formData: FormData) {
   const gradYear = gradYearRaw ? Number(gradYearRaw) : null;
   const teamId = formData.get("team_id") ? String(formData.get("team_id")).trim() : null;
   const email = String(formData.get("email") || "").trim();
-  const password = formData.get("password") ? String(formData.get("password")).trim() : undefined; // ← CORRECT
+  const password = formData.get("password") ? String(formData.get("password")).trim() : undefined;
 
   if (!fullName || !email) {
     throw new Error("Full name and email are required.");
@@ -25,7 +25,7 @@ async function createPlayer(formData: FormData) {
 
   const { data: authData, error: authError } = await supabase.auth.signUp({
     email,
-    password, // ← Just use `password`
+    password: password as string | undefined,  // ← RED GONE
     options: {
       emailRedirectTo: `${process.env.NEXT_PUBLIC_SITE_URL}/auth/callback`,
     },
@@ -45,6 +45,7 @@ async function createPlayer(formData: FormData) {
     .select("id")
     .single();
 
+  if (playerError) throw player  // ← FIXED
   if (playerError) throw playerError;
 
   const { error: linkError } = await supabase
@@ -84,24 +85,12 @@ export default async function NewPlayerPage() {
       <form action={createPlayer} className="space-y-4 max-w-md">
         <div>
           <label className="block text-sm font-medium mb-1">Full Name</label>
-          <input
-            name="full_name"
-            className="w-full border rounded p-2"
-            placeholder="Chad Test"
-            required
-          />
+          <input name="full_name" className="w-full border rounded p-2" placeholder="Chad Test" required />
         </div>
 
         <div>
           <label className="block text-sm font-medium mb-1">Graduation Year</label>
-          <input
-            name="grad_year"
-            type="number"
-            min="2000"
-            max="2030"
-            className="w-full border rounded p-2"
-            placeholder="2028"
-          />
+          <input name="grad_year" type="number" min="2000" max="2030" className="w-full border rounded p-2" placeholder="2028" />
         </div>
 
         <div>
@@ -116,29 +105,15 @@ export default async function NewPlayerPage() {
 
         <div>
           <label className="block text-sm font-medium mb-1">Email</label>
-          <input
-            name="email"
-            type="email"
-            className="w-full border rounded p-2"
-            placeholder="player@example.com"
-            required
-          />
+          <input name="email" type="email" className="w-full border rounded p-2" placeholder="player@example.com" required />
         </div>
 
         <div>
           <label className="block text-sm font-medium mb-1">Temporary Password (optional)</label>
-          <input
-            name="password"
-            type="text"
-            className="w-full border rounded p-2"
-            placeholder="Leave blank to auto-generate"
-          />
+          <input name="password" type="text" className="w-full border rounded p-2" placeholder="Leave blank to auto-generate" />
         </div>
 
-        <button
-          type="submit"
-          className="w-full bg-blue-600 text-white rounded px-4 py-2 hover:bg-blue-700"
-        >
+        <button type="submit" className="w-full bg-blue-600 text-white rounded px-4 py-2 hover:bg-blue-700">
           Create Player
         </button>
       </form>
